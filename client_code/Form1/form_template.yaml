@@ -1,5 +1,69 @@
 components:
-- components: []
+- components:
+  - components:
+    - data_bindings: []
+      event_bindings: {click: button_tab_open_positions_click}
+      layout_properties: {grid_position: 'LJXOJV,DFFUVU'}
+      name: button_tab_open_positions
+      properties: {align: center, background: '', foreground: '', role: filled-button, text: Open Positions}
+      type: Button
+    - event_bindings: {click: button_tab_trade_history_click}
+      layout_properties: {grid_position: 'LJXOJV,MWFZEC'}
+      name: button_tab_trade_history
+      properties: {role: outlined-button, text: Trade History}
+      type: Button
+    layout_properties: {grid_position: 'WEXHDV,OVDWXJ'}
+    name: columnpanel_tabs
+    properties: {}
+    type: ColumnPanel
+  - components:
+    - layout_properties: {grid_position: 'FHXYUQ,TEFATT'}
+      name: label_open_positions
+      properties: {role: title, text: Open Positions}
+      type: Label
+    - layout_properties: {grid_position: 'FHXYUQ,MTFQUZ'}
+      name: button_find_new_trade
+      properties: {text: Find New Trade}
+      type: Button
+    - components:
+      - name: repeating_panel_1
+        properties: {item_template: Form1.RowTemplate1}
+        type: RepeatingPanel
+      layout_properties: {grid_position: 'CPQNAQ,LRQOGI'}
+      name: datagrid_open_positions
+      properties:
+        columns:
+        - {data_key: OpenDate, id: VLJSED, title: OpenDate}
+        - {data_key: Underlying, id: WKXBSM, title: Underlying}
+        - {data_key: Strategy, id: DXDYPM, title: Strategy}
+      type: DataGrid
+    layout_properties: {grid_position: 'GTPMWJ,UIKURD'}
+    name: card_open_positions
+    properties: {role: outlined-card}
+    type: ColumnPanel
+  - components:
+    - layout_properties: {grid_position: 'EJBIJZ,SQVQFN'}
+      name: label_trade_history
+      properties: {role: title, text: Trade History}
+      type: Label
+    - components:
+      - name: repeating_panel_2
+        properties: {item_template: Form1.RowTemplate2}
+        type: RepeatingPanel
+      layout_properties: {grid_position: 'QXISEK,RPEFCD'}
+      name: datagrid_trade_history
+      properties:
+        columns:
+        - {data_key: Underlying, id: VLVEVX, title: Underlying}
+        - {data_key: Strategy, id: XDNIRW, title: Strategy}
+        - {data_key: OpenDate, id: XTBLRO, title: OpenDate}
+        - {data_key: CloseDate, id: QXSJXY, title: CloseDate}
+        - {data_key: TotalPL, id: XDVKMG, title: TotalPL}
+      type: DataGrid
+    layout_properties: {grid_position: 'TGWAEE,GSGXMD'}
+    name: card_trade_history
+    properties: {role: outlined-card, visible: false}
+    type: ColumnPanel
   layout_properties: {slot: default}
   name: content_panel
   properties: {col_widths: '{}'}

@@ -1,4 +1,70 @@
 allow_embedding: false
+db_schema:
+  legs:
+    client: none
+    columns:
+    - admin_ui: {order: 0, width: 200}
+      name: Transaction
+      target: transactions
+      type: link_single
+    - admin_ui: {order: 1, width: 200}
+      name: Action
+      type: string
+    - admin_ui: {order: 2, width: 200}
+      name: Quantity
+      type: number
+    - admin_ui: {order: 3, width: 200}
+      name: OptionType
+      type: string
+    - admin_ui: {order: 4, width: 200}
+      name: Expiration
+      type: date
+    - admin_ui: {order: 5, width: 200}
+      name: Strike
+      type: number
+    server: full
+    title: Legs
+  trades:
+    client: none
+    columns:
+    - admin_ui: {order: 0, width: 200}
+      name: Underlying
+      type: string
+    - admin_ui: {order: 1, width: 200}
+      name: Strategy
+      type: string
+    - admin_ui: {order: 2, width: 200}
+      name: Status
+      type: string
+    - admin_ui: {order: 3, width: 200}
+      name: OpenDate
+      type: date
+    - admin_ui: {order: 4, width: 200}
+      name: CloseDate
+      type: date
+    - admin_ui: {order: 5, width: 200}
+      name: TotalPL
+      type: number
+    server: full
+    title: Trades
+  transactions:
+    client: none
+    columns:
+    - admin_ui: {order: 0, width: 200}
+      name: Trade
+      target: trades
+      type: link_single
+    - admin_ui: {order: 1, width: 200}
+      name: TransactionDate
+      type: date
+    - admin_ui: {order: 2, width: 200}
+      name: TransactionType
+      type: string
+    - admin_ui: {order: 3, width: 200}
+      name: CreditDebit
+      type: number
+    server: full
+    title: Transactions
 dependencies: []
 metadata: {logo_img: 'asset:IKTC_logo.png', title: Iron Keep Trading Company}
 name: IronKeepTradingCompany
