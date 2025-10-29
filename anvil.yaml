@@ -1,12 +1,12 @@
 allow_embedding: false
 dependencies: []
-metadata: {title: Iron Keep Trading Company}
-name: iktc
-package_name: iktc
+metadata: {logo_img: 'asset:IKTC_logo.png', title: Iron Keep Trading Company}
+name: IronKeepTradingCompany
+package_name: IronKeepTradingCompany
 renamed: true
 runtime_options:
   client_version: '3'
-  server_spec: {base: python310-minimal}
+  server_spec: {base: python310-datascience}
   server_version: python3-sandbox
   version: 2
 services:
