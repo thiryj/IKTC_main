@@ -75,8 +75,21 @@ runtime_options:
   server_spec: {base: python310-datascience}
   server_version: python3-sandbox
   version: 2
+secrets:
+  SANDBOX_ENDPOINT_URL:
+    type: secret
+    value: {PDYMR4AFRW36CCAU: Q6ZkRItWRfd8LsOq5AcFcTm0ibjTQa4iwSNvj9LItWy0rfUsQlRaJanJlDF/5pdnKrc32nMp/gOlMAGtzurAjMKVKwDDgNHEyaPpRIIgLT8cobc1AvnKRrl4/KaxjhPg9ulQ0KCbujbKH1eEZoJ8C+jAkESZo7yahIBSCM96q0Jeqw==}
+  SANDBOX_TRADIER_ACCOUNT:
+    type: secret
+    value: {PDYMR4AFRW36CCAU: JTzVboX90SKVHRzhgujt2LQjoucnv+TJT66gWiDDs46ibxOoivvfe5RVPyrKBxYKAsO4fpM0L/cbRAA5JJUz8eMbzNj/OkYdOwInu/Qh8zJov7HJHaZ+I7QIaIzDXGGfJ9LTq24EzzVd}
+  SANDBOX_TRADIER_API_KEY:
+    type: secret
+    value: {PDYMR4AFRW36CCAU: 7YfeV1bp9tzr5Phcl83BYzewHKiOLGB4fWodqtCzdaIQIoCHboM5srYLRjq0YqBOO1/FUBut+UC663Zpn4hBsUOSTb49nGbfjhmJ8vviaCwvSrgKuMjEN23syNdQJWfB9gXjrtMVOmiEXpQaYa8QOvU4Yt8UIxa+FRlt}
 services:
 - client_config: {}
   server_config: {}
   source: /runtime/services/tables.yml
+- client_config: {}
+  server_config: {}
+  source: /runtime/services/anvil/secrets.yml
 startup_form: Form1
