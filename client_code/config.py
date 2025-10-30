@@ -9,7 +9,7 @@ from anvil.tables import app_tables
 #
 #    Module1.say_hello()
 #
-UNDERLYING_SYMBOL
+UNDERLYING_SYMBOL = "IWM"
 
 # Globals
 

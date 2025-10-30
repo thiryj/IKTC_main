@@ -5,6 +5,7 @@ import anvil.tables as tables
 import anvil.tables.query as q
 from anvil.tables import app_tables
 from .Form_ConfirmTrade import Form_ConfirmTrade # Import your custom form
+from .. import config
 
 
 class Form1(Form1Template):
@@ -57,9 +58,21 @@ class Form1(Form1Template):
 
   def button_find_new_trade_click(self, **event_args):
     """This method is called when the button is clicked"""
+
+    # get type of trade from stratey drop down
+    trade_strategy = self.dropdown_strategy_picker.selected_value
+
+    #pop the trade entry card and gather data
+    self.card_trade_entry.visible = True
+    
     
     # Call the server function to get the trade
-    new_trade_details = anvil.server.call('find_new_diagonal_trade')
+    if trade_strategy == 'diagonal put spread':
+      new_trade_details = anvil.server.call('find_new_diagonal_trade', 
+                                            self.dropdown_environment.selected_value,
+                                           config.UNDERLYING_SYMBOL)
+    elif trade_strategy == 'cash secured put':
+      alert("strategy not implemented")
 
     # Check if a trade was actually found
     if new_trade_details:
