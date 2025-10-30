@@ -76,6 +76,15 @@ runtime_options:
   server_version: python3-sandbox
   version: 2
 secrets:
+  PROD_ENDPOINT_URL:
+    type: secret
+    value: {PDYMR4AFRW36CCAU: 7cL3w1SN8kzvLkGasVXa35z1VLxguJtcuYRjD7ZNaqhE+jpk2XG1lYuVmW8gCrGgaoosYgwhwYA71HVPZLIp84PnLJ0yr14HWUSA3fHLSpd/ynidkJpvzB1zjCdsqtg7VxelHbfZ9JNw+E2hQ+OHlC8+6iFBxi3SiGIy/RW3}
+  PROD_TRADIER_ACCOUNT:
+    type: secret
+    value: {PDYMR4AFRW36CCAU: wr94rlecbneUsamSNuAxkBRp5627GswGayffTMkRITDeU2jjEE/kuMx622Ay1S5EDwT/iiWeVsFBdMLL1KXWNw4hM1jBLWO02SWsPv9DFgd+7cC5IwAOTrfknqCP+SokMv8sT+hRQw==}
+  PROD_TRADIER_API_KEY:
+    type: secret
+    value: {PDYMR4AFRW36CCAU: 8CjOA2NSwkpg5GX1a+VfuXTpEeCu52weGVtoCUinrL7hnnOhu+rEcT3dQ7cyMoeEOXDK75G3oWrATct4e38+t+Bf5NVyrRtRWXolwjt/vb6SoaO+sX8Ddz5Vn5rABFNJJsjMCXSpTn/UejqASdHvhMjueKSuO+x51G5X}
   SANDBOX_ENDPOINT_URL:
     type: secret
     value: {PDYMR4AFRW36CCAU: Q6ZkRItWRfd8LsOq5AcFcTm0ibjTQa4iwSNvj9LItWy0rfUsQlRaJanJlDF/5pdnKrc32nMp/gOlMAGtzurAjMKVKwDDgNHEyaPpRIIgLT8cobc1AvnKRrl4/KaxjhPg9ulQ0KCbujbKH1eEZoJ8C+jAkESZo7yahIBSCM96q0Jeqw==}

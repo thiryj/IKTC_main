@@ -69,3 +69,12 @@ class Form1(Form1Template):
         alert("Trade has been submitted!") # Placeholder feedback
       else:
         print("User cancelled the trade.")
+
+  def button_login_click(self, **event_args):
+    """This method is called when the button is clicked"""
+    selected_env = self.dropdown_environment.selected_value
+    profile_details = anvil.server.call('get_tradier_profile', environment=selected_env)
+    if profile_details:
+      self.label_login.text = profile_details['account_number']
+    else:
+      self.label_login.text = "Failed to load profile"

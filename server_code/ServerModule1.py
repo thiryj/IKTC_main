@@ -3,12 +3,81 @@ import anvil.tables as tables
 import anvil.tables.query as q
 from anvil.tables import app_tables
 import anvil.server
+import anvil.secrets
+from tradier_python import TradierAPI
+
+# This global dictionary will act as our cache. It will hold the authenticated
+# client for each environment once it's created.
+_tradier_clients_cache = {}
 
 # This is a server module. It runs on the Anvil server,
 # rather than in the user's browser.
 #
 # To allow anvil.server.call() to call functions here, we mark
 #
+def get_tradier_client(environment: str)->TradierAPI:
+  """
+    Gets an authenticated Tradier client.
+    Checks a module-level cache first. If not found, it creates, caches, and returns it.
+    """
+  # 1. Check if a client for this environment already exists in our cache.
+  if environment in _tradier_clients_cache:
+    print(f"Returning CACHED Tradier client for {environment}.")
+    return _tradier_clients_cache[environment]
+
+    # 2. If not in cache, create a new one.
+  print(f"Creating NEW Tradier client for {environment}.")
+  env_prefix = environment.upper()
+
+  # Use square bracket dictionary-style access, not .get()
+  api_key = anvil.secrets.get_secret(f'{env_prefix}_TRADIER_API_KEY')
+  account_id = anvil.secrets.get_secret(f'{env_prefix}_TRADIER_ACCOUNT')
+  endpoint_url = anvil.secrets.get_secret(f'{env_prefix}_ENDPOINT_URL')
+
+  # Create the authenticated client object
+  t = TradierAPI(token=api_key, default_account_id=account_id, endpoint=endpoint_url)
+
+  # 3. Store the new client in the cache before returning it.
+  _tradier_clients_cache[environment] = t
+  return t
+
+@anvil.server.callable
+def get_tradier_profile(environment: str):
+  try:
+    tradier_client = get_tradier_client(environment)
+    profile = tradier_client.get_profile()
+    print(f"profile is: {profile}")
+    if profile and profile.account:
+      account_number = profile.account[0].account_number
+      return {'account_number': account_number}
+    else:
+      return None
+  except Exception as e:
+    print(f"Error retrieving Tradier profile: {e}")
+    raise e
+  
+@anvil.server.callable
+def get_tradier_positions(environment: str):
+  """
+  Gets an authenticated client, fetches positions, and returns the data.
+  This function CAN be called by the client.
+  """
+  try:
+    # Step 1: Get the authenticated client object
+    tradier_client = get_tradier_client(environment)
+
+    # Step 2: Use the client to make an API call
+    positions_data = tradier_client.get_positions() # Assuming a method like this exists
+
+    # Step 3: Return only the JSON-serializable data to the client
+    print(f"Retrived {len(positions_data)} positions")
+    return positions_data
+
+  except Exception as e:
+    # It's good practice to handle potential errors
+    print(f"An error occurred: {e}")
+    return e
+
 @anvil.server.callable
 def get_open_trades():
   """Fetches all trades with a status of 'Open'."""
