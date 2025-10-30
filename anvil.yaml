@@ -76,6 +76,9 @@ runtime_options:
   server_version: python3-sandbox
   version: 2
 secrets:
+  IRA_TRADIER_ACCOUNT:
+    type: secret
+    value: {PDYMR4AFRW36CCAU: RzMaK5Et7J0uAQIBy5CB3UXzxsu6QTbk1N0TFPWApLXPgVLbdUyP1ZeDs8UsNwQPHjke3NRYvKI5o24MIg5VMamyIQ+jTZ8YQy5zzSSYOwvMg/cOH6txqD5YMPGg63hkM+bTDY8njA==}
   PROD_ENDPOINT_URL:
     type: secret
     value: {PDYMR4AFRW36CCAU: 7cL3w1SN8kzvLkGasVXa35z1VLxguJtcuYRjD7ZNaqhE+jpk2XG1lYuVmW8gCrGgaoosYgwhwYA71HVPZLIp84PnLJ0yr14HWUSA3fHLSpd/ynidkJpvzB1zjCdsqtg7VxelHbfZ9JNw+E2hQ+OHlC8+6iFBxi3SiGIy/RW3}

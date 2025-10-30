@@ -5,10 +5,7 @@ from anvil.tables import app_tables
 import anvil.server
 import anvil.secrets
 from tradier_python import TradierAPI
-
-# This global dictionary will act as our cache. It will hold the authenticated
-# client for each environment once it's created.
-_tradier_clients_cache = {}
+import server_helpers
 
 # This is a server module. It runs on the Anvil server,
 # rather than in the user's browser.
@@ -20,25 +17,18 @@ def get_tradier_client(environment: str)->TradierAPI:
     Gets an authenticated Tradier client.
     Checks a module-level cache first. If not found, it creates, caches, and returns it.
     """
-  # 1. Check if a client for this environment already exists in our cache.
-  if environment in _tradier_clients_cache:
-    print(f"Returning CACHED Tradier client for {environment}.")
-    return _tradier_clients_cache[environment]
-
-    # 2. If not in cache, create a new one.
-  print(f"Creating NEW Tradier client for {environment}.")
-  env_prefix = environment.upper()
-
+    
+  env_prefix = environment.upper() # e.g., 'PROD' or 'SANDBOX'
   # Use square bracket dictionary-style access, not .get()
   api_key = anvil.secrets.get_secret(f'{env_prefix}_TRADIER_API_KEY')
   account_id = anvil.secrets.get_secret(f'{env_prefix}_TRADIER_ACCOUNT')
   endpoint_url = anvil.secrets.get_secret(f'{env_prefix}_ENDPOINT_URL')
 
   # Create the authenticated client object
-  t = TradierAPI(token=api_key, default_account_id=account_id, endpoint=endpoint_url)
-
-  # 3. Store the new client in the cache before returning it.
-  _tradier_clients_cache[environment] = t
+  t = TradierAPI(
+    token=api_key, 
+    default_account_id=account_id, 
+    endpoint=endpoint_url)
   return t
 
 @anvil.server.callable
@@ -55,6 +45,16 @@ def get_tradier_profile(environment: str):
   except Exception as e:
     print(f"Error retrieving Tradier profile: {e}")
     raise e
+
+@anvil.server.callable
+def get_account_nickname(account_number_to_check):
+  # Assumes you have secrets named 'PROD_ACCOUNT' and 'IRA_ACCOUNT'
+  nicknames = {
+    anvil.secrets.get_secret('PROD_TRADIER_ACCOUNT'): 'NQ',
+    anvil.secrets.get_secret('IRA_TRADIER_ACCOUNT'): 'IRA',
+    anvil.secrets.get_secret('SANDBOX_TRADIER_ACCOUNT'): 'Paper Trading'
+  }
+  return nicknames.get(account_number_to_check, "account nickname not found")
   
 @anvil.server.callable
 def get_tradier_positions(environment: str):

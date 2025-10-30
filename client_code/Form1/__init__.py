@@ -13,14 +13,27 @@ class Form1(Form1Template):
     self.init_components(**properties)
 
     # Any code you write here will run before the form opens.
+    # Log into default environment as displayed in the dropdown
+    self.dropdown_environment_change()
+    
     # Load data for the open positions grid
     open_trades_data = anvil.server.call('get_open_trades')
     #print("Data received on the client:", open_trades_data)  # <-- ADD THIS LINE
     self.repeatingpanel_open_positions.items = open_trades_data
     
-    
     # Load data for the trade history grid
     self.repeatingpanel_trade_history.items = anvil.server.call('get_closed_trades')
+
+  def dropdown_environment_change(self, **event_args):
+    """This method is called when an item is selected"""
+    selected_env = self.dropdown_environment.selected_value
+    profile_details = anvil.server.call('get_tradier_profile', environment=selected_env)
+    if profile_details:
+      account_number = profile_details['account_number']
+      nickname = anvil.server.call('get_account_nickname', account_number)
+      self.label_login.text = f"{account_number} - {nickname}"
+    else:
+      self.label_login.text = "Failed to load profile"
     
   def button_tab_trade_history_click(self, **event_args):
     """This method is called when the button is clicked"""
@@ -70,11 +83,4 @@ class Form1(Form1Template):
       else:
         print("User cancelled the trade.")
 
-  def button_login_click(self, **event_args):
-    """This method is called when the button is clicked"""
-    selected_env = self.dropdown_environment.selected_value
-    profile_details = anvil.server.call('get_tradier_profile', environment=selected_env)
-    if profile_details:
-      self.label_login.text = profile_details['account_number']
-    else:
-      self.label_login.text = "Failed to load profile"
+  
