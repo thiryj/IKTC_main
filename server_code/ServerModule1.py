@@ -18,29 +18,10 @@ import json
 #
 # To allow anvil.server.call() to call functions here, we mark
 #
-def get_tradier_client(environment: str)->Tuple[TradierAPI, str]:
-  """
-    Gets an authenticated Tradier client.
-    Checks a module-level cache first. If not found, it creates, caches, and returns it.
-    """
-    
-  env_prefix = environment.upper() # e.g., 'PROD' or 'SANDBOX'
-  # Use square bracket dictionary-style access, not .get()
-  api_key = anvil.secrets.get_secret(f'{env_prefix}_TRADIER_API_KEY')
-  account_id = anvil.secrets.get_secret(f'{env_prefix}_TRADIER_ACCOUNT')
-  endpoint_url = anvil.secrets.get_secret(f'{env_prefix}_ENDPOINT_URL')
-
-  # Create the authenticated client object
-  t = TradierAPI(
-    token=api_key, 
-    default_account_id=account_id, 
-    endpoint=endpoint_url)
-  return t, endpoint_url
-
 @anvil.server.callable
 def get_tradier_profile(environment: str):
   try:
-    tradier_client, endpoint_url = get_tradier_client(environment)
+    tradier_client, endpoint_url = server_helpers.get_tradier_client(environment)
     profile = tradier_client.get_profile()
     print(f"profile is: {profile}")
     if profile and profile.account:
@@ -61,6 +42,16 @@ def get_account_nickname(account_number_to_check):
     anvil.secrets.get_secret('SANDBOX_TRADIER_ACCOUNT'): 'Paper Trading'
   }
   return nicknames.get(account_number_to_check, "account nickname not found")
+
+@anvil.server.callable
+def get_underlying_quote(environment: str, symbol: str) ->float:
+  # get underlying price and thus short strike
+  t, endpoint_url = server_helpers.get_tradier_client(environment)
+  underlying_quote = t.get_quotes([symbol, "bogus"], greeks=False)
+  # note:  needed to send a fake symbol in because of a bug in the get_quotes endpoint
+  underlying_price = underlying_quote[0].last
+  print(f"Underlying price: {underlying_price}")
+  return underlying_price
   
 @anvil.server.callable
 def get_tradier_positions(environment: str):
@@ -70,7 +61,7 @@ def get_tradier_positions(environment: str):
   """
   try:
     # Step 1: Get the authenticated client object
-    tradier_client, endpoint_url = get_tradier_client(environment)
+    tradier_client, endpoint_url = server_helpers.get_tradier_client(environment)
 
     # Step 2: Use the client to make an API call
     positions_data = tradier_client.get_positions() # Assuming a method like this exists
@@ -106,8 +97,8 @@ def find_new_diagonal_trade(environment='SANDBOX', underlying_symbol=None):
   if underlying_symbol is None:
     anvil.alert("must select underlying symbol")
     return
-  t, endpoint_url = get_tradier_client(environment)
-  underlying_price = server_helpers.get_underlying_quote(t, underlying_symbol)
+  t, endpoint_url = server_helpers.get_tradier_client(environment)
+  underlying_price = get_underlying_quote(environment, underlying_symbol)
   short_strike = math.ceil(underlying_price)
   
   # get list of valid positions
@@ -142,10 +133,11 @@ def find_new_diagonal_trade(environment='SANDBOX', underlying_symbol=None):
   best_position.describe()
 
   preview_data = server_helpers.submit_diagonal_spread_order(t, endpoint_url, underlying_symbol, quantity, positions_list, preview=True)
-
+  
   if preview_data and preview_data.get('order', {}).get('status') == 'ok':
     print(f"Order preview is valid. Quantity: {quantity}. Margin Change:{preview_data['order']['margin_change']}")
-
+  return preview_data
+  """
     # since preview was good, submit real order
     if server_config.PLACE_TRADE:
       # skip on Friday if enabled
@@ -186,7 +178,7 @@ def find_new_diagonal_trade(environment='SANDBOX', underlying_symbol=None):
   else:
     print("--- Order Preview Failed or Invalid ---")
     print(json.dumps(preview_data, indent=2))
-
+  """
   """
   example_trade = {
     'underlying': 'SPY',

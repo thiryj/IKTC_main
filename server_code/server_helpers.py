@@ -10,6 +10,7 @@ import positions
 from datetime import date, datetime
 from pydantic_core import ValidationError
 import server_config
+from typing import Dict, Tuple
 
 # This is a server module. It runs on the Anvil server,
 # rather than in the user's browser.
@@ -20,14 +21,25 @@ import server_config
 #
 # @anvil.server.callable
 
-def get_underlying_quote(t: TradierAPI, symbol: str) ->float:
-  # get underlying price and thus short strike
-  underlying_quote = t.get_quotes([symbol, "bogus"], greeks=False)
-  # note:  needed to send a fake symbol in because of a bug in the get_quotes endpoint
-  underlying_price = underlying_quote[0].last
-  print(f"Underlying price: {underlying_price}")
-  return underlying_price
-  
+def get_tradier_client(environment: str)->Tuple[TradierAPI, str]:
+  """
+    Gets an authenticated Tradier client.
+    Checks a module-level cache first. If not found, it creates, caches, and returns it.
+    """
+
+  env_prefix = environment.upper() # e.g., 'PROD' or 'SANDBOX'
+  # Use square bracket dictionary-style access, not .get()
+  api_key = anvil.secrets.get_secret(f'{env_prefix}_TRADIER_API_KEY')
+  account_id = anvil.secrets.get_secret(f'{env_prefix}_TRADIER_ACCOUNT')
+  endpoint_url = anvil.secrets.get_secret(f'{env_prefix}_ENDPOINT_URL')
+
+  # Create the authenticated client object
+  t = TradierAPI(
+    token=api_key, 
+    default_account_id=account_id, 
+    endpoint=endpoint_url)
+  return t, endpoint_url
+    
 def get_near_term_expirations(tradier_client: TradierAPI, 
                               symbol: str, 
                               max_days_out: int = 10
