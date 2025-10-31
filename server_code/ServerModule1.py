@@ -88,7 +88,8 @@ def get_closed_trades():
   return tables.app_tables.trades.search(Status='Closed')
 
 @anvil.server.callable
-def find_new_diagonal_trade(environment='SANDBOX', underlying_symbol=None):
+def find_new_diagonal_trade(environment='SANDBOX', 
+                            underlying_symbol=None)->Dict:
   """
   This function will contain the logic to connect to Tradier,
   find a suitable short put diagonal, and return its parameters.
@@ -122,21 +123,32 @@ def find_new_diagonal_trade(environment='SANDBOX', underlying_symbol=None):
     print("No good roll to position identified")
     return 1
   
-  positions_list = [best_position]
-  # calculate quantity based on fixed allocation.  
-  #TODO: generalize this to lookup available capital t.get_account_balance().cash.cash_available
-  quantity = math.floor(server_config.ALLOCATION / best_position.margin) if best_position.margin > 0 else 0
-  quantity = 1 if server_config.TRADE_ONE else quantity
-
   print('To Open')
   best_position.print_leg_details()
   best_position.describe()
+  return best_position.get_dto()
 
-  preview_data = server_helpers.submit_diagonal_spread_order(t, endpoint_url, underlying_symbol, quantity, positions_list, preview=True)
+  @anvil.server.callable
+  def submit_order(environment: str='SANDBOX', 
+                           underlying_symbol: str=None,
+                           position: positions.DiagonalPutSpread=None, 
+                           quantity: int=1,
+                           preview: bool=True):
+    # verify symbol and positions are present
+    if underlying_symbol is None or position is None:
+      print("no symbol or position in submit_preview_order")
+    # get client and endpoint
+    t, endpoint_url = server_helpers.get_tradier_client(environment)
+
+    # submit order
+    preview_data = server_helpers.submit_diagonal_spread_order(t, endpoint_url, underlying_symbol, quantity, [position], preview)
+
+    if preview_data and preview_data.get('order', {}).get('status') == 'ok':
+      print(f"Order preview is valid. Quantity: {quantity}. Margin Change:{preview_data['order']['margin_change']}")
+    return preview_data
   
-  if preview_data and preview_data.get('order', {}).get('status') == 'ok':
-    print(f"Order preview is valid. Quantity: {quantity}. Margin Change:{preview_data['order']['margin_change']}")
-  return preview_data
+  def submit_real_order(environment='SANDBOX', position: positions.DiagonalPutSpread=None):
+    pass
   """
     # since preview was good, submit real order
     if server_config.PLACE_TRADE:
@@ -187,3 +199,10 @@ def find_new_diagonal_trade(environment='SANDBOX', underlying_symbol=None):
     'long_leg': {'strike': 440, 'expiry': '2025-12-19', 'price': 4.00}
   }
   """
+  @anvil.server.callable
+  def get_quantity(best_position: positions.DiagonalPutSpread)->int:
+    # calculate quantity based on fixed allocation.  
+    #TODO: generalize this to lookup available capital t.get_account_balance().cash.cash_available
+    quantity = math.floor(server_config.ALLOCATION / best_position.margin) if best_position.margin > 0 else 0
+    quantity = 1 if server_config.TRADE_ONE else quantity
+    return quantity

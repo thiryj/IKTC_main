@@ -26,6 +26,7 @@ class Form1(Form1Template):
     self.repeatingpanel_trade_history.items = anvil.server.call('get_closed_trades')
 
     # Trade ticket init
+    self.best_trade_dto = None # the selected position returned by find_new_diagonal_trade
     self.trade_preview_data = None # A place to store the server data
     self.button_place_trade.enabled = False
     self.label_quote_status.text = "Enter quantity and review trade."
@@ -64,61 +65,86 @@ class Form1(Form1Template):
   def button_find_new_trade_click(self, **event_args):
     """This method is called when the button is clicked"""
     symbol = self.textbox_symbol.text
+    if symbol is None:
+      alert("must select symbol")
+      return
     self.label_symbol.text = symbol
     environment = self.dropdown_environment.selected_value
+    self.label_quote_status.text = "Getting underlying price..."
     underlying_price = anvil.server.call('get_underlying_quote', environment, symbol) 
-    self.label_underlying_price.text = f"{underlying_price}"
-    
+    if underlying_price is None:
+      alert("unable to get underlying price")
+    self.label_underlying_price.text = f"{underlying_price:.2f}"
+    self.label_trade_ticket_title.text = f"{self.label_trade_ticket_title.text} \
+                                          - Open {self.dropdown_strategy_picker.selected_value}"
     #pop the trade entry card and gather data
-    self.card_trade_entry.visible = True
-    
-  def button_preview_trade_click(self, **event_args):
-    """Fired when the 'Preview Trade' button is clicked."""
-    # 1. Show loading state
-    self.label_quote_status.text = "Getting quote..."
     self.button_place_trade.enabled = False
+    self.card_trade_entry.visible = True   
     
     # get type of trade from stratey drop down
     trade_strategy = self.dropdown_strategy_picker.selected_value
-
-    # get symbol from input field
-    symbol = self.textbox_symbol.text
-    
     try:
       # 2. Get quantity from the UI
-      print(f"quantity is: {self.textbox_quantity.text}")
+      #print(f"quantity is: {self.textbox_quantity.text}")
       quantity = int(self.textbox_quantity.text)
         
-      # 3. Call the server function
       if trade_strategy == 'diagonal put spread':
-        preview = anvil.server.call('find_new_diagonal_trade', 
-                                              self.dropdown_environment.selected_value,
-                                              symbol)
+        self.label_quote_status.text = "Getting best trade..."
+        best_trade_dto = anvil.server.call('find_new_diagonal_trade',
+                                           self.dropdown_environment.selected_value,
+                                           symbol)
       elif trade_strategy == 'cash secured put':
         alert("strategy not implemented")
 
-      print(f"preview is: {preview}")
-      price_override = self.textbox_net_credit.text
-  
-      # 4. Store the data
-      self.trade_preview_data = preview # Save the whole dictionary
-  
-      # 5. Populate all the UI fields
-      self.label_symbol.text = preview['symbol']
-      self.label_underlying_price.text = f"@{preview['underlying_price']:.2f}"
-  
-      # Populate legs (assuming a 2-leg spread)
-      self.label_leg1_action.text = preview['legs'][0]['action']
-      self.label_leg1_details.text = preview['legs'][0]['details']
-      self.label_leg2_action.text = preview['legs'][1]['action']
-      self.label_leg2_details.text = preview['legs'][1]['details']
-  
-      # This is key: Fill the price box with the server's suggested price
-      if not price_override:
-        self.textbox_net_credit.text = f"{preview['net_credit']:.2f}"
-  
-      self.label_rom.text = f"{preview['rom'] * 100:.1f}%"
-  
+      # Check if the server call was successful
+      if best_trade_dto:
+        print(f"best put diag DTO is: {best_trade_dto}")
+
+        # 4. Store the best trade DTO (the dictionary)
+        self.best_trade_dto = best_trade_dto
+
+        # 5. Populate strategy leg fields
+
+        # --- MODIFIED SECTION ---
+        # Rebuild the leg descriptions from the DTO data
+
+        # Short Leg
+        short_leg = best_trade_dto['short_put']
+        self.label_leg1_action.text = "sell to open"
+        self.label_leg1_details.text = (
+          f"Symbol: {short_leg['symbol']}, "
+          f"Strike: {short_leg['strike']}, "
+          f"Expiry: {short_leg['expiration_date'].strftime('%Y-%m-%d')}"
+        )
+
+        # Long Leg
+        long_leg = best_trade_dto['long_put']
+        self.label_leg2_action.text = "buy to open"
+        self.label_leg2_details.text = (
+          f"Symbol: {long_leg['symbol']}, "
+          f"Strike: {long_leg['strike']}, "
+          f"Expiry: {long_leg['expiration_date'].strftime('%Y-%m-%d')}"
+        )
+
+        # Populate metrics using dictionary key access
+        self.textbox_net_credit.text = f"{best_trade_dto['net_premium']:.2f}"
+
+        rom_calc = best_trade_dto['ROM_rate'] * best_trade_dto['short_put']['contract_size']
+        self.label_rom.text = f"{rom_calc:.2f%}"
+        # --- END OF MODIFIED SECTION ---
+
+      else:
+        # Handle the case where the server didn't find a trade
+        self.label_quote_status.text = "No suitable trade found."
+
+    except Exception as e:
+      self.label_quote_status.text = f"Error: {e}"
+      self.label_quote_status.foreground = "error"
+
+  def button_preview_trade_click(self, **event_args):
+    """Fired when the 'Preview Trade' button is clicked."""
+    """
+    try:
       # 6. Update status based on validity
       if preview['is_valid']:
         self.label_quote_status.text = "Quote is valid."
@@ -127,14 +153,12 @@ class Form1(Form1Template):
       else:
         self.label_quote_status.text = "Quote is stale or invalid."
         self.label_quote_status.foreground = "secondary"
-  
+
     except Exception as e:
       self.label_quote_status.text = f"Error: {e}"
       self.label_quote_status.foreground = "error"
-  
-    
-  
-      """
+    """ 
+    """
       # Check if a trade was actually found
       if new_trade_details:
         # Create an instance of our custom form, passing the trade details to it
@@ -149,3 +173,4 @@ class Form1(Form1Template):
           buttons=[]
         )
         """
+  

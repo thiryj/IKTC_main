@@ -5,12 +5,11 @@ from anvil.tables import app_tables
 import anvil.server
 import requests
 from tradier_python import TradierAPI
-from typing import Dict, List
+from typing import Dict, List, Tuple
 import positions
 from datetime import date, datetime
 from pydantic_core import ValidationError
 import server_config
-from typing import Dict, Tuple
 
 # This is a server module. It runs on the Anvil server,
 # rather than in the user's browser.

@@ -3,6 +3,7 @@ import anvil.tables as tables
 import anvil.tables.query as q
 from anvil.tables import app_tables
 import anvil.server
+from typing import Dict
 
 from tradier_python.models import Quote
 from datetime import date
@@ -42,9 +43,19 @@ class DiagonalPutSpread:
 
     print(f"Premium: ${self.net_premium:.2f}, ROM/day: {self.ROM_rate*self.short_put.contract_size:.2%}")
 
-  def print_leg_details(self):
+  def print_leg_details(self, leg_direction: str=None):  #leg_direction should be "short" or "long"
     """Prints leg details."""
-    for leg in [self.short_put, self.long_put]:
+    if leg_direction is None:
+      leg_list=[self.short_put, self.long_put]
+    elif leg_direction == "short":
+      leg_list=[self.short_put]
+    elif leg_direction == "long":
+      leg_list=[self.long_put]
+    else:
+      print("must pass in a leg selection or None")
+      return 
+      
+    for leg in leg_list:
       print(
         f"Symbol: {leg.symbol}, "
         f"Type: {leg.option_type}, "
@@ -52,3 +63,40 @@ class DiagonalPutSpread:
         f"Expiry: {leg.expiration_date}, "
         f"Last: {leg.last}"
       )
+
+  def get_dto(self)->Dict:
+    position_dto = {
+      # --- Top-level calculated metrics ---
+      'net_premium': self.net_premium,
+      'margin': self.margin,
+      'ROM': self.ROM,
+      'short_put_DTE': self.short_put_DTE,
+      'ROM_rate': self.ROM_rate,
+
+      # --- Nested dictionary for the short put leg ---
+      # We assume the 'Quote' object has these attributes based on your methods
+      'short_put': {
+        'symbol': self.short_put.symbol,
+        'option_type': self.short_put.option_type,
+        'strike': self.short_put.strike,
+        'expiration_date': self.short_put.expiration_date,
+        'bid': self.short_put.bid,
+        'ask': self.short_put.ask,
+        'last': self.short_put.last,
+        'contract_size': self.short_put.contract_size
+      },
+
+      # --- Nested dictionary for the long put leg ---
+      'long_put': {
+        'symbol': self.long_put.symbol,
+        'option_type': self.long_put.option_type,
+        'strike': self.long_put.strike,
+        'expiration_date': self.long_put.expiration_date,
+        'bid': self.long_put.bid,
+        'ask': self.long_put.ask,
+        'last': self.long_put.last,
+        'contract_size': self.long_put.contract_size
+      }
+    }
+    return position_dto
+      
