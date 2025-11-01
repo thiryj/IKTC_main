@@ -103,6 +103,7 @@ def find_new_diagonal_trade(environment='SANDBOX',
   short_strike = math.ceil(underlying_price)
   
   # get list of valid positions
+  print("calling get_valid_diagonal_put_spreads")
   valid_positions = server_helpers.get_valid_diagonal_put_spreads(short_strike=short_strike, 
                                                                   tradier_client=t, 
                                                                   symbol=underlying_symbol, 
@@ -126,7 +127,8 @@ def find_new_diagonal_trade(environment='SANDBOX',
   print('To Open')
   best_position.print_leg_details()
   best_position.describe()
-  return best_position.get_dto()
+  best_position_dto = best_position.get_dto()
+  return best_position_dto
 
   @anvil.server.callable
   def submit_order(environment: str='SANDBOX', 

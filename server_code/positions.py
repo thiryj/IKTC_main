@@ -77,7 +77,7 @@ class DiagonalPutSpread:
       # We assume the 'Quote' object has these attributes based on your methods
       'short_put': {
         'symbol': self.short_put.symbol,
-        'option_type': self.short_put.option_type,
+        'option_type': self.short_put.option_type.name,
         'strike': self.short_put.strike,
         'expiration_date': self.short_put.expiration_date,
         'bid': self.short_put.bid,
@@ -89,7 +89,7 @@ class DiagonalPutSpread:
       # --- Nested dictionary for the long put leg ---
       'long_put': {
         'symbol': self.long_put.symbol,
-        'option_type': self.long_put.option_type,
+        'option_type': self.long_put.option_type.name,
         'strike': self.long_put.strike,
         'expiration_date': self.long_put.expiration_date,
         'bid': self.long_put.bid,

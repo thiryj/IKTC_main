@@ -96,11 +96,6 @@ components:
           name: textbox_quantity
           properties: {placeholder: '1', text: '1', tooltip: Quantity, type: number}
           type: TextBox
-        - event_bindings: {click: button_preview_trade_click}
-          layout_properties: {}
-          name: button_preview_trade
-          properties: {role: tonal-button, text: Preview Trade}
-          type: Button
         - layout_properties: {}
           name: label_quote_status
           properties: {}
@@ -122,6 +117,10 @@ components:
           name: label_leg1_details
           properties: {text: 0.00 Put}
           type: Label
+        - layout_properties: {}
+          name: label_leg1_DTE
+          properties: {}
+          type: Label
         layout_properties: {grid_position: 'ETLTXZ,VKBGGS'}
         name: flow_panel_2
         properties: {}
@@ -134,6 +133,10 @@ components:
         - layout_properties: {}
           name: label_leg2_details
           properties: {text: 0.00 Put}
+          type: Label
+        - layout_properties: {}
+          name: label_leg2_DTE
+          properties: {}
           type: Label
         layout_properties: {grid_position: 'TPCRTC,VWZLSG'}
         name: flow_panel_3
@@ -161,6 +164,10 @@ components:
       type: ColumnPanel
     - components:
       - layout_properties: {}
+        name: label_margin
+        properties: {}
+        type: Label
+      - layout_properties: {}
         name: label_5
         properties: {text: 'Return Rate on Margin:'}
         type: Label
@@ -172,13 +179,14 @@ components:
       name: flow_panel_4
       properties: {}
       type: FlowPanel
-    - layout_properties: {grid_position: 'SVNQGR,NFTDDO'}
+    - event_bindings: {click: button_override_price_click}
+      layout_properties: {grid_position: 'SVNQGR,NFTDDO'}
       name: button_override_price
       properties: {role: tonal-button, text: 'Override Price?'}
       type: Button
     - layout_properties: {grid_position: 'SVNQGR,JOWLFH'}
       name: textbox_overide_price
-      properties: {role: outlined, type: number}
+      properties: {role: outlined, type: number, visible: false}
       type: TextBox
     - layout_properties: {grid_position: 'SVNQGR,DWJDLA'}
       name: label_6
@@ -189,6 +197,11 @@ components:
       properties: {}
       type: ColumnPanel
     - components:
+      - event_bindings: {click: button_preview_trade_click}
+        layout_properties: {}
+        name: button_preview_trade
+        properties: {role: tonal-button, text: Preview Trade}
+        type: Button
       - layout_properties: {}
         name: button_place_trade
         properties: {enabled: false, icon_align: right, text: Place Trade}

@@ -6,6 +6,7 @@ import anvil.tables.query as q
 from anvil.tables import app_tables
 from .Form_ConfirmTrade import Form_ConfirmTrade # Import your custom form
 from .. import config
+from datetime import date
 
 
 class Form1(Form1Template):
@@ -81,7 +82,7 @@ class Form1(Form1Template):
     self.button_place_trade.enabled = False
     self.card_trade_entry.visible = True   
     
-    # get type of trade from stratey drop down
+    # get type of trade from strategy drop down
     trade_strategy = self.dropdown_strategy_picker.selected_value
     try:
       # 2. Get quantity from the UI
@@ -90,6 +91,7 @@ class Form1(Form1Template):
         
       if trade_strategy == 'diagonal put spread':
         self.label_quote_status.text = "Getting best trade..."
+        print("calling find_new_diagonal_trade")
         best_trade_dto = anvil.server.call('find_new_diagonal_trade',
                                            self.dropdown_environment.selected_value,
                                            symbol)
@@ -104,33 +106,36 @@ class Form1(Form1Template):
         self.best_trade_dto = best_trade_dto
 
         # 5. Populate strategy leg fields
-
-        # --- MODIFIED SECTION ---
-        # Rebuild the leg descriptions from the DTO data
-
+      
         # Short Leg
         short_leg = best_trade_dto['short_put']
         self.label_leg1_action.text = "sell to open"
+        short_expiry = short_leg['expiration_date']
+        short_dte = short_expiry - date.today()
         self.label_leg1_details.text = (
           f"Symbol: {short_leg['symbol']}, "
           f"Strike: {short_leg['strike']}, "
-          f"Expiry: {short_leg['expiration_date'].strftime('%Y-%m-%d')}"
+          f"Expiry: {short_expiry.strftime('%Y-%m-%d')}, "
+          f"DTE: {short_dte.days}"
         )
 
         # Long Leg
         long_leg = best_trade_dto['long_put']
         self.label_leg2_action.text = "buy to open"
+        long_expiry = long_leg['expiration_date']
+        long_dte = long_expiry - date.today()
         self.label_leg2_details.text = (
           f"Symbol: {long_leg['symbol']}, "
           f"Strike: {long_leg['strike']}, "
-          f"Expiry: {long_leg['expiration_date'].strftime('%Y-%m-%d')}"
+          f"Expiry: {long_leg['expiration_date'].strftime('%Y-%m-%d')}, "
+          f"DTE: {long_dte.days}"
         )
-
-        # Populate metrics using dictionary key access
-        self.textbox_net_credit.text = f"{best_trade_dto['net_premium']:.2f}"
-
+        net_premium = best_trade_dto['net_premium']
+        self.textbox_net_credit.text = f"{net_premium:.2f}"
+        self.label_spread_credit_debit.text = "credit" if net_premium >=0 else "debit"
+        self.label_margin.text = f"Margin:{best_trade_dto['margin']:.2f}"
         rom_calc = best_trade_dto['ROM_rate'] * best_trade_dto['short_put']['contract_size']
-        self.label_rom.text = f"{rom_calc:.2f%}"
+        self.label_rrom.text = f"{rom_calc:.2%}"
         # --- END OF MODIFIED SECTION ---
 
       else:
@@ -140,6 +145,8 @@ class Form1(Form1Template):
     except Exception as e:
       self.label_quote_status.text = f"Error: {e}"
       self.label_quote_status.foreground = "error"
+      
+    self.label_quote_status.text = "Best trade identified"
 
   def button_preview_trade_click(self, **event_args):
     """Fired when the 'Preview Trade' button is clicked."""
@@ -173,4 +180,8 @@ class Form1(Form1Template):
           buttons=[]
         )
         """
+
+  def button_override_price_click(self, **event_args):
+    """This method is called when the button is clicked"""
+    self.textbox_overide_price.visible=True
   
