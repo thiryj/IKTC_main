@@ -145,7 +145,7 @@ def submit_order(environment: str='SANDBOX',
   t, endpoint_url = server_helpers.get_tradier_client(environment)
 
   # submit order
-  preview_data = server_helpers.submit_diagonal_spread_order(t, 
+  trade_response = server_helpers.submit_diagonal_spread_order(t, 
                                                               endpoint_url, 
                                                               underlying_symbol, 
                                                               quantity, 
@@ -153,60 +153,85 @@ def submit_order(environment: str='SANDBOX',
                                                               preview,
                                                               limit_price,
                                                             trade_type)
-
-  if preview_data and preview_data.get('order', {}).get('status') == 'ok':
-    print(f"Order preview is valid. Quantity: {quantity}. Margin Change:{preview_data['order']['margin_change']}")
-  return preview_data
+  print(f"trade response: {trade_response}")
+  return trade_response
   
-  def submit_real_order(environment='SANDBOX', position: positions.DiagonalPutSpread=None):
-    pass
-  """
-    # since preview was good, submit real order
-    if server_config.PLACE_TRADE:
-      # skip on Friday if enabled
-      if not server_config.ROLL and datetime.date.today().weekday() in server_config.DAYS_TO_NOT_OPEN:
-        print("Don't open new positions on Friday.  Override by editing flag")
+def submit_real_order(environment='SANDBOX', position: positions.DiagonalPutSpread=None):
+  pass
+"""
+  # since preview was good, submit real order
+  if server_config.PLACE_TRADE:
+    # skip on Friday if enabled
+    if not server_config.ROLL and datetime.date.today().weekday() in server_config.DAYS_TO_NOT_OPEN:
+      print("Don't open new positions on Friday.  Override by editing flag")
+      return
+      # ask user if they want to over ride price
+    limit_price_str = input("Input limit price or 'M' to use calculated market price:")
+    try:
+      limit_price = float(limit_price_str)
+    except ValueError:
+      limit_price = None
+      # handle user confirmation if enabled
+    if server_config.USER_CONFIRMATION:
+      trade_auth_response = input("Send Trade? (Y or N):")
+      if trade_auth_response != "Y":
+        print("Trade cancelled by user")
         return
-        # ask user if they want to over ride price
-      limit_price_str = input("Input limit price or 'M' to use calculated market price:")
-      try:
-        limit_price = float(limit_price_str)
-      except ValueError:
-        limit_price = None
-        # handle user confirmation if enabled
-      if server_config.USER_CONFIRMATION:
-        trade_auth_response = input("Send Trade? (Y or N):")
-        if trade_auth_response != "Y":
-          print("Trade cancelled by user")
-          return
-        else:
-          print("Trade authorized by user")
-      order_data = server_helpers.submit_diagonal_spread_order(t, 
-                                                        endpoint_url, 
-                                                        underlying_symbol,
-                                                        quantity, 
-                                                        positions_list, 
-                                                        preview=False,
-                                                        limit_price=limit_price )
-  
-      if order_data and order_data.get('order', {}).get('status') == 'ok':
-        print("--- Order Submitted Successfully ---")
-        order_id = order_data['order']['id']
-        print(f"Order ID: {order_id}")
       else:
-        print("--- Failed to Submit Real Order ---")
-        print(json.dumps(order_data, indent=2))
-    else:
-      print("Trading not enabled")
-  else:
-    print("--- Order Preview Failed or Invalid ---")
-    print(json.dumps(preview_data, indent=2))
-  """
+        print("Trade authorized by user")
+    order_data = server_helpers.submit_diagonal_spread_order(t, 
+                                                      endpoint_url, 
+                                                      underlying_symbol,
+                                                      quantity, 
+                                                      positions_list, 
+                                                      preview=False,
+                                                      limit_price=limit_price )
 
-  @anvil.server.callable
-  def get_quantity(best_position: positions.DiagonalPutSpread)->int:
-    # calculate quantity based on fixed allocation.  
-    #TODO: generalize this to lookup available capital t.get_account_balance().cash.cash_available
-    quantity = math.floor(server_config.ALLOCATION / best_position.margin) if best_position.margin > 0 else 0
-    quantity = 1 if server_config.TRADE_ONE else quantity
-    return quantity
+    if order_data and order_data.get('order', {}).get('status') == 'ok':
+      print("--- Order Submitted Successfully ---")
+      order_id = order_data['order']['id']
+      print(f"Order ID: {order_id}")
+    else:
+      print("--- Failed to Submit Real Order ---")
+      print(json.dumps(order_data, indent=2))
+  else:
+    print("Trading not enabled")
+else:
+  print("--- Order Preview Failed or Invalid ---")
+  print(json.dumps(preview_data, indent=2))
+"""
+
+@anvil.server.callable
+def get_quantity(best_position: positions.DiagonalPutSpread)->int:
+  # calculate quantity based on fixed allocation.  
+  #TODO: generalize this to lookup available capital t.get_account_balance().cash.cash_available
+  quantity = math.floor(server_config.ALLOCATION / best_position.margin) if best_position.margin > 0 else 0
+  quantity = 1 if server_config.TRADE_ONE else quantity
+  return quantity
+
+  # In your ServerModule1.py
+
+@anvil.server.callable
+def get_order_status(environment: str, order_id: int):
+  """
+    Checks the status of a specific order ID.
+    """
+  try:
+    # Get your authenticated Tradier client
+    tradier_client = server_helpers.get_tradier_client(environment)
+
+    # Make the API call to check the order
+    # NOTE: The method name 'get_order' is an example. 
+    # Use the actual method from your TradierAPI class.
+    order_details = tradier_client.get_order(order_id)
+
+    print(f"Status for order {order_id}: {order_details}")
+
+    # Return the status part of the response
+    if order_details and 'order' in order_details:
+      return order_details['order']['status']
+    return "unknown"
+
+  except Exception as e:
+    print(f"Error getting order status: {e}")
+    return "error"

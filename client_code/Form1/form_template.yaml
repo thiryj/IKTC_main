@@ -205,7 +205,7 @@ components:
       - event_bindings: {click: button_preview_trade_click}
         layout_properties: {}
         name: button_preview_trade
-        properties: {role: tonal-button, text: Preview Trade}
+        properties: {enabled: false, role: tonal-button, text: Preview Trade}
         type: Button
       - event_bindings: {click: button_place_trade_click}
         layout_properties: {}

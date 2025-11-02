@@ -134,7 +134,6 @@ class Form1(Form1Template):
         self.label_margin.text = f"Margin:{best_trade_dto['margin']:.2f}"
         rom_calc = best_trade_dto['ROM_rate'] * best_trade_dto['short_put']['contract_size']
         self.label_rrom.text = f"{rom_calc:.2%}"
-        # --- END OF MODIFIED SECTION ---
 
       else:
         # Handle the case where the server didn't find a trade
@@ -145,6 +144,7 @@ class Form1(Form1Template):
       self.label_quote_status.foreground = "error"
       
     self.label_quote_status.text = "Best trade identified"
+    self.button_preview_trade.enabled = True
 
   def button_preview_trade_click(self, **event_args):
     """Fired when the 'Preview Trade' button is clicked."""
@@ -157,16 +157,16 @@ class Form1(Form1Template):
       except ValueError:        
         alert("Please enter a valid number for the override price.")
     else:
-      limit_price = self.textbox_net_credit
+      limit_price = self.textbox_net_credit.text
     
-    self.preview_data = self.common_trade_button(preview=True, price=limit_price)
-    trade_result_status = self.preview_data.get('order', {}).get('status') 
-    if self.preview_data and trade_result_status == 'ok':
-      # 1. Preview is valid, populate the labels
+    self.preview_data = self.common_trade_button(preview=True, limit_price=limit_price)
+
+    if self.preview_data and self.preview_data.get('order', {}).get('status') == 'ok':
       order_details = self.preview_data['order']
       self.label_trade_results_price.text = f"Limit Price: ${order_details['price']:.2f}"
       self.label_trade_results_phase.text = "Preview Results"
-      self.label_trade_results_status.text = 
+      self.label_trade_results_status.text = 'ok'
+      print(f"Order preview is valid. Margin Change:{order_details['margin_change']}")
       # 2. Enable the final "Place Trade" button
       self.button_place_trade.enabled = True
       self.label_quote_status.text = "Preview successful. Ready to submit."
@@ -177,8 +177,8 @@ class Form1(Form1Template):
       self.label_quote_status.text = "Error in trade preview. Cannot submit."
     
       # Optionally show the error message from Tradier
-      if preview_data and preview_data.get('order', {}).get('errors'):
-        error_msg = preview_data['order']['errors']['error'][0]
+      if self.preview_data and self.preview_data.get('order', {}).get('errors'):
+        error_msg = self.preview_data['order']['errors']['error'][0]
         alert(f"Preview failed: {error_msg}")
  
   def button_override_price_click(self, **event_args):
@@ -187,31 +187,17 @@ class Form1(Form1Template):
 
   def button_place_trade_click(self, **event_args):
     """This method is called when the Place Trade button is clicked"""
-    quantity = int(self.textbox_quantity.text)
-    trade_data = anvil.server.call('submit_order',
-                                     self.dropdown_environment.selected_value,
-                                     self.textbox_symbol.text,
-                                     self.best_trade_dto,
-                                     quantity,
-                                     preview=False,
-                                     limit_price=override_price,
-                                     trade_type=trade_type
-                                    )
+    limit_price = self.preview_data['order']['price']
+    trade_response = self.common_trade_button(preview=False, limit_price=limit_price)
 
-    # handle return dict
-    print(f"preview data:{preview_data}")
-    # Assuming 'preview_data' is the dictionary you received from the server
-    # and 'quantity' is the variable you passed to it.
+    if trade_response and trade_response.get('order', {}).get('status') == 'ok':
+      #order_details = trade_response['order']
+      # status of 'ok' means accepted, not filled.  there is no price yet
+      self.label_trade_results_phase.text = "Trade Results"
+      self.label_trade_results_status.text = 'ok'
+      #self.label_trade_results_price.text = f"Limit Price: ${order_details['price']:.2f}"
 
-    if preview_data and preview_data.get('order', {}).get('status') == 'ok':
-      # 1. Preview is valid, populate the labels
-      order_details = preview_data['order']
-      self.label_trade_quantity.text = f"Quantity: {quantity}"
-      self.label_trade_price.text = f"Limit Price: ${order_details['price']:.2f}"
-
-      # 2. Enable the final "Place Trade" button
-      self.button_place_trade.enabled = True
-      self.label_quote_status.text = "Preview successful. Ready to submit."
+      # query for updated status
 
     else:
       # Preview failed or returned an error
@@ -219,8 +205,8 @@ class Form1(Form1Template):
       self.label_quote_status.text = "Error in trade preview. Cannot submit."
 
       # Optionally show the error message from Tradier
-      if preview_data and preview_data.get('order', {}).get('errors'):
-        error_msg = preview_data['order']['errors']['error'][0]
+      if trade_response and trade_response.get('order', {}).get('errors'):
+        error_msg = trade_response['order']['errors']['error'][0]
         alert(f"Preview failed: {error_msg}")
 
   def common_trade_button(self, preview: str=True, limit_price: float=None):
@@ -243,4 +229,5 @@ class Form1(Form1Template):
 
     # handle return dict
     print(f"trade response data:{trade_dict}")
+    return trade_dict
   
