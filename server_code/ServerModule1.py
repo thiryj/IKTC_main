@@ -228,8 +228,8 @@ def get_order_status(environment: str, order_id: int):
     print(f"Status for order {order_id}: {order_details}")
 
     # Return the status part of the response
-    if order_details and 'order' in order_details:
-      return order_details['order']['status']
+    if order_details:
+      return order_details.status
     return "unknown"
 
   except Exception as e:

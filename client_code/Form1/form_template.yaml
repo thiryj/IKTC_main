@@ -212,6 +212,14 @@ components:
         name: timer_order_status
         properties: {interval: 5}
         type: Timer
+      - layout_properties: {}
+        name: button_improve_price
+        properties: {text: button_1}
+        type: Button
+      - layout_properties: {}
+        name: button_canx
+        properties: {role: tonal-button, text: Cancel}
+        type: Button
       layout_properties: {grid_position: 'ZYJRPE,GLPMTC'}
       name: flow_panel_6
       properties: {}
