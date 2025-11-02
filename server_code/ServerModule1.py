@@ -135,7 +135,7 @@ def find_new_diagonal_trade(environment='SANDBOX',
                            underlying_symbol: str=None,
                            position: positions.DiagonalPutSpread=None, 
                            quantity: int=1,
-                           preview: bool=True):
+                           preview: bool=True)->Dict:
     # verify symbol and positions are present
     if underlying_symbol is None or position is None:
       print("no symbol or position in submit_preview_order")
@@ -193,14 +193,7 @@ def find_new_diagonal_trade(environment='SANDBOX',
     print("--- Order Preview Failed or Invalid ---")
     print(json.dumps(preview_data, indent=2))
   """
-  """
-  example_trade = {
-    'underlying': 'SPY',
-    'strategy': 'Short Put Diagonal',
-    'short_leg': {'strike': 450, 'expiry': '2025-11-21', 'price': 5.50},
-    'long_leg': {'strike': 440, 'expiry': '2025-12-19', 'price': 4.00}
-  }
-  """
+
   @anvil.server.callable
   def get_quantity(best_position: positions.DiagonalPutSpread)->int:
     # calculate quantity based on fixed allocation.  

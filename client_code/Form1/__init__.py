@@ -85,9 +85,6 @@ class Form1(Form1Template):
     # get type of trade from strategy drop down
     trade_strategy = self.dropdown_strategy_picker.selected_value
     try:
-      # 2. Get quantity from the UI
-      #print(f"quantity is: {self.textbox_quantity.text}")
-      quantity = int(self.textbox_quantity.text)
         
       if trade_strategy == 'diagonal put spread':
         self.label_quote_status.text = "Getting best trade..."
@@ -150,37 +147,26 @@ class Form1(Form1Template):
 
   def button_preview_trade_click(self, **event_args):
     """Fired when the 'Preview Trade' button is clicked."""
-    """
-    try:
-      # 6. Update status based on validity
-      if preview['is_valid']:
-        self.label_quote_status.text = "Quote is valid."
-        self.label_quote_status.foreground = "primary"
-        self.button_place_trade.enabled = True
-      else:
-        self.label_quote_status.text = "Quote is stale or invalid."
-        self.label_quote_status.foreground = "secondary"
+    # get override price if selected
+    if (self.textbox_overide_price.text and
+      self.textbox_overide_price.text.isnumeric()):
+      price = self.textbox_overide_price.text
+    else:
+      price = self.textbox_net_credit.text
 
-    except Exception as e:
-      self.label_quote_status.text = f"Error: {e}"
-      self.label_quote_status.foreground = "error"
-    """ 
-    """
-      # Check if a trade was actually found
-      if new_trade_details:
-        # Create an instance of our custom form, passing the trade details to it
-        confirmation_form = Form_ConfirmTrade(trade_details=new_trade_details)
-  
-        # Show the form as a pop-up alert. The 'buttons=[]' argument removes the default OK button.
-        # The alert function will return True or False, based on what we coded in the form's buttons.
-        user_confirmed = alert(
-          content=confirmation_form,
-          title="Confirm New Trade",
-          large=True,
-          buttons=[]
-        )
-        """
+    # 2. Get quantity from the UI
+    #print(f"quantity is: {self.textbox_quantity.text}")
+    quantity = int(self.textbox_quantity.text)
+            
+    # submit order with preview = true
+    anvil.server.call('submit_order',
+                     self.dropdown_environment.selected_value,
+                     self.textbox_symbol.text,
+                     self.b)
 
+    # handle return dict
+
+ 
   def button_override_price_click(self, **event_args):
     """This method is called when the button is clicked"""
     self.textbox_overide_price.visible=True
