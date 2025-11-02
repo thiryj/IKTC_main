@@ -120,9 +120,10 @@ def submit_diagonal_spread_order(
   endpoint_url: str,
   underlying_symbol: str,
   quantity: int,
-  trade_list: List[positions.DiagonalPutSpread],
+  trade_dto: Dict,
   preview: bool = True,
-  limit_price: float = None
+  limit_price: float = None,
+  trade_type: str = None
 ) -> Dict:
   """
   Submits a multi-leg option order directly using the session,
@@ -133,7 +134,7 @@ def submit_diagonal_spread_order(
       endpoint_url (str): The endpoint url
       underlying_symbol (str)
       quantity (int): The number of contracts for each leg.
-      trade_list: (List[DiagonalPutSpread]): The list of positions.  First is to open, second (optional) is to close
+      trade_dto: The list of positions.  First is to open, second (optional) is to close
       preview (bool, optional): If True, submits as a preview order.
                                 Defaults to False.
 
@@ -143,7 +144,7 @@ def submit_diagonal_spread_order(
   """
   api_url = f"{endpoint_url}/accounts/{tradier_client.default_account_id}/orders"
 
-  payload = build_multileg_payload(underlying_symbol, quantity, trade_list)
+  payload = build_multileg_payload(underlying_symbol, quantity, trade_dto)
 
   # override price if limit_price sent in
   if limit_price is not None:
@@ -170,7 +171,8 @@ def submit_diagonal_spread_order(
 def build_multileg_payload(
   underlying_symbol: str, 
   quantity: int, 
-  trade_list: List[positions.DiagonalPutSpread]
+  trade_dto: Dict,
+  trade_type: str=None
 ):
   """
     Builds the API payload for a multileg order from a list of positions.
@@ -186,15 +188,18 @@ def build_multileg_payload(
     'type': 'credit',
   }
 
-  position_to_open = trade_list[0]
-  legs.append({'symbol': position_to_open.short_put.symbol, 'side': 'sell_to_open'})
-  legs.append({'symbol': position_to_open.long_put.symbol, 'side': 'buy_to_open'})
-  if len(trade_list) == 1:
-    payload['price'] = f"{position_to_open.net_premium:.2f}"
+  #position_to_open = trade_dto[]
+  short_leg_symbol = trade_dto['short_put']['symbol']
+  long_leg_symbol = trade_dto['long_put']['symbol']
+  legs.append({'symbol': short_leg_symbol, 'side': 'sell_to_open'})
+  legs.append({'symbol': long_leg_symbol, 'side': 'buy_to_open'})
+  if trade_type is None or trade_type == 'open':
+    payload['price'] = f"{trade_dto['net_premium']:.2f}"
     payload['type'] = 'credit'
 
     # --- Case 2: Roll a 4-leg position ---
-  elif len(trade_list) == 2:
+  elif trade_type == 'roll':
+    """
     # Convention: The first position is to open, the second is to close.
     position_to_close = trade_list[1]
 
@@ -207,6 +212,8 @@ def build_multileg_payload(
 
     payload['price'] = f"{abs(roll_value):.2f}"
     payload['type'] = 'credit' if roll_value >= 0 else 'debit'
+    """
+    pass
 
   else:
     # Handle invalid input

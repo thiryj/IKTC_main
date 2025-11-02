@@ -10,6 +10,8 @@ from anvil.tables import app_tables
 #    Module1.say_hello()
 #
 UNDERLYING_SYMBOL = "IWM"
+TRADE_TYPE_OPEN = 'open'
+TRADE_TYPE_ROLL = 'roll'
 
 # Globals
 

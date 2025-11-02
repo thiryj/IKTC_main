@@ -152,17 +152,25 @@ class Form1(Form1Template):
       self.textbox_overide_price.text.isnumeric()):
       price = self.textbox_overide_price.text
     else:
-      price = self.textbox_net_credit.text
+      price = None
 
     # 2. Get quantity from the UI
     #print(f"quantity is: {self.textbox_quantity.text}")
     quantity = int(self.textbox_quantity.text)
+
+    # set trade type.  TODO: add logic for roll later
+    trade_type = config.TRADE_TYPE_OPEN
             
     # submit order with preview = true
     anvil.server.call('submit_order',
                      self.dropdown_environment.selected_value,
                      self.textbox_symbol.text,
-                     self.b)
+                     self.best_trade_dto,
+                      quantity,
+                      preview=True,
+                      limit_price=price,
+                      trade_type=trade_type
+                     )
 
     # handle return dict
 
