@@ -130,33 +130,33 @@ def find_new_diagonal_trade(environment='SANDBOX',
   best_position_dto = best_position.get_dto()
   return best_position_dto
 
-  @anvil.server.callable
-  def submit_order(environment: str='SANDBOX', 
+@anvil.server.callable
+def submit_order(environment: str='SANDBOX', 
                            underlying_symbol: str=None,
                            trade_dto: Dict=None, 
                            quantity: int=1,
                            preview: bool=True,
                            limit_price: float=None,
                            trade_type: str=None)->Dict:
-    # verify symbol and positions are present
-    if underlying_symbol is None or trade_dto is None:
-      print("no symbol or position in submit_preview_order")
-    # get client and endpoint
-    t, endpoint_url = server_helpers.get_tradier_client(environment)
+  # verify symbol and positions are present
+  if underlying_symbol is None or trade_dto is None:
+    print("no symbol or position in submit_preview_order")
+  # get client and endpoint
+  t, endpoint_url = server_helpers.get_tradier_client(environment)
 
-    # submit order
-    preview_data = server_helpers.submit_diagonal_spread_order(t, 
-                                                               endpoint_url, 
-                                                               underlying_symbol, 
-                                                               quantity, 
-                                                               trade_dto, 
-                                                               preview,
-                                                               limit_price,
-                                                              trade_type)
+  # submit order
+  preview_data = server_helpers.submit_diagonal_spread_order(t, 
+                                                              endpoint_url, 
+                                                              underlying_symbol, 
+                                                              quantity, 
+                                                              trade_dto, 
+                                                              preview,
+                                                              limit_price,
+                                                            trade_type)
 
-    if preview_data and preview_data.get('order', {}).get('status') == 'ok':
-      print(f"Order preview is valid. Quantity: {quantity}. Margin Change:{preview_data['order']['margin_change']}")
-    return preview_data
+  if preview_data and preview_data.get('order', {}).get('status') == 'ok':
+    print(f"Order preview is valid. Quantity: {quantity}. Margin Change:{preview_data['order']['margin_change']}")
+  return preview_data
   
   def submit_real_order(environment='SANDBOX', position: positions.DiagonalPutSpread=None):
     pass

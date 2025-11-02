@@ -31,6 +31,7 @@ class Form1(Form1Template):
     self.trade_preview_data = None # A place to store the server data
     self.button_place_trade.enabled = False
     self.label_quote_status.text = "Enter quantity and review trade."
+    self.preview_data = None
 
   def dropdown_environment_change(self, **event_args):
     """This method is called when an item is selected"""
@@ -147,35 +148,97 @@ class Form1(Form1Template):
 
   def button_preview_trade_click(self, **event_args):
     """Fired when the 'Preview Trade' button is clicked."""
-    # get override price if selected
-    if (self.textbox_overide_price.text and
-      self.textbox_overide_price.text.isnumeric()):
-      price = self.textbox_overide_price.text
-    else:
-      price = None
-
-    # 2. Get quantity from the UI
-    #print(f"quantity is: {self.textbox_quantity.text}")
+    override_price_text = self.textbox_overide_price.text
+  
+    # First, check if the textbox is not empty
+    if override_price_text:
+      try:
+        override_price = float(override_price_text)    
+      except ValueError:        
+        alert("Please enter a valid number for the override price.")
+    
     quantity = int(self.textbox_quantity.text)
 
     # set trade type.  TODO: add logic for roll later
     trade_type = config.TRADE_TYPE_OPEN
-            
+    print("calling submit order")        
     # submit order with preview = true
-    anvil.server.call('submit_order',
+    preview_data = anvil.server.call('submit_order',
                      self.dropdown_environment.selected_value,
                      self.textbox_symbol.text,
                      self.best_trade_dto,
                       quantity,
                       preview=True,
-                      limit_price=price,
+                      limit_price=override_price,
                       trade_type=trade_type
                      )
 
     # handle return dict
-
+    print(f"preview data:{preview_data}")
+    self.preview_data = preview_data
+    # Assuming 'preview_data' is the dictionary you received from the server
+# and 'quantity' is the variable you passed to it.
+  
+    if preview_data and preview_data.get('order', {}).get('status') == 'ok':
+      # 1. Preview is valid, populate the labels
+      order_details = preview_data['order']
+      self.label_trade_quantity.text = f"Quantity: {quantity}"
+      self.label_trade_price.text = f"Limit Price: ${order_details['price']:.2f}"
+    
+      # 2. Enable the final "Place Trade" button
+      self.button_place_trade.enabled = True
+      self.label_quote_status.text = "Preview successful. Ready to submit."
+    
+    else:
+      # Preview failed or returned an error
+      self.button_place_trade.enabled = False
+      self.label_quote_status.text = "Error in trade preview. Cannot submit."
+    
+      # Optionally show the error message from Tradier
+      if preview_data and preview_data.get('order', {}).get('errors'):
+        error_msg = preview_data['order']['errors']['error'][0]
+        alert(f"Preview failed: {error_msg}")
  
   def button_override_price_click(self, **event_args):
     """This method is called when the button is clicked"""
     self.textbox_overide_price.visible=True
+
+  def button_place_trade_click(self, **event_args):
+    """This method is called when the button is clicked"""
+    # submit order with preview = true
+    quantity = int(self.textbox_quantity.text)
+    trade_data = anvil.server.call('submit_order',
+                                     self.dropdown_environment.selected_value,
+                                     self.textbox_symbol.text,
+                                     self.best_trade_dto,
+                                     quantity,
+                                     preview=False,
+                                     limit_price=override_price,
+                                     trade_type=trade_type
+                                    )
+
+    # handle return dict
+    print(f"preview data:{preview_data}")
+    # Assuming 'preview_data' is the dictionary you received from the server
+    # and 'quantity' is the variable you passed to it.
+
+    if preview_data and preview_data.get('order', {}).get('status') == 'ok':
+      # 1. Preview is valid, populate the labels
+      order_details = preview_data['order']
+      self.label_trade_quantity.text = f"Quantity: {quantity}"
+      self.label_trade_price.text = f"Limit Price: ${order_details['price']:.2f}"
+
+      # 2. Enable the final "Place Trade" button
+      self.button_place_trade.enabled = True
+      self.label_quote_status.text = "Preview successful. Ready to submit."
+
+    else:
+      # Preview failed or returned an error
+      self.button_place_trade.enabled = False
+      self.label_quote_status.text = "Error in trade preview. Cannot submit."
+
+      # Optionally show the error message from Tradier
+      if preview_data and preview_data.get('order', {}).get('errors'):
+        error_msg = preview_data['order']['errors']['error'][0]
+        alert(f"Preview failed: {error_msg}")
   

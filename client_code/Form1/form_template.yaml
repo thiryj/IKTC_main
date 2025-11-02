@@ -207,12 +207,30 @@ components:
         name: button_preview_trade
         properties: {role: tonal-button, text: Preview Trade}
         type: Button
-      - layout_properties: {}
+      - event_bindings: {click: button_place_trade_click}
+        layout_properties: {}
         name: button_place_trade
-        properties: {enabled: false, icon_align: right, text: Place Trade}
+        properties: {enabled: false, icon_align: right, role: tonal-button, text: Place Trade}
         type: Button
       layout_properties: {grid_position: 'ZYJRPE,GLPMTC'}
       name: flow_panel_6
+      properties: {}
+      type: FlowPanel
+    - components:
+      - layout_properties: {}
+        name: label_trade_results
+        properties: {text: 'Preview Results:'}
+        type: Label
+      - layout_properties: {}
+        name: label_trade_quantity
+        properties: {}
+        type: Label
+      - layout_properties: {}
+        name: label_trade_price
+        properties: {}
+        type: Label
+      layout_properties: {grid_position: 'RKOLVN,KUPYOF'}
+      name: flow_panel_7
       properties: {}
       type: FlowPanel
     layout_properties: {grid_position: 'MZJNKN,GXKETC'}
