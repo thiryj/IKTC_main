@@ -153,38 +153,20 @@ class Form1(Form1Template):
     # First, check if the textbox is not empty
     if override_price_text:
       try:
-        override_price = float(override_price_text)    
+        limit_price = float(override_price_text)    
       except ValueError:        
         alert("Please enter a valid number for the override price.")
+    else:
+      limit_price = self.textbox_net_credit
     
-    quantity = int(self.textbox_quantity.text)
-
-    # set trade type.  TODO: add logic for roll later
-    trade_type = config.TRADE_TYPE_OPEN
-    print("calling submit order")        
-    # submit order with preview = true
-    preview_data = anvil.server.call('submit_order',
-                     self.dropdown_environment.selected_value,
-                     self.textbox_symbol.text,
-                     self.best_trade_dto,
-                      quantity,
-                      preview=True,
-                      limit_price=override_price,
-                      trade_type=trade_type
-                     )
-
-    # handle return dict
-    print(f"preview data:{preview_data}")
-    self.preview_data = preview_data
-    # Assuming 'preview_data' is the dictionary you received from the server
-# and 'quantity' is the variable you passed to it.
-  
-    if preview_data and preview_data.get('order', {}).get('status') == 'ok':
+    self.preview_data = self.common_trade_button(preview=True, price=limit_price)
+    trade_result_status = self.preview_data.get('order', {}).get('status') 
+    if self.preview_data and trade_result_status == 'ok':
       # 1. Preview is valid, populate the labels
-      order_details = preview_data['order']
-      self.label_trade_quantity.text = f"Quantity: {quantity}"
-      self.label_trade_price.text = f"Limit Price: ${order_details['price']:.2f}"
-    
+      order_details = self.preview_data['order']
+      self.label_trade_results_price.text = f"Limit Price: ${order_details['price']:.2f}"
+      self.label_trade_results_phase.text = "Preview Results"
+      self.label_trade_results_status.text = 
       # 2. Enable the final "Place Trade" button
       self.button_place_trade.enabled = True
       self.label_quote_status.text = "Preview successful. Ready to submit."
@@ -204,8 +186,7 @@ class Form1(Form1Template):
     self.textbox_overide_price.visible=True
 
   def button_place_trade_click(self, **event_args):
-    """This method is called when the button is clicked"""
-    # submit order with preview = true
+    """This method is called when the Place Trade button is clicked"""
     quantity = int(self.textbox_quantity.text)
     trade_data = anvil.server.call('submit_order',
                                      self.dropdown_environment.selected_value,
@@ -241,4 +222,25 @@ class Form1(Form1Template):
       if preview_data and preview_data.get('order', {}).get('errors'):
         error_msg = preview_data['order']['errors']['error'][0]
         alert(f"Preview failed: {error_msg}")
+
+  def common_trade_button(self, preview: str=True, limit_price: float=None):
+    """code common to both preview and trade button clicks"""
+    quantity = int(self.textbox_quantity.text)
+    if limit_price is None:
+      print("common_trade_button must have limit price")
+      return
+    # set trade type.  TODO: add logic for roll later
+    print("calling submit order")        
+    trade_dict = anvil.server.call('submit_order',
+                                     self.dropdown_environment.selected_value,
+                                     self.textbox_symbol.text,
+                                     self.best_trade_dto,
+                                     quantity,
+                                     preview=preview,
+                                     limit_price=limit_price,
+                                     trade_type=config.TRADE_TYPE_OPEN
+                                    )
+
+    # handle return dict
+    print(f"trade response data:{trade_dict}")
   

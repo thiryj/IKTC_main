@@ -218,15 +218,15 @@ components:
       type: FlowPanel
     - components:
       - layout_properties: {}
-        name: label_trade_results
+        name: label_trade_results_phase
         properties: {text: 'Preview Results:'}
         type: Label
       - layout_properties: {}
-        name: label_trade_quantity
+        name: label_trade_results_status
         properties: {}
         type: Label
       - layout_properties: {}
-        name: label_trade_price
+        name: label_trade_results_price
         properties: {}
         type: Label
       layout_properties: {grid_position: 'RKOLVN,KUPYOF'}
