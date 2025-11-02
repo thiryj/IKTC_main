@@ -32,6 +32,10 @@ class Form1(Form1Template):
     self.button_place_trade.enabled = False
     self.label_quote_status.text = "Enter quantity and review trade."
     self.preview_data = None
+    # Store the ID of the order we are tracking
+    self.pending_order_id = None
+    # Disable the timer initially
+    self.timer_order_status.enabled = False
 
   def dropdown_environment_change(self, **event_args):
     """This method is called when an item is selected"""
@@ -191,13 +195,18 @@ class Form1(Form1Template):
     trade_response = self.common_trade_button(preview=False, limit_price=limit_price)
 
     if trade_response and trade_response.get('order', {}).get('status') == 'ok':
-      #order_details = trade_response['order']
       # status of 'ok' means accepted, not filled.  there is no price yet
       self.label_trade_results_phase.text = "Trade Results"
-      self.label_trade_results_status.text = 'ok'
-      #self.label_trade_results_price.text = f"Limit Price: ${order_details['price']:.2f}"
+      self.label_trade_results_status.text = 'trade submitted'
 
-      # query for updated status
+      # After submitting the order, start the timer
+      if trade_response and trade_response.get('order', {}).get('status') == 'ok':
+        self.pending_order_id = trade_response['order']['id']
+        self.label_trade_results_status.text = f"Order {self.pending_order_id} submitted. Awaiting fill..."
+        # Start the timer!
+        self.timer_order_status.enabled = True
+      else:
+        self.label_trade_results_status.text = "Order submission failed."
 
     else:
       # Preview failed or returned an error
@@ -230,4 +239,21 @@ class Form1(Form1Template):
     # handle return dict
     print(f"trade response data:{trade_dict}")
     return trade_dict
+
+  def timer_order_status_tick(self, **event_args):
+    """This method is called Every [interval] seconds. Does not trigger if [interval] is 0."""
+    if self.pending_order_id:
+      env = self.dropdown_environment.selected_value
+      status = anvil.server.call('get_order_status', env, self.pending_order_id)
+
+      self.label_trade_results_status.text = f"Order {self.pending_order_id}: {status}"
+
+      # Check if the order is filled or in another final state
+      if status in ['filled', 'canceled', 'rejected', 'expired']:
+        # Stop the timer, we're done.
+        self.timer_order_status.enabled = False
+        self.pending_order_id = None
+        #self.label_trade_results_price.text = f"Limit Price: ${order_details['price']:.2f}"
+        print("Order is in a final state. Stopping timer.")
+        # You would now refresh your main positions grid
   

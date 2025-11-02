@@ -188,11 +188,6 @@ components:
       name: column_panel_5
       properties: {}
       type: ColumnPanel
-    - components: []
-      layout_properties: {grid_position: 'YVGSPB,JREBGT'}
-      name: flow_panel_5
-      properties: {align: center}
-      type: FlowPanel
     - components:
       - layout_properties: {}
         name: label_2
@@ -212,6 +207,11 @@ components:
         name: button_place_trade
         properties: {enabled: false, icon_align: right, role: tonal-button, text: Place Trade}
         type: Button
+      - event_bindings: {tick: timer_order_status_tick}
+        layout_properties: {}
+        name: timer_order_status
+        properties: {interval: 5}
+        type: Timer
       layout_properties: {grid_position: 'ZYJRPE,GLPMTC'}
       name: flow_panel_6
       properties: {}

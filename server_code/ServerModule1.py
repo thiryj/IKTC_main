@@ -218,7 +218,7 @@ def get_order_status(environment: str, order_id: int):
     """
   try:
     # Get your authenticated Tradier client
-    tradier_client = server_helpers.get_tradier_client(environment)
+    tradier_client, endpoint = server_helpers.get_tradier_client(environment)
 
     # Make the API call to check the order
     # NOTE: The method name 'get_order' is an example. 
