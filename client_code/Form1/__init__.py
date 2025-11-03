@@ -203,8 +203,10 @@ class Form1(Form1Template):
       if trade_response and trade_response.get('order', {}).get('status') == 'ok':
         self.pending_order_id = trade_response['order']['id']
         self.label_trade_results_status.text = f"Order {self.pending_order_id} submitted. Awaiting fill..."
-        # Start the timer!
-        self.timer_order_status.enabled = True
+        # Enable the timer toggle switch!
+        self.checkbox_status_polling.enabled = True
+        self.button_improve_price.enabled = True
+        self.button_cancel_trade = True
       else:
         self.label_trade_results_status.text = "Order submission failed."
 
@@ -256,4 +258,31 @@ class Form1(Form1Template):
         #self.label_trade_results_price.text = f"Limit Price: ${order_details['price']:.2f}"
         print("Order is in a final state. Stopping timer.")
         # You would now refresh your main positions grid
+
+  def button_cancel_trade_click(self, **event_args):
+    """This method is called when the cancel button is clicked"""
+    # Check if we are actually tracking a pending order
+    if self.pending_order_id:
+      env = self.dropdown_environment.selected_value
+
+      # Call the new server function
+      status = anvil.server.call('cancel_order', env, self.pending_order_id)
+
+      if status == "Order canceled":
+        # Stop the timer, we're done
+        self.timer_order_status.enabled = False
+        self.label_order_status.text = f"Order {self.pending_order_id} was canceled."
+        self.pending_order_id = None
+      else:
+        alert(f"Failed to cancel order: {status}")
+    else:
+      alert("No pending order to cancel.")
+
+  def checkbox_status_polling_change(self, **event_args):
+    """This method is called when this checkbox is checked or unchecked"""
+    if self.checkbox_status_polling.checked:    
+      self.timer_order_status.enabled = True
+    else:
+      self.timer_order_status.enabled = False
+    
   

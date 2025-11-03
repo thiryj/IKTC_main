@@ -4,12 +4,13 @@ import anvil.tables.query as q
 from anvil.tables import app_tables
 import anvil.server
 import requests
-from tradier_python import TradierAPI
+from urllib.parse import urljoin
 from typing import Dict, List, Tuple
-import positions
 from datetime import date, datetime
 from pydantic_core import ValidationError
+from tradier_python import TradierAPI
 import server_config
+import positions
 
 # This is a server module. It runs on the Anvil server,
 # rather than in the user's browser.
@@ -142,7 +143,9 @@ def submit_diagonal_spread_order(
       Dict: The JSON response from the API as a dictionary, or None if an
             error occurred.
   """
-  api_url = f"{endpoint_url}/accounts/{tradier_client.default_account_id}/orders"
+  #api_url = f"{endpoint_url}/accounts/{tradier_client.default_account_id}/orders"
+  path = f"/accounts/{tradier_client.default_account_id}/orders"
+  api_url = urljoin(endpoint_url, path)
 
   payload = build_multileg_payload(underlying_symbol, quantity, trade_dto)
 

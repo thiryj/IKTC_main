@@ -235,3 +235,24 @@ def get_order_status(environment: str, order_id: int):
   except Exception as e:
     print(f"Error getting order status: {e}")
     return "error"
+
+@anvil.server.callable
+def cancel_order(environment: str, order_id: int):
+  """
+  Cancels a specific pending order.
+  """
+  try:
+    tradier_client = server_helpers.get_tradier_client(environment)
+    cancel_response_object = tradier_client.cancel_order(order_id)
+    print(f"Cancel response for order {order_id}: {cancel_response_object}")
+
+    if cancel_response_object:
+      # You'll need to adjust this to access the status
+      # e.g., return cancel_response_object.status
+      print(f"cancel response: {cancel_response_object}")
+      return "Order canceled" 
+    return "Unknown"
+
+  except Exception as e:
+    print(f"Error canceling order: {e}")
+    return "Error"
