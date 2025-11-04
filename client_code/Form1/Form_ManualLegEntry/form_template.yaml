@@ -7,7 +7,7 @@ components:
     type: DropDown
   - layout_properties: {col_xs: 3, row: YOSOIP, width_xs: 1}
     name: textbox_manual_leg_quantity
-    properties: {}
+    properties: {text: Qty, tooltip: Qty, type: number}
     type: TextBox
   - layout_properties: {col_xs: 4, row: YOSOIP, width_xs: 2}
     name: dropdown_manual_leg_type
@@ -16,11 +16,11 @@ components:
     type: DropDown
   - layout_properties: {col_xs: 6, row: YOSOIP, width_xs: 2}
     name: textbox_manual_leg_strike
-    properties: {type: number}
+    properties: {tooltip: strike, type: number}
     type: TextBox
-  - layout_properties: {col_xs: 8, row: YOSOIP, width_xs: 3}
+  - layout_properties: {col_xs: 8, row: YOSOIP, width_xs: 2}
     name: datepicker_manual_leg_expiration
-    properties: {}
+    properties: {tooltip: expiry}
     type: DatePicker
   layout_properties: {grid_position: 'CNGTYV,YRFNAC'}
   name: grid_panel_1

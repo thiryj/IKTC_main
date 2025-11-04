@@ -290,26 +290,40 @@ class Form1(Form1Template):
     what type of manual transaction is being entered.
     """
     selected_type = self.dropdown_manual_transaction_type.selected_value
-
-    # We'll use a simple list of numbers to tell the panel how many rows to create.
-    num_rows_to_create = 0
-
+    # This will be the list of dictionaries for the repeating panel
+    leg_definitions = []
+    
     if selected_type == 'Open: Cash-Secured Put':
-      num_rows_to_create = 1
+      leg_definitions = [
+        {'action': 'Sell to Open', 'type': 'Put'}
+      ]
 
-    elif (selected_type == 'Open: Diagonal' or 
-         selected_type == 'Close: Diagonal' or
-         selected_type == 'Roll: Leg'):
-      num_rows_to_create = 2
-
+    elif selected_type == 'Open: Diagonal':
+      leg_definitions = [
+        {'action': 'Sell to Open', 'type': 'Put'},
+        {'action': 'Buy to Open', 'type': 'Put'}
+      ]
+    elif selected_type == 'Roll: Leg':
+      leg_definitions = [
+        {'action': 'Buy to Close', 'type': 'Put'},
+        {'action': 'Sell to Open', 'type': 'Put'}
+      ]
+      
+    elif selected_type == 'Close: Diagonal':
+      leg_definitions = [
+        {'action': 'Buy to Close', 'type': 'Put'},
+        {'action': 'Sell to Close', 'type': 'Put'}
+      ]
     elif selected_type == 'Roll: Spread':
-      num_rows_to_create = 4
-
-    # You can add logic for other types (like stock) here
-    # For now, we'll hide the panel if it's not an option trade
-    if num_rows_to_create > 0:
-      # Give the panel a dummy list to create the blank rows
-      self.repeatingpanel_manual_legs.items = range(num_rows_to_create)
+      leg_definitions = [
+        {'action': 'Buy to Close', 'type': 'Put'},
+        {'action': 'Sell to Close', 'type': 'Put'},
+        {'action': 'Sell to Open', 'type': 'Put'},
+        {'action': 'Buy to Open', 'type': 'Put'}
+      ]
+    # Now, assign this list to the repeating panel
+    if leg_definitions:
+      self.repeatingpanel_manual_legs.items = leg_definitions
       self.repeatingpanel_manual_legs.visible = True
     else:
       # Hide the panel if no legs are needed
@@ -324,5 +338,9 @@ class Form1(Form1Template):
     """This method is called when the button is clicked"""
     alert("need to code the clear trade entry logic")
     self.card_trade_entry.visible=False
+
+  def button_save_manual_trade_click(self, **event_args):
+    """This method is called when the button is clicked"""
+    pass
     
   

@@ -72,7 +72,7 @@ components:
         layout_properties: {col_xs: 0, row: CXCZWP, width_xs: 3}
         name: dropdown_manual_transaction_type
         properties:
-          items: [Select Transaction Type, 'Open: Diagonal', 'Close: Diagonal', 'Open: Cash-Secured Put', 'Event: Assignment (Stock In)', 'Close: Leg', 'Close: Stock (Covered Call)']
+          items: [Select Transaction Type, 'Open: Diagonal', 'Close: Diagonal', 'Roll: Spread', 'Open: Cash-Secured Put', 'Event: Assignment (Stock In)', 'Close: Leg', 'Close: Stock (Covered Call)']
           role: null
         type: DropDown
       - layout_properties: {col_xs: 3, row: CXCZWP, width_xs: 2}
@@ -83,10 +83,19 @@ components:
         name: datepicker_manual_date
         properties: {}
         type: DatePicker
+      - event_bindings: {click: button_save_manual_trade_click}
+        layout_properties: {col_xs: 9, row: CXCZWP, width_xs: 3}
+        name: button_save_manual_trade
+        properties: {text: Save Trade}
+        type: Button
       layout_properties: {grid_position: 'MRHWMP,KALBZV'}
       name: grid_panel_2
       properties: {}
       type: GridPanel
+    - layout_properties: {grid_position: 'NVZSNL,GMBTAX'}
+      name: columnpanel_manual_leg_header
+      properties: {}
+      type: ColumnPanel
     - layout_properties: {grid_position: 'RHWEOT,BXAXVS'}
       name: repeatingpanel_manual_legs
       properties: {item_template: Form1.Form_ManualLegEntry}
