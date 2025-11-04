@@ -340,7 +340,49 @@ class Form1(Form1Template):
     self.card_trade_entry.visible=False
 
   def button_save_manual_trade_click(self, **event_args):
-    """This method is called when the button is clicked"""
-    pass
     
+    # 1. Get the data that's common to the whole transaction
+    selected_type = self.dropdown_manual_transaction_type.selected_value
+    underlying = self.textbox_manual_underlying.text
+    trade_date = self.datepicker_manual_date.date
   
+    # 2. Create a list to hold the data from each leg row
+    legs_data_list = []
+  
+    # 3. Loop through each row in the repeating panel
+    # .get_components() returns a list of the Form_ManualLegEntry instances
+    for leg_row_form in self.repeatingpanel_manual_legs.get_components():
+  
+      try:
+        # 4. Read the data from the components in that row
+        leg_data = {
+          'action': leg_row_form.dropdown_manual_leg_action.selected_value,
+          'quantity': int(leg_row_form.textbox_manual_leg_quantity.text),
+          'type': leg_row_form.dropdown_manual_leg_type.selected_value,
+          'strike': float(leg_row_form.textbox_manual_leg_strike.text),
+          'expiration': leg_row_form.datepicker_manual_leg_expiration.date
+        }
+  
+        # 5. Add this leg's data to our list
+        legs_data_list.append(leg_data)
+  
+      except Exception as e:
+        alert(f"Error reading leg data: {e}. Please check your inputs.")
+        return # Stop processing if there's an error
+  
+      # 6. For now, just print the collected data to the console
+    print(f"Transaction Type: {selected_type}")
+    print(f"Underlying: {underlying}")
+    print(f"Trade Date: {trade_date}")
+    print("Collected Legs:")
+    for leg in legs_data_list:
+      print(leg)
+  
+      # --- Next Step (not yet implemented) ---
+      # anvil.server.call('save_manual_trade', 
+      #                   selected_type, 
+      #                   underlying, 
+      #                   trade_date, 
+      #                   legs_data_list)
+      
+    

@@ -18,7 +18,7 @@ components:
     name: textbox_manual_leg_strike
     properties: {tooltip: strike, type: number}
     type: TextBox
-  - layout_properties: {col_xs: 8, row: YOSOIP, width_xs: 2}
+  - layout_properties: {col_xs: 8, row: YOSOIP, width_xs: 3}
     name: datepicker_manual_leg_expiration
     properties: {tooltip: expiry}
     type: DatePicker
