@@ -284,5 +284,45 @@ class Form1(Form1Template):
       self.timer_order_status.enabled = True
     else:
       self.timer_order_status.enabled = False
+
+  def dropdown_manual_transaction_type_change(self, **event_args):
+    """Shows the correct number of leg entry rows based on
+    what type of manual transaction is being entered.
+    """
+    selected_type = self.dropdown_manual_transaction_type.selected_value
+
+    # We'll use a simple list of numbers to tell the panel how many rows to create.
+    num_rows_to_create = 0
+
+    if selected_type == 'Open: Cash-Secured Put':
+      num_rows_to_create = 1
+
+    elif (selected_type == 'Open: Diagonal' or 
+         selected_type == 'Close: Diagonal' or
+         selected_type == 'Roll: Leg'):
+      num_rows_to_create = 2
+
+    elif selected_type == 'Roll: Spread':
+      num_rows_to_create = 4
+
+    # You can add logic for other types (like stock) here
+    # For now, we'll hide the panel if it's not an option trade
+    if num_rows_to_create > 0:
+      # Give the panel a dummy list to create the blank rows
+      self.repeatingpanel_manual_legs.items = range(num_rows_to_create)
+      self.repeatingpanel_manual_legs.visible = True
+    else:
+      # Hide the panel if no legs are needed
+      self.repeatingpanel_manual_legs.items = []
+      self.repeatingpanel_manual_legs.visible = False
+
+  def button_add_trade_click(self, **event_args):
+    """This method is called when the button is clicked"""
+    self.card_manual_entry.visible = True
+
+  def button_cancel_trade_ticket_click(self, **event_args):
+    """This method is called when the button is clicked"""
+    alert("need to code the clear trade entry logic")
+    self.card_trade_entry.visible=False
     
   

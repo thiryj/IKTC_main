@@ -33,33 +33,78 @@ components:
       name: button_tab_trade_history
       properties: {role: outlined-button, text: Trade History}
       type: Button
-    - layout_properties: {grid_position: 'EBOQNN,FBLFCN'}
-      name: flow_panel_5
-      properties: {}
-      type: FlowPanel
-    - layout_properties: {grid_position: 'RFHAUB,PXLCSQ'}
-      name: textbox_symbol
-      properties: {text: IWM}
-      type: TextBox
-    - layout_properties: {grid_position: 'RFHAUB,XMBZFN'}
-      name: dropdown_strategy_picker
-      properties:
-        items: [diagonal put spread, cash secured put]
-      type: DropDown
-    - event_bindings: {click: button_find_new_trade_click}
-      layout_properties: {grid_position: 'RFHAUB,OVPZUR'}
-      name: button_find_new_trade
-      properties: {role: tonal-button, text: Find New Trade}
-      type: Button
+    - components:
+      - components:
+        - layout_properties: {}
+          name: textbox_symbol
+          properties: {text: IWM, visible: true}
+          type: TextBox
+        - layout_properties: {}
+          name: dropdown_strategy_picker
+          properties:
+            items: [diagonal put spread, cash secured put]
+            visible: true
+          type: DropDown
+        - event_bindings: {click: button_find_new_trade_click}
+          layout_properties: {}
+          name: button_find_new_trade
+          properties: {role: tonal-button, text: Find New Trade}
+          type: Button
+        layout_properties: {grid_position: 'ZEONBW,LMYPLJ'}
+        name: flow_panel_5
+        properties: {}
+        type: FlowPanel
+      layout_properties: {grid_position: 'MESWAF,HVFKKD'}
+      name: outlined_card_1
+      properties: {role: outlined-card}
+      type: ColumnPanel
     layout_properties: {grid_position: 'WEXHDV,OVDWXJ'}
     name: columnpanel_tabs
     properties: {}
+    type: ColumnPanel
+  - components:
+    - layout_properties: {grid_position: 'MNAHGQ,SZQSOL'}
+      name: label_manual_entry_card
+      properties: {role: title, text: Manual Entry}
+      type: Label
+    - components:
+      - event_bindings: {change: dropdown_manual_transaction_type_change}
+        layout_properties: {col_xs: 0, row: CXCZWP, width_xs: 3}
+        name: dropdown_manual_transaction_type
+        properties:
+          items: [Select Transaction Type, 'Open: Diagonal', 'Close: Diagonal', 'Open: Cash-Secured Put', 'Event: Assignment (Stock In)', 'Close: Leg', 'Close: Stock (Covered Call)']
+          role: null
+        type: DropDown
+      - layout_properties: {col_xs: 3, row: CXCZWP, width_xs: 2}
+        name: textbox_manual_underlying
+        properties: {}
+        type: TextBox
+      - layout_properties: {col_xs: 5, row: CXCZWP, width_xs: 3}
+        name: datepicker_manual_date
+        properties: {}
+        type: DatePicker
+      layout_properties: {grid_position: 'MRHWMP,KALBZV'}
+      name: grid_panel_2
+      properties: {}
+      type: GridPanel
+    - layout_properties: {grid_position: 'RHWEOT,BXAXVS'}
+      name: repeatingpanel_manual_legs
+      properties: {item_template: Form1.Form_ManualLegEntry}
+      type: RepeatingPanel
+    layout_properties: {grid_position: 'INDILH,QORQWO'}
+    name: card_manual_entry
+    properties: {role: outlined-card, visible: false}
     type: ColumnPanel
   - components:
     - layout_properties: {grid_position: 'NJKUND,VBLFDD'}
       name: label_trade_ticket_title
       properties: {role: title, text: Trade Ticket}
       type: Label
+    - event_bindings: {click: button_cancel_trade_ticket_click}
+      layout_properties: {grid_position: 'NJKUND,MSKTRK'}
+      name: button_cancel_trade_ticket
+      properties: {align: right, text: Cancel Trade Ticket}
+      type: Button
     - components: []
       layout_properties: {grid_position: 'YIUWNA,HWWRZO'}
       name: column_panel_6
@@ -249,14 +294,15 @@ components:
       properties: {role: title, text: Open Positions}
       type: Label
     - components:
-      - layout_properties: {col_xs: 1, row: NIVWQS, width_xs: 3}
-        name: button_1
-        properties: {text: button_1}
+      - event_bindings: {click: button_add_trade_click}
+        layout_properties: {}
+        name: button_add_trade
+        properties: {role: tonal-button, text: Manually Add Trade}
         type: Button
-      layout_properties: {grid_position: 'GGQZJV,YJQTBI'}
-      name: grid_panel_1
+      layout_properties: {grid_position: 'AOJHSR,NRZYAU'}
+      name: flow_panel_8
       properties: {}
-      type: GridPanel
+      type: FlowPanel
     - components:
       - layout_properties: {}
         name: repeatingpanel_open_positions
