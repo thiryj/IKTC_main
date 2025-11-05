@@ -378,23 +378,23 @@ class Form1(Form1Template):
         return # Stop processing if there's an error
   
     
-      try:
-        response = anvil.server.call('save_manual_trade', 
-                         selected_type, 
-                         underlying, 
-                         trade_date, 
-                         legs_data_list)
-        alert(response)
+    try:
+      response = anvil.server.call('save_manual_trade', 
+                        selected_type, 
+                        underlying, 
+                        trade_date, 
+                        legs_data_list)
+      alert(response)
 
-        # 5. Hide the card and refresh your open positions
-        self.card_manual_entry.visible = False
-        # You'll need a function to refresh your grids
-        self.refresh_open_positions_grid() 
-        self.reset_manual_trade_card()
-        self.card_manual_entry.visible=False
+      # 5. Hide the card and refresh your open positions
+      self.card_manual_entry.visible = False
+      # You'll need a function to refresh your grids
+      self.refresh_open_positions_grid() 
+      self.reset_manual_trade_card()
+      self.card_manual_entry.visible=False
 
-      except Exception as e:
-          alert(f"Failed to save trade: {e}")
+    except Exception as e:
+        alert(f"Failed to save trade: {e}")
 
   def refresh_open_positions_grid(self):
     """
