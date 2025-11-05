@@ -81,6 +81,42 @@ def get_open_trades():
   open_trades_list = list(app_tables.trades.search(Status=q.full_text_match('Open')))
   #print(f"Found {len(open_trades_list)} open trades.")
   return open_trades_list
+
+@anvil.server.callable
+def get_open_trades_with_risk():
+  """
+    Fetches all open trades, then enriches them with live
+    pricing and assignment risk data from the Tradier API.
+    """
+
+  # 1. Get all open trades from our database
+  open_trades = app_tables.trades.search(Status='Open')
+
+  print(f"Found {len(open_trades)} open trades to analyze...")
+
+  # This will hold our new, enriched list of DTOs
+  enriched_trades_list = []
+
+  # 2. Loop through each trade
+  for trade in open_trades:
+    # --- This is where we'll add all the logic ---
+
+    # For now, let's just create a basic DTO
+    trade_dto = {
+      'Underlying': trade['Underlying'],
+      'Strategy': trade['Strategy'],
+      'OpenDate': trade['OpenDate'],
+      'extrinsic_value': None, # Placeholder
+      'is_at_risk': False       # Placeholder
+    }
+
+    # We need logic here to find the current short leg,
+    # get live quotes, and do the risk calculation.
+
+    enriched_trades_list.append(trade_dto)
+
+    # 3. Return the new list of DTOs
+  return enriched_trades_list
   
 @anvil.server.callable
 def get_closed_trades():
