@@ -14,3 +14,7 @@ TRADE_ONE = True
 USER_CONFIRMATION = True
 DAYS_TO_NOT_OPEN = (4,)  # data shows don't open bullish positions on Friday because prices are statistically higher
 ROLL = False
+
+#ENUMS and sets
+OPEN_ACTIONS = {'Sell to Open', 'Buy to Open'}
+CLOSE_ACTIONS = {'Sell to Close', 'Buy to Close'}

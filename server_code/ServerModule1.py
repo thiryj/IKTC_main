@@ -88,20 +88,27 @@ def get_open_trades_with_risk():
     Fetches all open trades, then enriches them with live
     pricing and assignment risk data from the Tradier API.
     """
-
-  # 1. Get all open trades from our database
   open_trades = app_tables.trades.search(Status='Open')
-
   print(f"Found {len(open_trades)} open trades to analyze...")
-
-  # This will hold our new, enriched list of DTOs
   enriched_trades_list = []
 
-  # 2. Loop through each trade
   for trade in open_trades:
-    # --- This is where we'll add all the logic ---
+    current_short_leg = None
+    try:
+      # 1. Find all transactions for this trade
+      trade_transactions = app_tables.transactions.search(Trade=trade)
 
-    # For now, let's just create a basic DTO
+      # 2. Find the one active short leg linked to this trade
+      current_short_leg = app_tables.legs.search(
+        Transaction=q.any_of(*trade_transactions), # Find legs for any of these transactions
+        active=True,                               # That is flagged as 'active'
+        Action=q.any_of(*server_config.OPEN_ACTIONS) # And is a short leg (optional, but good)
+      )[0] # Get the first (and hopefully only) one
+      
+    except Exception as e:
+      print(f"Could not find an 'active' short leg for trade {trade['Underlying']}: {e}")
+      pass # This trade will be skipped
+      
     trade_dto = {
       'Underlying': trade['Underlying'],
       'Strategy': trade['Strategy'],
@@ -110,11 +117,8 @@ def get_open_trades_with_risk():
       'is_at_risk': False       # Placeholder
     }
 
-    # We need logic here to find the current short leg,
-    # get live quotes, and do the risk calculation.
-
     enriched_trades_list.append(trade_dto)
-
+    # get live quotes, and do the risk calculation.
     # 3. Return the new list of DTOs
   return enriched_trades_list
   
@@ -278,13 +282,18 @@ def save_manual_trade(transaction_type, underlying, trade_date, net_price, legs_
 
     # 3. Loop through the legs and create the 'Legs' rows
     for leg in legs_data:
+      
+      # We only set 'active' to True if it's an 'Open' action
+      is_active = leg['action'] in server_config.OPEN_ACTIONS
+      
       app_tables.legs.add_row(
         Transaction=new_transaction, # Link to the transaction
         Action=leg['action'],
         Quantity=leg['quantity'],
         OptionType=leg['type'],
         Expiration=leg['expiration'],
-        Strike=leg['strike']
+        Strike=leg['strike'],
+        active=is_active
       )
     return "Trade saved successfully!"
 
