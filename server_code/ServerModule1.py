@@ -213,7 +213,7 @@ def cancel_order(environment: str, order_id: int):
     return "Error"
 
 @anvil.server.callable
-def save_manual_trade(transaction_type, underlying, trade_date, legs_data):
+def save_manual_trade(transaction_type, underlying, trade_date, net_price, legs_data):
   """
     Receives data from the manual entry form and saves it
     to the Trades, Transactions, and Legs tables.
@@ -236,8 +236,8 @@ def save_manual_trade(transaction_type, underlying, trade_date, legs_data):
     new_transaction = app_tables.transactions.add_row(
       Trade=new_trade,  # Link to the trade we just created
       TransactionDate=trade_date,
-      TransactionType=transaction_type
-      # We'll leave CreditDebit null for now
+      TransactionType=transaction_type,
+      CreditDebit=net_price
     )
 
     # 3. Loop through the legs and create the 'Legs' rows

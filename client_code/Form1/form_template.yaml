@@ -83,6 +83,10 @@ components:
         name: datepicker_manual_date
         properties: {}
         type: DatePicker
+      - layout_properties: {col_xs: 9, row: CXCZWP, width_xs: 2}
+        name: textbox_manual_credit_debit
+        properties: {placeholder: credit/debit, type: number}
+        type: TextBox
       layout_properties: {grid_position: 'MRHWMP,KALBZV'}
       name: grid_panel_2
       properties: {}
@@ -330,6 +334,7 @@ components:
       layout_properties: {grid_position: 'CPQNAQ,LRQOGI'}
       name: datagrid_open_positions
       properties:
+        auto_header: true
         columns:
         - {data_key: OpenDate, id: VLJSED, title: OpenDate}
         - {data_key: Underlying, id: WKXBSM, title: Underlying}

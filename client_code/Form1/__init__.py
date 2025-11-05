@@ -346,9 +346,13 @@ class Form1(Form1Template):
     selected_type = self.dropdown_manual_transaction_type.selected_value
     underlying = self.textbox_manual_underlying.text
     trade_date = self.datepicker_manual_date.date
-
     if not underlying or not trade_date:
       alert("Please enter an underlying and a date.")
+      return
+    try:
+      net_price = float(self.textbox_manual_credit_debit.text)
+    except (TypeError, ValueError):
+      alert("Please enter a valid net credit/debit number (e.g., 1.50 or -0.25).")
       return
   
     # 2. Create a list to hold the data from each leg row
@@ -377,12 +381,12 @@ class Form1(Form1Template):
         alert(f"Error reading leg data: {e}. Please check your inputs.")
         return # Stop processing if there's an error
   
-    
     try:
       response = anvil.server.call('save_manual_trade', 
                         selected_type, 
                         underlying, 
                         trade_date, 
+                        net_price,
                         legs_data_list)
       alert(response)
 
