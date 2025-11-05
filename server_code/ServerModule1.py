@@ -1,21 +1,21 @@
-import anvil.secrets
-import anvil.tables as tables
-import anvil.tables.query as q
-from anvil.tables import app_tables
+# anvil section
 import anvil.server
 import anvil.secrets
-from tradier_python import TradierAPI
-import server_helpers
-import server_config
-import positions
+import anvil.tables.query as q
+from anvil.tables import app_tables
+
+# public lib sectoin
 import math
 from typing import Dict, Tuple
 import datetime
 import json
+from tradier_python import TradierAPI
 
-# This is a server module. It runs on the Anvil server,
-# rather than in the user's browser.
-#
+# personal lib section
+import server_helpers
+import server_config
+import positions
+
 # To allow anvil.server.call() to call functions here, we mark
 #
 @anvil.server.callable
@@ -156,51 +156,6 @@ def submit_order(environment: str='SANDBOX',
   print(f"trade response: {trade_response}")
   return trade_response
   
-def submit_real_order(environment='SANDBOX', position: positions.DiagonalPutSpread=None):
-  pass
-"""
-  # since preview was good, submit real order
-  if server_config.PLACE_TRADE:
-    # skip on Friday if enabled
-    if not server_config.ROLL and datetime.date.today().weekday() in server_config.DAYS_TO_NOT_OPEN:
-      print("Don't open new positions on Friday.  Override by editing flag")
-      return
-      # ask user if they want to over ride price
-    limit_price_str = input("Input limit price or 'M' to use calculated market price:")
-    try:
-      limit_price = float(limit_price_str)
-    except ValueError:
-      limit_price = None
-      # handle user confirmation if enabled
-    if server_config.USER_CONFIRMATION:
-      trade_auth_response = input("Send Trade? (Y or N):")
-      if trade_auth_response != "Y":
-        print("Trade cancelled by user")
-        return
-      else:
-        print("Trade authorized by user")
-    order_data = server_helpers.submit_diagonal_spread_order(t, 
-                                                      endpoint_url, 
-                                                      underlying_symbol,
-                                                      quantity, 
-                                                      positions_list, 
-                                                      preview=False,
-                                                      limit_price=limit_price )
-
-    if order_data and order_data.get('order', {}).get('status') == 'ok':
-      print("--- Order Submitted Successfully ---")
-      order_id = order_data['order']['id']
-      print(f"Order ID: {order_id}")
-    else:
-      print("--- Failed to Submit Real Order ---")
-      print(json.dumps(order_data, indent=2))
-  else:
-    print("Trading not enabled")
-else:
-  print("--- Order Preview Failed or Invalid ---")
-  print(json.dumps(preview_data, indent=2))
-"""
-
 @anvil.server.callable
 def get_quantity(best_position: positions.DiagonalPutSpread)->int:
   # calculate quantity based on fixed allocation.  
@@ -256,3 +211,47 @@ def cancel_order(environment: str, order_id: int):
   except Exception as e:
     print(f"Error canceling order: {e}")
     return "Error"
+
+@anvil.server.callable
+def save_manual_trade(transaction_type, underlying, trade_date, legs_data):
+  """
+    Receives data from the manual entry form and saves it
+    to the Trades, Transactions, and Legs tables.
+    """
+  print(f"Server saving: {transaction_type} for {underlying}")
+  try:
+    # 1. Create the parent 'Trades' row
+    # We'll set the status based on the transaction type
+    status = 'Open' if 'Open:' in transaction_type else 'Closed'
+    
+    new_trade = app_tables.trades.add_row(
+      Underlying=underlying,
+      Strategy=transaction_type, # e.g., "Open: Diagonal"
+      Status=status,
+      OpenDate=trade_date
+    )
+    
+    # 2. Create the 'Transactions' row
+    # This transaction represents the 'Open' or 'Close' event
+    new_transaction = app_tables.transactions.add_row(
+      Trade=new_trade,  # Link to the trade we just created
+      TransactionDate=trade_date,
+      TransactionType=transaction_type
+      # We'll leave CreditDebit null for now
+    )
+
+    # 3. Loop through the legs and create the 'Legs' rows
+    for leg in legs_data:
+      app_tables.legs.add_row(
+        Transaction=new_transaction, # Link to the transaction
+        Action=leg['action'],
+        Quantity=leg['quantity'],
+        OptionType=leg['type'],
+        Expiration=leg['expiration'],
+        Strike=leg['strike']
+      )
+    return "Trade saved successfully!"
+
+  except Exception as e:
+    print(f"Error saving manual trade: {e}")
+    return f"Error: {e}"

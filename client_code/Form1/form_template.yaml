@@ -63,10 +63,25 @@ components:
     properties: {}
     type: ColumnPanel
   - components:
-    - layout_properties: {grid_position: 'MNAHGQ,SZQSOL'}
-      name: label_manual_entry_card
-      properties: {role: title, text: Manual Entry}
-      type: Label
+    - components:
+      - layout_properties: {col_xs: 0, row: EQYMTH, width_xs: 3}
+        name: label_manual_entry_card
+        properties: {role: title, text: Manual Entry}
+        type: Label
+      - event_bindings: {click: button_cancel_manual_trade_click}
+        layout_properties: {col_xs: 10, row: EQYMTH, width_xs: 2}
+        name: button_cancel_manual_trade
+        properties: {text: Cancel}
+        type: Button
+      layout_properties: {grid_position: 'VAEOGG,EKSJEQ'}
+      name: grid_panel_1
+      properties: {}
+      type: GridPanel
+    - components: []
+      layout_properties: {grid_position: 'LRSZZM,NFLIUB'}
+      name: column_panel_8
+      properties: {}
+      type: ColumnPanel
     - components:
       - event_bindings: {change: dropdown_manual_transaction_type_change}
         layout_properties: {col_xs: 0, row: CXCZWP, width_xs: 3}
@@ -77,16 +92,16 @@ components:
         type: DropDown
       - layout_properties: {col_xs: 3, row: CXCZWP, width_xs: 2}
         name: textbox_manual_underlying
-        properties: {}
+        properties: {text: IWM}
         type: TextBox
       - layout_properties: {col_xs: 5, row: CXCZWP, width_xs: 3}
         name: datepicker_manual_date
         properties: {}
         type: DatePicker
       - event_bindings: {click: button_save_manual_trade_click}
-        layout_properties: {col_xs: 9, row: CXCZWP, width_xs: 3}
+        layout_properties: {col_xs: 8, row: CXCZWP, width_xs: 2}
         name: button_save_manual_trade
-        properties: {text: Save Trade}
+        properties: {enabled: false, role: tonal-button, text: Save Trade}
         type: Button
       layout_properties: {grid_position: 'MRHWMP,KALBZV'}
       name: grid_panel_2

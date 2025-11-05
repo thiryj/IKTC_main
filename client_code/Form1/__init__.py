@@ -17,11 +17,8 @@ class Form1(Form1Template):
     # Any code you write here will run before the form opens.
     # Log into default environment as displayed in the dropdown
     self.dropdown_environment_change()
-    
-    # Load data for the open positions grid
-    open_trades_data = anvil.server.call('get_open_trades')
-    #print("Data received on the client:", open_trades_data)  # <-- ADD THIS LINE
-    self.repeatingpanel_open_positions.items = open_trades_data
+
+    self.refresh_open_positions_grid() 
     
     # Load data for the trade history grid
     self.repeatingpanel_trade_history.items = anvil.server.call('get_closed_trades')
@@ -329,10 +326,14 @@ class Form1(Form1Template):
       # Hide the panel if no legs are needed
       self.repeatingpanel_manual_legs.items = []
       self.repeatingpanel_manual_legs.visible = False
+    
+    self.button_save_manual_trade.enabled=True
 
   def button_add_trade_click(self, **event_args):
     """This method is called when the button is clicked"""
     self.card_manual_entry.visible = True
+    self.datepicker_manual_date.max_date=date.today()
+    self.datepicker_manual_date.date=date.today()
 
   def button_cancel_trade_ticket_click(self, **event_args):
     """This method is called when the button is clicked"""
@@ -345,6 +346,10 @@ class Form1(Form1Template):
     selected_type = self.dropdown_manual_transaction_type.selected_value
     underlying = self.textbox_manual_underlying.text
     trade_date = self.datepicker_manual_date.date
+
+    if not underlying or not trade_date:
+      alert("Please enter an underlying and a date.")
+      return
   
     # 2. Create a list to hold the data from each leg row
     legs_data_list = []
@@ -362,7 +367,9 @@ class Form1(Form1Template):
           'strike': float(leg_row_form.textbox_manual_leg_strike.text),
           'expiration': leg_row_form.datepicker_manual_leg_expiration.date
         }
-  
+        if not all(leg_data.values()):
+          alert("Please fill out all fields for each leg.")
+          return
         # 5. Add this leg's data to our list
         legs_data_list.append(leg_data)
   
@@ -370,19 +377,53 @@ class Form1(Form1Template):
         alert(f"Error reading leg data: {e}. Please check your inputs.")
         return # Stop processing if there's an error
   
-      # 6. For now, just print the collected data to the console
-    print(f"Transaction Type: {selected_type}")
-    print(f"Underlying: {underlying}")
-    print(f"Trade Date: {trade_date}")
-    print("Collected Legs:")
-    for leg in legs_data_list:
-      print(leg)
+    
+      try:
+        response = anvil.server.call('save_manual_trade', 
+                         selected_type, 
+                         underlying, 
+                         trade_date, 
+                         legs_data_list)
+        alert(response)
+
+        # 5. Hide the card and refresh your open positions
+        self.card_manual_entry.visible = False
+        # You'll need a function to refresh your grids
+        self.refresh_open_positions_grid() 
+
+      except Exception as e:
+          alert(f"Failed to save trade: {e}")
+
+  # In Form1 code
+
+  def refresh_open_positions_grid(self):
+    """
+      Fetches the latest open trades from the server
+      and updates the open positions grid.
+      """
+    print("Refreshing open positions grid...")
+    # Get the latest data from the server
+    open_trades_data = anvil.server.call('get_open_trades')
   
-      # --- Next Step (not yet implemented) ---
-      # anvil.server.call('save_manual_trade', 
-      #                   selected_type, 
-      #                   underlying, 
-      #                   trade_date, 
-      #                   legs_data_list)
+    # Assign the new data to your repeating panel
+    # (Using the name you confirmed earlier)
+    self.repeatingpanel_open_positions.items = open_trades_data
+
+  def button_cancel_manual_trade_click(self, **event_args):
+    """
+      Called when the 'Cancel' button on the manual entry card is clicked.
+      """
+    self.card_manual_entry.visible = False
+    self.reset_manual_trade_card()
+    self.refresh_open_positions_grid()
+
+  def reset_manual_trade_card(self):
+    """
+      Resets all input components on the manual entry card to a default state.
+      """
+    self.dropdown_manual_transaction_type.selected_value = None
+    self.textbox_manual_underlying = config.UNDERLYING_SYMBOL
+    self.datepicker_manual_date.date = date.today() 
+    self.repeatingpanel_manual_legs.items = []
       
     
