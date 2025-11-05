@@ -390,11 +390,11 @@ class Form1(Form1Template):
         self.card_manual_entry.visible = False
         # You'll need a function to refresh your grids
         self.refresh_open_positions_grid() 
+        self.reset_manual_trade_card()
+        self.card_manual_entry.visible=False
 
       except Exception as e:
           alert(f"Failed to save trade: {e}")
-
-  # In Form1 code
 
   def refresh_open_positions_grid(self):
     """
@@ -422,7 +422,7 @@ class Form1(Form1Template):
       Resets all input components on the manual entry card to a default state.
       """
     self.dropdown_manual_transaction_type.selected_value = None
-    self.textbox_manual_underlying = config.UNDERLYING_SYMBOL
+    self.textbox_manual_underlying.text = config.UNDERLYING_SYMBOL
     self.datepicker_manual_date.date = date.today() 
     self.repeatingpanel_manual_legs.items = []
       
