@@ -8,15 +8,35 @@ from anvil.tables import app_tables
 
 class RowTemplate_OpenPositions(RowTemplate_OpenPositionsTemplate):
   def __init__(self, **properties):
-    # Set Form properties and Data Bindings.
     self.init_components(**properties)
 
-    # The 'self.item' property is automatically populated by the Repeating Panel
-    # with the data for this specific row (one of your 'Trades' table rows).
-  
-    self.label_underlying.text = self.item['Underlying']
-    self.label_strategy.text = self.item['Strategy']
-  
-    # Date objects need to be formatted into a string to be displayed
-    if self.item['OpenDate']:
-      self.label_open_date.text = self.item['OpenDate'].strftime("%Y-%m-%d")
+    # --- 1. Your existing code to set labels ---
+    if self.item:
+      self.label_underlying.text = self.item['Underlying']
+      self.label_strategy.text = self.item['Strategy']
+      if self.item['OpenDate']:
+        self.label_open_date.text = self.item['OpenDate'].strftime("%Y-%m-%d")
+
+    # --- 2. NEW RISK INDICATOR LOGIC ---
+    if self.item:
+      extrinsic_val = self.item.get('extrinsic_value')
+      is_at_risk = self.item.get('is_at_risk', False) # Default to False
+
+      if extrinsic_val is not None:
+        # Show the label and set its text
+        self.label_assignment_risk.visible = True
+        self.label_assignment_risk.text = f"Extrinsic: ${extrinsic_val:.2f}"
+      else:
+        # Hide the label if we don't have data
+        self.label_assignment_risk.visible = False
+
+        # --- 3. This is your "Flashing Red Button" idea ---
+      if is_at_risk:
+        # Set the label's color to red
+        self.label_assignment_risk.foreground = 'red'
+        self.button_roll.background = 'theme:Error'
+      else:
+        # Reset to default colors
+        self.label_assignment_risk.foreground = None
+        self.button_roll.background = None
+        

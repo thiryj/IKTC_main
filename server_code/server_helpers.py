@@ -39,6 +39,16 @@ def get_tradier_client(environment: str)->Tuple[TradierAPI, str]:
     default_account_id=account_id, 
     endpoint=endpoint_url)
   return t, endpoint_url
+
+def get_quote(environment: str, symbol: str) ->str:
+  # get full quote data for a single symbol
+  t, endpoint_url = get_tradier_client(environment)
+  quote_list = t.get_quotes([symbol, "bogus"], greeks=False)
+  # note:  needed to send a fake symbol in because of a bug in the get_quotes endpoint
+  if quote_list:
+    return quote_list[0]
+  else:
+    return None
     
 def get_near_term_expirations(tradier_client: TradierAPI, 
                               symbol: str, 
@@ -247,3 +257,24 @@ def get_expiration_date(symbol: str) -> date | None:
   except (ValueError, IndexError):
     # Handles cases where the symbol is malformed or too short
     return None
+
+# In ServerModule1.py
+
+def build_occ_symbol(underlying, expiration_date, option_type, strike):
+  """
+    Builds a 21-character OCC option symbol from its parts.
+    e.g., IWM, 2025-11-03, Put, 247 -> IWM251103P00247000
+    """
+  # Format date to YYMMDD (e.g., '251103')
+  exp_str = expiration_date.strftime('%y%m%d')
+
+  # Format type to P or C
+  type_char = 'P' if option_type == 'Put' else 'C'
+
+  # Format strike to 8-digit string, (e.g., 247 -> '00247000')
+  # This assumes strike is a number. We multiply by 1000 and pad with zeros.
+  strike_int = int(strike * 1000)
+  strike_str = f"{strike_int:08d}"
+
+  # Combine all parts
+  return f"{underlying}{exp_str}{type_char}{strike_str}"

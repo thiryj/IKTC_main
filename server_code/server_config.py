@@ -7,6 +7,7 @@ import anvil.server
 ALLOCATION = 10000
 MAX_DTE = 90
 LONG_STRIKE_DELTA_MAX = 25  # how much lower than short strike to search
+ASSIGNMENT_RISK_THRESHOLD = 0.1
 
 #FLAGS
 PLACE_TRADE = True
@@ -18,3 +19,5 @@ ROLL = False
 #ENUMS and sets
 OPEN_ACTIONS = {'Sell to Open', 'Buy to Open'}
 CLOSE_ACTIONS = {'Sell to Close', 'Buy to Close'}
+OPTION_TYPE_PUT = 'Put'
+OPTION_TYPE_CALL = 'Call'

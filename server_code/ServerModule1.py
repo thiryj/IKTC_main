@@ -83,7 +83,7 @@ def get_open_trades():
   return open_trades_list
 
 @anvil.server.callable
-def get_open_trades_with_risk():
+def get_open_trades_with_risk(environment: str='SANDBOX'):
   """
     Fetches all open trades, then enriches them with live
     pricing and assignment risk data from the Tradier API.
@@ -92,23 +92,9 @@ def get_open_trades_with_risk():
   print(f"Found {len(open_trades)} open trades to analyze...")
   enriched_trades_list = []
 
-  for trade in open_trades:
-    current_short_leg = None
-    try:
-      # 1. Find all transactions for this trade
-      trade_transactions = app_tables.transactions.search(Trade=trade)
+  tradier_client, endpoint_url = server_helpers.get_tradier_client(environment)
 
-      # 2. Find the one active short leg linked to this trade
-      current_short_leg = app_tables.legs.search(
-        Transaction=q.any_of(*trade_transactions), # Find legs for any of these transactions
-        active=True,                               # That is flagged as 'active'
-        Action=q.any_of(*server_config.OPEN_ACTIONS) # And is a short leg (optional, but good)
-      )[0] # Get the first (and hopefully only) one
-      
-    except Exception as e:
-      print(f"Could not find an 'active' short leg for trade {trade['Underlying']}: {e}")
-      pass # This trade will be skipped
-      
+  for trade in open_trades:
     trade_dto = {
       'Underlying': trade['Underlying'],
       'Strategy': trade['Strategy'],
@@ -116,7 +102,54 @@ def get_open_trades_with_risk():
       'extrinsic_value': None, # Placeholder
       'is_at_risk': False       # Placeholder
     }
+    
+    try:
+      # 1. Find the active short leg (your existing query)
+      trade_transactions = app_tables.transactions.search(Trade=trade)
+      current_short_leg = app_tables.legs.search(
+        Transaction=q.any_of(*trade_transactions), # Find legs for any of these transactions
+        active=True,                               # That is flagged as 'active'
+        Action=q.any_of(*server_config.OPEN_ACTIONS) # And is a short leg (optional, but good)
+      )[0] # Get the first (and hopefully only) one
 
+      # 2. Get live underlying price
+      underlying_symbol = trade['Underlying']
+      underlying_price = get_underlying_quote(environment, underlying_symbol)
+
+      # 3. Build the OCC symbol for the short leg
+      occ_symbol = server_helpers.build_occ_symbol(
+        underlying=underlying_symbol,
+        expiration_date=current_short_leg['Expiration'],
+        option_type=current_short_leg['OptionType'],
+        strike=current_short_leg['Strike']
+      )
+      # 4. Get live option price
+      option_quote = server_helpers.get_quote(environment, occ_symbol)
+      option_price = option_quote.bid # Use bid price for a short option
+
+      # 5. Calculate extrinsic value
+      strike_price = current_short_leg['Strike']
+
+      if current_short_leg['OptionType'] == server_config.OPTION_TYPE_PUT:
+        intrinsic_value = max(0, strike_price - underlying_price)
+        extrinsic_value = option_price - intrinsic_value
+      elif current_short_leg['OptionType'] == server_config.OPTION_TYPE_CALL: 
+        intrinsic_value = max(0, underlying_price - strike_price)
+        extrinsic_value = option_price - intrinsic_value
+      else:
+        print("bad option type in get open trades with risk")
+
+      # 6. Populate the DTO with the new data
+      trade_dto['extrinsic_value'] = extrinsic_value
+
+      # Our risk rule: ITM and extrinsic is less than $0.10
+      if intrinsic_value > 0 and extrinsic_value < server_config.ASSIGNMENT_RISK_THRESHOLD:
+        trade_dto['is_at_risk'] = True
+      
+    except Exception as e:
+      print(f"Could not analyze risk for {trade['Underlying']}: {e}")
+      pass # This trade will be skipped
+      
     enriched_trades_list.append(trade_dto)
     # get live quotes, and do the risk calculation.
     # 3. Return the new list of DTOs

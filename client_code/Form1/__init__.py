@@ -401,17 +401,15 @@ class Form1(Form1Template):
         alert(f"Failed to save trade: {e}")
 
   def refresh_open_positions_grid(self):
-    """
-      Fetches the latest open trades from the server
-      and updates the open positions grid.
-      """
-    print("Refreshing open positions grid...")
-    # Get the latest data from the server
-    open_trades_data = anvil.server.call('get_open_trades')
+    print("Refreshing open positions with live risk data...")
+    # Get the environment from your dropdown
+    env = self.dropdown_environment.selected_value 
   
-    # Assign the new data to your repeating panel
-    # (Using the name you confirmed earlier)
+    # Call the new "smart" function and pass the environment
+    open_trades_data = anvil.server.call('get_open_trades_with_risk', env)
+  
     self.repeatingpanel_open_positions.items = open_trades_data
+    print("...Risk data loaded.")
 
   def button_cancel_manual_trade_click(self, **event_args):
     """
