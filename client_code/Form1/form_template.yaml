@@ -89,7 +89,8 @@ components:
         name: textbox_manual_credit_debit
         properties: {placeholder: credit/debit, type: number}
         type: TextBox
-      - layout_properties: {col_xs: 0, row: DWOICU, width_xs: 3}
+      - event_bindings: {change: dropdown_manual_existing_trade_change}
+        layout_properties: {col_xs: 0, row: DWOICU, width_xs: 3}
         name: dropdown_manual_existing_trade
         properties: {include_placeholder: true, placeholder: Select Open Trade, visible: false}
         type: DropDown

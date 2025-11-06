@@ -60,12 +60,53 @@ def get_open_trades_for_dropdown():
     of (display_text, item) tuples for a DropDown.
     """
   open_trades = app_tables.trades.search(Status='Open')
-
   dropdown_items = []
+
   for trade in open_trades:
-    # Create a nice display text, e.g., "SPY - Open: Diagonal"
-    display_text = f"{trade['Underlying']} - {trade['Strategy']}"
-    # The item in the tuple is the full, live trade row object
+    short_strike = "N/A"
+    long_strike = "N/A"
+
+    try:
+      # 1. Find all transactions for this trade
+      trade_transactions = app_tables.transactions.search(Trade=trade)
+
+      # 2. Find all active legs for these transactions
+      active_legs = app_tables.legs.search(
+        Transaction=q.any_of(*trade_transactions),
+        active=True
+      )
+
+      # 3. Find the short and long strikes from the active legs
+      # (This assumes a simple 2-leg spread for the display)
+      for leg in active_legs:
+        if leg['Action'] in server_config.OPEN_ACTIONS: # e.g., 'Sell to Open'
+          short_strike = leg['Strike']
+        elif leg['Action'] in server_config.OPEN_ACTIONS: # e.g., 'Buy to Open'
+          # This logic assumes the first 'Open' is short, the next is long
+          # A more robust way is to check the action text precisely
+          if leg['Strike'] != short_strike:
+            long_strike = leg['Strike']
+
+            # This is a cleaner, more direct query if your actions are distinct
+      short_leg = app_tables.legs.search(Transaction=q.any_of(*trade_transactions), active=True, Action='Sell to Open')
+      long_leg = app_tables.legs.search(Transaction=q.any_of(*trade_transactions), active=True, Action='Buy to Open')
+
+      if short_leg:
+        short_strike = short_leg[0]['Strike']
+      if long_leg:
+        long_strike = long_leg[0]['Strike']
+
+    except Exception as e:
+      print(f"Error finding legs for dropdown: {e}")
+      pass # Will just display N/A for strikes
+
+      # 4. Format the new display text
+    open_date_str = trade['OpenDate'].strftime('%Y-%m-%d')
+    display_text = (
+      f"{trade['Underlying']} ({short_strike} / {long_strike}) "
+      f"Opened: {open_date_str}"
+    )
+
     dropdown_items.append( (display_text, trade) )
 
   return dropdown_items
@@ -302,10 +343,29 @@ def cancel_order(environment: str, order_id: int):
     print(f"Error canceling order: {e}")
     return "Error"
 
-# In ServerModule1.py
+@anvil.server.callable
+def get_active_legs_for_trade(trade_row):
+  """
+    Finds all 'active' leg rows associated with a single trade.
+    """
+  try:
+    # 1. Find all transactions for this trade
+    trade_transactions = app_tables.transactions.search(Trade=trade_row)
+
+    # 2. Find all legs for those transactions that are 'active'
+    active_legs = app_tables.legs.search(
+      Transaction=q.any_of(*trade_transactions),
+      active=True
+    )
+
+    # 3. Return the list of leg rows
+    return list(active_legs)
+
+  except Exception as e:
+    print(f"Error getting active legs: {e}")
+    return []
 
 @anvil.server.callable
-# --- 1. UPDATE THE ARGUMENTS ---
 def save_manual_trade(transaction_type, trade_date, net_price, legs_data, 
                       underlying=None, existing_trade_row=None):
   """

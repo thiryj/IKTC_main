@@ -454,5 +454,9 @@ class Form1(Form1Template):
     self.textbox_manual_underlying.text = config.UNDERLYING_SYMBOL
     self.datepicker_manual_date.date = date.today() 
     self.repeatingpanel_manual_legs.items = []
+
+  def dropdown_manual_existing_trade_change(self, **event_args):
+    """This method is called when an item is selected"""
+    pass
       
     
