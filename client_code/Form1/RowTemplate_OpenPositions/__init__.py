@@ -39,4 +39,33 @@ class RowTemplate_OpenPositions(RowTemplate_OpenPositionsTemplate):
         # Reset to default colors
         self.label_assignment_risk.foreground = None
         self.button_roll.background = None
-        
+
+  def button_close_click(self, **event_args):
+    """
+      Called when the 'Close' button on this row is clicked.
+      """
+    # 'self.item' is the enriched DTO for this row.
+    # We need the original database row, which we stored in it.
+    trade_to_close = self.item['trade_row']
+  
+    # 'self.parent' is the repeating panel.
+    # We raise a custom event on it, passing the trade to be closed.
+    self.parent.raise_event('x_manual_entry_requested',
+                            trade=trade_to_close,
+                            action_type='Close: Diagonal')
+
+def button_roll_click(self, **event_args):
+  """
+    Called when the 'Roll' button on this row is clicked.
+    """
+
+  # 'self.item' is the enriched DTO for this row.
+  # We need the original database row, which we stored in it.
+  trade_to_close = self.item['trade_row']
+
+  # 'self.parent' is the repeating panel.
+  # We raise a custom event on it, passing the trade to be closed.
+  self.parent.raise_event('x_manual_entry_requested',
+                          trade=trade_to_close,
+                          action_type='Roll: Diagonal')
+          

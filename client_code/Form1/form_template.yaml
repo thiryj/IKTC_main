@@ -73,7 +73,7 @@ components:
         name: dropdown_manual_transaction_type
         properties:
           include_placeholder: true
-          items: ['Open: Diagonal', 'Close: Diagonal', 'Open: Cash-Secured Put', 'Close: Leg', 'Close: Stock (Covered Call)', 'Event: Assignment (Stock In)', 'Event: Assignment (Stock Out)', 'Roll: Spread']
+          items: ['Open: Diagonal', 'Roll: Diagonal', 'Close: Diagonal', 'Open: Cash-Secured Put', 'Close: Leg', 'Close: Stock (Covered Call)', 'Event: Assignment (Stock In)', 'Event: Assignment (Stock Out)', 'Roll: Spread']
           placeholder: Select Transaction Type
           role: null
         type: DropDown

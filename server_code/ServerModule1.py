@@ -448,15 +448,18 @@ def save_manual_trade(transaction_type, trade_date, net_price, legs_data,
         Strike=leg['strike'],
         active=is_active_flag # This will be False for "Close" actions
       )
+    print("starting pl update")  
     if 'Close:' in transaction_type:
       # Now that the closing transaction is saved, sum the P/L
       # Find all transactions for this trade
       all_transactions = app_tables.transactions.search(Trade=new_trade)
-
+      print(f"all transactions: {all_transactions}")
       total_pl = 0
+      
       for t in all_transactions:
         if t['CreditDebit'] is not None:
           total_pl += t['CreditDebit']
+          print(f"total PL: {total_pl}")
 
           # Update the parent trade row with the final numbers
       new_trade.update(
