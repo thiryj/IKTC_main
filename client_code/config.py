@@ -12,6 +12,7 @@ from anvil.tables import app_tables
 UNDERLYING_SYMBOL = "IWM"
 TRADE_TYPE_OPEN = 'open'
 TRADE_TYPE_ROLL = 'roll'
+NEW_TRADE_TYPES = {'Open: Diagonal', 'Open: Cash Secured Put'}
 
 
 # Globals

@@ -52,6 +52,23 @@ def get_underlying_quote(environment: str, symbol: str) ->float:
   underlying_price = underlying_quote[0].last
   print(f"Underlying price: {underlying_price}")
   return underlying_price
+
+@anvil.server.callable
+def get_open_trades_for_dropdown():
+  """
+    Fetches all open trades and formats them as a list
+    of (display_text, item) tuples for a DropDown.
+    """
+  open_trades = app_tables.trades.search(Status='Open')
+
+  dropdown_items = []
+  for trade in open_trades:
+    # Create a nice display text, e.g., "SPY - Open: Diagonal"
+    display_text = f"{trade['Underlying']} - {trade['Strategy']}"
+    # The item in the tuple is the full, live trade row object
+    dropdown_items.append( (display_text, trade) )
+
+  return dropdown_items
   
 @anvil.server.callable
 def get_tradier_positions(environment: str):
@@ -285,42 +302,61 @@ def cancel_order(environment: str, order_id: int):
     print(f"Error canceling order: {e}")
     return "Error"
 
+# In ServerModule1.py
+
 @anvil.server.callable
-def save_manual_trade(transaction_type, underlying, trade_date, net_price, legs_data):
+# --- 1. UPDATE THE ARGUMENTS ---
+def save_manual_trade(transaction_type, trade_date, net_price, legs_data, 
+                      underlying=None, existing_trade_row=None):
   """
-    Receives data from the manual entry form and saves it
-    to the Trades, Transactions, and Legs tables.
+    Saves a manual transaction.
+    - If 'underlying' is provided, it creates a NEW trade.
+    - If 'existing_trade_row' is provided, it adds a transaction TO that trade.
     """
-  print(f"Server saving: {transaction_type} for {underlying}")
+
+  new_trade = None # This will hold the trade we're working with
+
   try:
-    # 1. Create the parent 'Trades' row
-    # We'll set the status based on the transaction type
-    status = 'Open' if 'Open:' in transaction_type else 'Closed'
-    
-    new_trade = app_tables.trades.add_row(
-      Underlying=underlying,
-      Strategy=transaction_type, # e.g., "Open: Diagonal"
-      Status=status,
-      OpenDate=trade_date
-    )
-    
-    # 2. Create the 'Transactions' row
-    # This transaction represents the 'Open' or 'Close' event
+    # --- 2. THIS IS THE NEW LOGIC ---
+    if existing_trade_row:
+      # We are adding to an existing trade
+      print(f"Adding transaction to existing trade: {existing_trade_row['Underlying']}")
+      new_trade = existing_trade_row
+
+      # If this is a "Close" transaction, update the parent trade's status
+      if 'Close:' in transaction_type:
+        existing_trade_row.update(Status='Closed', CloseDate=trade_date)
+
+    elif underlying:
+      # We are creating a NEW trade
+      print(f"Creating new trade for: {underlying}")
+      status = 'Open' if 'Open:' in transaction_type else 'Closed'
+
+      new_trade = app_tables.trades.add_row(
+        Underlying=underlying,
+        Strategy=transaction_type,
+        Status=status,
+        OpenDate=trade_date
+      )
+    else:
+      raise ValueError("Must provide either an existing trade or a new underlying.")
+      # --- END OF NEW LOGIC ---
+
+
+      # 3. Create the 'Transactions' row (this logic is now universal)
     new_transaction = app_tables.transactions.add_row(
-      Trade=new_trade,  # Link to the trade we just created
+      Trade=new_trade,  # Link to the trade (either new or found)
       TransactionDate=trade_date,
       TransactionType=transaction_type,
-      CreditDebit=net_price
+      CreditDebit=net_price 
     )
 
-    # 3. Loop through the legs and create the 'Legs' rows
+    # 4. Loop through the legs (this logic is also universal)
     for leg in legs_data:
-      
-      # We only set 'active' to True if it's an 'Open' action
       is_active = leg['action'] in server_config.OPEN_ACTIONS
-      
+
       app_tables.legs.add_row(
-        Transaction=new_transaction, # Link to the transaction
+        Transaction=new_transaction,
         Action=leg['action'],
         Quantity=leg['quantity'],
         OptionType=leg['type'],
@@ -328,6 +364,7 @@ def save_manual_trade(transaction_type, underlying, trade_date, net_price, legs_
         Strike=leg['strike'],
         active=is_active
       )
+
     return "Trade saved successfully!"
 
   except Exception as e:

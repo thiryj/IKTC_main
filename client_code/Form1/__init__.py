@@ -287,6 +287,16 @@ class Form1(Form1Template):
     what type of manual transaction is being entered.
     """
     selected_type = self.dropdown_manual_transaction_type.selected_value
+
+    # Check if the selected type implies a new trade
+    if selected_type and selected_type in config.NEW_TRADE_TYPES:
+      # Show fields for a NEW trade
+      self.textbox_manual_underlying.visible = True
+      self.dropdown_manual_existing_trade.visible = False
+    else:
+      # Show fields for an EXISTING trade
+      self.textbox_manual_underlying.visible = False
+      self.dropdown_manual_existing_trade.visible = True
     # This will be the list of dictionaries for the repeating panel
     leg_definitions = []
     
@@ -331,9 +341,12 @@ class Form1(Form1Template):
 
   def button_add_trade_click(self, **event_args):
     """This method is called when the button is clicked"""
+    self.reset_manual_trade_card()
     self.card_manual_entry.visible = True
     self.datepicker_manual_date.max_date=date.today()
     self.datepicker_manual_date.date=date.today()
+    trade_list = anvil.server.call('get_open_trades_for_dropdown')
+    self.dropdown_manual_existing_trade.items = trade_list
 
   def button_cancel_trade_ticket_click(self, **event_args):
     """This method is called when the button is clicked"""
@@ -344,11 +357,23 @@ class Form1(Form1Template):
     
     # 1. Get the data that's common to the whole transaction
     selected_type = self.dropdown_manual_transaction_type.selected_value
-    underlying = self.textbox_manual_underlying.text
     trade_date = self.datepicker_manual_date.date
-    if not underlying or not trade_date:
-      alert("Please enter an underlying and a date.")
-      return
+    # This will be either the full Trade row or None
+    existing_trade_row = None
+    underlying = None
+
+    # 2. Get EITHER the new underlying OR the existing trade
+    if selected_type in config.NEW_TRADE_TYPES:
+      underlying = self.textbox_manual_underlying.text
+      if not underlying:
+        alert("Please enter an underlying symbol for a new trade.")
+        return
+    else:
+      existing_trade_row = self.dropdown_manual_existing_trade.selected_value
+      if not existing_trade_row:
+        alert("Please select an existing trade.")
+        return
+    
     try:
       net_price = float(self.textbox_manual_credit_debit.text)
     except (TypeError, ValueError):
@@ -384,10 +409,12 @@ class Form1(Form1Template):
     try:
       response = anvil.server.call('save_manual_trade', 
                         selected_type, 
-                        underlying, 
                         trade_date, 
                         net_price,
-                        legs_data_list)
+                        legs_data_list,
+                        underlying,          # Pass the new underlying (or None)
+                        existing_trade_row   # Pass the existing trade (or None)
+                        )
       alert(response)
 
       # 5. Hide the card and refresh your open positions

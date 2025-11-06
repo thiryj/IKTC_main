@@ -72,7 +72,9 @@ components:
         layout_properties: {col_xs: 0, row: CXCZWP, width_xs: 3}
         name: dropdown_manual_transaction_type
         properties:
-          items: [Select Transaction Type, 'Open: Diagonal', 'Close: Diagonal', 'Roll: Spread', 'Open: Cash-Secured Put', 'Event: Assignment (Stock In)', 'Close: Leg', 'Close: Stock (Covered Call)']
+          include_placeholder: true
+          items: ['Open: Diagonal', 'Close: Diagonal', 'Open: Cash-Secured Put', 'Close: Leg', 'Close: Stock (Covered Call)', 'Event: Assignment (Stock In)', 'Event: Assignment (Stock Out)', 'Roll: Spread']
+          placeholder: Select Transaction Type
           role: null
         type: DropDown
       - layout_properties: {col_xs: 3, row: CXCZWP, width_xs: 2}
@@ -87,6 +89,10 @@ components:
         name: textbox_manual_credit_debit
         properties: {placeholder: credit/debit, type: number}
         type: TextBox
+      - layout_properties: {col_xs: 0, row: DWOICU, width_xs: 3}
+        name: dropdown_manual_existing_trade
+        properties: {include_placeholder: true, placeholder: Select Open Trade, visible: false}
+        type: DropDown
       layout_properties: {grid_position: 'MRHWMP,KALBZV'}
       name: grid_panel_2
       properties: {}
