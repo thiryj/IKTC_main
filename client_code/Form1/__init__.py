@@ -456,7 +456,49 @@ class Form1(Form1Template):
     self.repeatingpanel_manual_legs.items = []
 
   def dropdown_manual_existing_trade_change(self, **event_args):
-    """This method is called when an item is selected"""
-    pass
+    """
+      Called when the user selects an existing trade from the dropdown.
+      Fetches that trade's active legs and pre-fills the legs panel.
+      """
+  
+    # 1. Get the selected trade row (or None)
+    selected_trade = self.dropdown_manual_existing_trade.selected_value
+  
+    if selected_trade:
+      # 3. Call the server to get the active legs for this trade
+      active_legs = anvil.server.call('get_active_legs_for_trade', selected_trade)
+  
+      # 4. Build the new list of leg definitions for the panel
+      leg_definitions = []
+  
+      for leg in active_legs:
+        # Determine the correct closing action
+        closing_action = None
+        if leg['Action'] == 'Sell to Open':
+          closing_action = 'Buy to Close'
+        elif leg['Action'] == 'Buy to Open':
+          closing_action = 'Sell to Close'
+        else:
+          # Fallback in case the action is unknown
+          closing_action = 'UNKNOWN'
+  
+          # This is the data we'll pass to the row template
+        leg_def = {
+          'action': closing_action,
+          'type': leg['OptionType'],
+          'strike': leg['Strike'],
+          'expiration': leg['Expiration'],
+          'quantity': leg['Quantity']
+        }
+        leg_definitions.append(leg_def)
+  
+        # 5. Populate the repeating panel
+      self.repeatingpanel_manual_legs.items = leg_definitions
+      self.repeatingpanel_manual_legs.visible = True
+  
+    else:
+      # No trade selected, clear the panel
+      self.repeatingpanel_manual_legs.items = []
+      self.repeatingpanel_manual_legs.visible = False
+        
       
-    

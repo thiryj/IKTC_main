@@ -11,10 +11,14 @@ class Form_ManualLegEntry(Form_ManualLegEntryTemplate):
     # Set Form properties and Data Bindings.
     self.init_components(**properties)
 
-    # self.item will be the dictionary, e.g., {'action': 'Sell to Open'}
-    if self.item:
-      # Set the dropdown's selected value
-      self.dropdown_manual_leg_action.selected_value = self.item.get('action')
+    # self.item will be the dictionary, e.g.,
+    # {'action': 'Buy to Close', 'type': 'Put', 'strike': 247, ...}
 
-      # You could pre-fill quantity, type, etc. here too
+    if self.item:
+      # Pre-fill all the component values from the item dictionary
+      self.dropdown_manual_leg_action.selected_value = self.item.get('action')
       self.dropdown_manual_leg_type.selected_value = self.item.get('type', 'Put')
+      self.textbox_manual_leg_quantity.text = self.item.get('quantity')
+      self.textbox_manual_leg_strike.text = self.item.get('strike')
+      self.datepicker_manual_leg_expiration.date = self.item.get('expiration')
+      
