@@ -154,6 +154,7 @@ def get_open_trades_with_risk(environment: str='SANDBOX'):
 
   for trade in open_trades:
     trade_dto = {
+      'trade_row': trade,
       'Underlying': trade['Underlying'],
       'Strategy': trade['Strategy'],
       'OpenDate': trade['OpenDate'],

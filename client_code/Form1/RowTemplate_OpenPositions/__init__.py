@@ -50,7 +50,7 @@ class RowTemplate_OpenPositions(RowTemplate_OpenPositionsTemplate):
   
     # 'self.parent' is the repeating panel.
     # We raise a custom event on it, passing the trade to be closed.
-    self.parent.raise_event('x_manual_entry_requested',
+    self.parent.raise_event('x-manual-entry-requested',
                             trade=trade_to_close,
                             action_type='Close: Diagonal')
 
@@ -65,7 +65,7 @@ def button_roll_click(self, **event_args):
 
   # 'self.parent' is the repeating panel.
   # We raise a custom event on it, passing the trade to be closed.
-  self.parent.raise_event('x_manual_entry_requested',
+  self.parent.raise_event('x-manual-entry-requested',
                           trade=trade_to_close,
                           action_type='Roll: Diagonal')
           

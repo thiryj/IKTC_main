@@ -14,11 +14,14 @@ class Form1(Form1Template):
     # Set Form properties and Data Bindings.
     self.init_components(**properties)
 
-    # Any code you write here will run before the form opens.
     # Log into default environment as displayed in the dropdown
     self.dropdown_environment_change()
-
     self.refresh_open_positions_grid() 
+
+    # subscribe to the Open Positions event broadcast
+    self.repeatingpanel_open_positions.set_event_handler(
+      'x-manual-entry-requested', self.handle_manual_entry_request
+    )
     
     # Load data for the trade history grid
     self.repeatingpanel_trade_history.items = anvil.server.call('get_closed_trades')
@@ -501,4 +504,34 @@ class Form1(Form1Template):
       self.repeatingpanel_manual_legs.items = []
       self.repeatingpanel_manual_legs.visible = False
         
-      
+  # In Form1 code
+
+  def handle_manual_entry_request(self, trade, action_type, **event_args):
+    """
+      Called by a row's 'Close' or 'Roll' button.
+      Opens the manual entry card and pre-fills it.
+      """
+    print(f"Handling manual entry request for: {action_type}")
+  
+    # 1. Reset the card to a blank state
+    self.reset_manual_trade_card()
+  
+    # 2. Fetch the latest list of open trades for the dropdown
+    trade_list = anvil.server.call('get_open_trades_for_dropdown')
+    self.dropdown_manual_existing_trade.items = trade_list
+  
+    # 3. Pre-select the transaction type
+    self.dropdown_manual_transaction_type.selected_value = action_type
+  
+    # 4. Pre-select the existing trade
+    # Note: We must pass the full 'trade' row object, not just an ID
+    self.dropdown_manual_existing_trade.selected_value = trade
+  
+    # 5. Manually trigger the 'change' events to populate the form
+    # This simulates the user clicking the dropdowns, which runs your
+    # existing logic to show/hide fields and pre-fill the legs.
+    self.dropdown_manual_transaction_type_change()
+    self.dropdown_manual_existing_trade_change()
+  
+    # 6. Show the card
+    self.card_manual_entry.visible = True  
