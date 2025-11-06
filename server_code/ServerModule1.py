@@ -365,33 +365,23 @@ def get_active_legs_for_trade(trade_row):
     print(f"Error getting active legs: {e}")
     return []
 
+# In ServerModule1.py
+
 @anvil.server.callable
 def save_manual_trade(transaction_type, trade_date, net_price, legs_data, 
                       underlying=None, existing_trade_row=None):
-  """
-    Saves a manual transaction.
-    - If 'underlying' is provided, it creates a NEW trade.
-    - If 'existing_trade_row' is provided, it adds a transaction TO that trade.
-    """
 
-  new_trade = None # This will hold the trade we're working with
+  print(f"Server saving: {transaction_type}")
+  new_trade = None
 
   try:
-    # --- 2. THIS IS THE NEW LOGIC ---
+    # --- 1. Find or Create the Trade (Your existing logic) ---
     if existing_trade_row:
-      # We are adding to an existing trade
-      print(f"Adding transaction to existing trade: {existing_trade_row['Underlying']}")
       new_trade = existing_trade_row
-
-      # If this is a "Close" transaction, update the parent trade's status
       if 'Close:' in transaction_type:
         existing_trade_row.update(Status='Closed', CloseDate=trade_date)
-
     elif underlying:
-      # We are creating a NEW trade
-      print(f"Creating new trade for: {underlying}")
       status = 'Open' if 'Open:' in transaction_type else 'Closed'
-
       new_trade = app_tables.trades.add_row(
         Underlying=underlying,
         Strategy=transaction_type,
@@ -400,31 +390,80 @@ def save_manual_trade(transaction_type, trade_date, net_price, legs_data,
       )
     else:
       raise ValueError("Must provide either an existing trade or a new underlying.")
-      # --- END OF NEW LOGIC ---
 
-
-      # 3. Create the 'Transactions' row (this logic is now universal)
+      # --- 2. Create the Transaction (Your existing logic) ---
     new_transaction = app_tables.transactions.add_row(
-      Trade=new_trade,  # Link to the trade (either new or found)
+      Trade=new_trade,
       TransactionDate=trade_date,
       TransactionType=transaction_type,
       CreditDebit=net_price 
     )
 
-    # 4. Loop through the legs (this logic is also universal)
+    # --- 3. Loop through legs & UPDATE ACTIVE FLAGS ---
     for leg in legs_data:
-      is_active = leg['action'] in server_config.OPEN_ACTIONS
+      action_string = leg['action']
+      is_active_flag = action_string in server_config.OPEN_ACTIONS
 
+      # --- THIS IS THE NEW LOGIC ---
+      if not is_active_flag:
+        # This is a closing action (e.g., "Buy to Close").
+        # We must find the corresponding 'active' leg and deactivate it.
+
+        # Determine the opposite 'open' action
+        open_action = None
+        if action_string == 'Buy to Close':
+          open_action = 'Sell to Open'
+        elif action_string == 'Sell to Close':
+          open_action = 'Buy to Open'
+
+        if open_action:
+          # Find all transactions for this trade
+          trade_transactions = app_tables.transactions.search(Trade=new_trade)
+
+          try:
+            # Find the active leg that matches
+            leg_to_close = app_tables.legs.search(
+              Transaction=q.any_of(*trade_transactions),
+              active=True,
+              Action=open_action,
+              Strike=leg['strike'],
+              Expiration=leg['expiration']
+            )[0] # Find the first match
+
+            # Deactivate the original leg
+            leg_to_close.update(active=False)
+          except Exception as e:
+            print(f"Warning: Could not find matching active leg to close: {e}")
+            # This can happen if the data is out of sync, but we
+            # still want to record the closing transaction.
+            # --- END OF NEW LOGIC ---
+
+            # 4. Add the new leg row (for this transaction)
       app_tables.legs.add_row(
         Transaction=new_transaction,
-        Action=leg['action'],
+        Action=action_string,
         Quantity=leg['quantity'],
         OptionType=leg['type'],
         Expiration=leg['expiration'],
         Strike=leg['strike'],
-        active=is_active
+        active=is_active_flag # This will be False for "Close" actions
       )
+    if 'Close:' in transaction_type:
+      # Now that the closing transaction is saved, sum the P/L
+      # Find all transactions for this trade
+      all_transactions = app_tables.transactions.search(Trade=new_trade)
 
+      total_pl = 0
+      for t in all_transactions:
+        if t['CreditDebit'] is not None:
+          total_pl += t['CreditDebit']
+
+          # Update the parent trade row with the final numbers
+      new_trade.update(
+        Status='Closed', 
+        CloseDate=trade_date,
+        TotalPL=total_pl
+      )
     return "Trade saved successfully!"
 
   except Exception as e:
