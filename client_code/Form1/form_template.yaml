@@ -277,7 +277,7 @@ components:
       - event_bindings: {tick: timer_order_status_tick}
         layout_properties: {}
         name: timer_order_status
-        properties: {interval: 5}
+        properties: {interval: 60}
         type: Timer
       - event_bindings: {change: checkbox_status_polling_change}
         layout_properties: {}
@@ -323,6 +323,11 @@ components:
       name: label_open_positions
       properties: {role: title, text: Open Positions}
       type: Label
+    - event_bindings: {tick: timer_risk_refresh_tick}
+      layout_properties: {grid_position: 'PLANCP,EHMOFQ'}
+      name: timer_risk_refresh
+      properties: {interval: 60}
+      type: Timer
     - components:
       - event_bindings: {click: button_add_trade_click}
         layout_properties: {}

@@ -35,7 +35,10 @@ class Form1(Form1Template):
     # Store the ID of the order we are tracking
     self.pending_order_id = None
     # Disable the timer initially
-    self.timer_order_status.enabled = False
+    self.timer_order_status.interval = 0
+
+    #timer
+    self.timer_risk_refresh.interval = 60
 
   def dropdown_environment_change(self, **event_args):
     """This method is called when an item is selected"""
@@ -258,6 +261,9 @@ class Form1(Form1Template):
         #self.label_trade_results_price.text = f"Limit Price: ${order_details['price']:.2f}"
         print("Order is in a final state. Stopping timer.")
         # You would now refresh your main positions grid
+
+    # update Extrinsic assign risk 
+    
 
   def button_cancel_trade_click(self, **event_args):
     """This method is called when the cancel button is clicked"""
@@ -535,3 +541,7 @@ class Form1(Form1Template):
   
     # 6. Show the card
     self.card_manual_entry.visible = True  
+
+  def timer_risk_refresh_tick(self, **event_args):
+    """This method is called Every [interval] seconds. Does not trigger if [interval] is 0."""
+    self.refresh_open_positions_grid()
