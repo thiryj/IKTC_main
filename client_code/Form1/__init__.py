@@ -484,7 +484,7 @@ class Form1(Form1Template):
   
     # 1. Get the selected trade row (or None)
     selected_trade = self.dropdown_manual_existing_trade.selected_value
-  
+    
     if selected_trade:
       # 3. Call the server to get the active legs for this trade
       active_legs = anvil.server.call('get_active_legs_for_trade', selected_trade)
@@ -531,14 +531,11 @@ class Form1(Form1Template):
       """
     print(f"Handling manual entry request for: {action_type}")
   
-    # 1. Reset the card to a blank state
     self.reset_manual_trade_card()
-  
-    # 2. Fetch the latest list of open trades for the dropdown
     trade_list = anvil.server.call('get_open_trades_for_dropdown')
     self.dropdown_manual_existing_trade.items = trade_list
   
-    # 3. Pre-select the transaction type
+    # 2. Pre-select the transaction type
     self.dropdown_manual_transaction_type.selected_value = action_type
   
     # 4. Pre-select the existing trade
@@ -549,7 +546,26 @@ class Form1(Form1Template):
     # This simulates the user clicking the dropdowns, which runs your
     # existing logic to show/hide fields and pre-fill the legs.
     self.dropdown_manual_transaction_type_change()
-    self.dropdown_manual_existing_trade_change()
+
+    if action_type == 'Close: Diagonal':
+      self.dropdown_manual_existing_trade_change()
+    elif action_type == 'Roll: Spread':
+      # This is the new, smart logic for a roll
+      try:
+        env = self.dropdown_environment.selected_value
+        # Call our new function to get all 4 legs and the credit
+        roll_package = anvil.server.call('get_roll_package', env, trade)
+
+        # Use the 4-leg DTO list to populate the repeating panel
+        self.repeatingpanel_manual_legs.items = roll_package['legs_to_populate']
+
+        # Pre-fill the net credit/debit box with the calculated value
+        total_credit = roll_package['total_roll_credit']
+        self.textbox_manual_credit_debit.text = f"{total_credit:.2f}"
+
+      except Exception as e:
+        alert(f"Error calculating roll: {e}")
+        self.repeatingpanel_manual_legs.items = [] # Clear the panel
   
     # 6. Show the card
     self.card_manual_entry.visible = True  

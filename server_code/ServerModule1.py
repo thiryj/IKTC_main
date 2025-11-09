@@ -474,9 +474,6 @@ def save_manual_trade(transaction_type, trade_date, net_price, legs_data,
     print(f"Error saving manual trade: {e}")
     return f"Error: {e}"
 
-# In ServerModule1.py
-from . import server_helpers
-
 @anvil.server.callable
 def validate_manual_legs(environment, legs_data_list):
   """
@@ -498,3 +495,105 @@ def validate_manual_legs(environment, legs_data_list):
       return f"Invalid leg: {occ_symbol}"
 
   return True
+
+@anvil.server.callable
+def get_roll_package(environment, trade_row):
+  """
+    Finds active legs, gets live prices, and calculates
+    a full 4-leg roll package with standardized keys.
+    """
+
+  # --- 1. Get Live Quotes for CURRENT Active Legs ---
+  short_leg_quote = None
+  long_leg_quote = None
+  short_leg_db = None
+  long_leg_db = None
+
+  try:
+    trade_transactions = app_tables.transactions.search(Trade=trade_row)
+    short_leg_db = app_tables.legs.search(
+      Transaction=q.any_of(*trade_transactions),
+      active=True, Action='Sell to Open'
+    )[0]
+    long_leg_db = app_tables.legs.search(
+      Transaction=q.any_of(*trade_transactions),
+      active=True, Action='Buy to Open'
+    )[0]
+
+    short_occ = server_helpers.build_occ_symbol(
+      underlying=trade_row['Underlying'],
+      expiration_date=short_leg_db['Expiration'],
+      option_type=short_leg_db['OptionType'],
+      strike=short_leg_db['Strike']
+    )
+    long_occ = server_helpers.build_occ_symbol(
+      underlying=trade_row['Underlying'],
+      expiration_date=long_leg_db['Expiration'],
+      option_type=long_leg_db['OptionType'],
+      strike=long_leg_db['Strike']
+    )
+
+    short_leg_quote = server_helpers.get_quote(environment, short_occ)
+    long_leg_quote = server_helpers.get_quote(environment, long_occ)
+
+    if not short_leg_quote or not long_leg_quote:
+      raise Exception("Could not get live quotes for active legs.")
+
+  except Exception as e:
+    raise Exception(f"Error finding active legs: {e}")
+
+    # --- 2. Calculate Closing Cost & Build Closing Leg Dicts ---
+  current_spread = positions.DiagonalPutSpread(short_leg_quote, long_leg_quote)
+  total_close_cost = current_spread.calculate_cost_to_close()
+
+  # Build standardized dicts for the closing legs
+  closing_leg_1 = {
+    'action': 'Buy to Close',
+    'type': short_leg_db['OptionType'],
+    'strike': short_leg_db['Strike'],
+    'expiration': short_leg_db['Expiration'],
+    'quantity': short_leg_db['Quantity']
+  }
+  closing_leg_2 = {
+    'action': 'Sell to Close',
+    'type': long_leg_db['OptionType'],
+    'strike': long_leg_db['Strike'],
+    'expiration': long_leg_db['Expiration'],
+    'quantity': long_leg_db['Quantity']
+  }
+  closing_legs_list = [closing_leg_1, closing_leg_2]
+
+  # --- 3. (Placeholder) Find NEW Legs ---
+  # (Your proprietary logic will replace this)
+  new_short_leg_quote = short_leg_quote 
+  new_long_leg_quote = long_leg_quote   
+
+  # --- 4. Calculate Opening Credit & Build Opening Leg Dicts (FIXED) ---
+  new_spread = positions.DiagonalPutSpread(new_short_leg_quote, new_long_leg_quote)
+  total_open_credit = new_spread.calculate_net_premium()
+
+  # Build standardized dicts for the opening legs
+  opening_leg_1 = {
+    'action': 'Sell to Open',
+    'type': new_short_leg_quote.option_type.name,
+    'strike': new_short_leg_quote.strike,
+    'expiration': new_short_leg_quote.expiration_date,
+    'quantity': 1 # Assuming quantity 1
+  }
+  opening_leg_2 = {
+    'action': 'Buy to Open',
+    'type': new_long_leg_quote.option_type.name,
+    'strike': new_long_leg_quote.strike,
+    'expiration': new_long_leg_quote.expiration_date,
+    'quantity': 1 # Assuming quantity 1
+  }
+  opening_legs_list = [opening_leg_1, opening_leg_2]
+
+  # --- 5. Package and Return ---
+  all_4_legs = closing_legs_list + opening_legs_list
+  total_roll_credit = total_open_credit - total_close_cost
+
+  return {
+    'legs_to_populate': all_4_legs,
+    'total_roll_credit': total_roll_credit
+  }
