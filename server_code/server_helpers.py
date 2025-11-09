@@ -280,3 +280,15 @@ def build_occ_symbol(underlying, expiration_date, option_type, strike):
 
   # Combine all parts
   return f"{underlying}{exp_str}{type_char}{strike_str}"
+
+def get_net_roll_rom_per_day(pos: positions.DiagonalPutSpread, cost_to_close: float, today: date)-> float:
+  dte = (pos.short_put.expiration_date - today).days
+
+  # Check for DTE and valid margin
+  if dte <= 0 or not pos.margin or pos.margin <= 0:
+    return -float('inf')
+
+  net_roll_credit = pos.net_premium - cost_to_close
+  return_on_margin = net_roll_credit / pos.margin 
+
+  return return_on_margin / dte
