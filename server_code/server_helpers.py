@@ -43,11 +43,15 @@ def get_tradier_client(environment: str)->Tuple[TradierAPI, str]:
 def get_quote(environment: str, symbol: str) ->str:
   # get full quote data for a single symbol
   t, endpoint_url = get_tradier_client(environment)
-  quote_list = t.get_quotes([symbol, "bogus"], greeks=False)
-  # note:  needed to send a fake symbol in because of a bug in the get_quotes endpoint
-  if quote_list:
-    return quote_list[0]
-  else:
+  try:
+    quote_list = t.get_quotes([symbol, "bogus"], greeks=False)
+    # note:  needed to send a fake symbol in because of a bug in the get_quotes endpoint
+    if quote_list:
+      return quote_list[0]
+    else:
+      return None
+  except Exception as e:
+    print(f"Validation failed for symbol {symbol}: {e}")
     return None
     
 def get_near_term_expirations(tradier_client: TradierAPI, 
@@ -257,8 +261,6 @@ def get_expiration_date(symbol: str) -> date | None:
   except (ValueError, IndexError):
     # Handles cases where the symbol is malformed or too short
     return None
-
-# In ServerModule1.py
 
 def build_occ_symbol(underlying, expiration_date, option_type, strike):
   """

@@ -473,3 +473,28 @@ def save_manual_trade(transaction_type, trade_date, net_price, legs_data,
   except Exception as e:
     print(f"Error saving manual trade: {e}")
     return f"Error: {e}"
+
+# In ServerModule1.py
+from . import server_helpers
+
+@anvil.server.callable
+def validate_manual_legs(environment, legs_data_list):
+  """
+    Checks if all legs in a list are valid tradable options.
+    Returns True if all are valid, or an error string if one fails.
+    """
+  for leg in legs_data_list:
+    # Build the OCC symbol just like your risk function does
+    occ_symbol = server_helpers.build_occ_symbol(
+      underlying=leg['underlying'], # You'll need to pass this in
+      expiration_date=leg['expiration'],
+      option_type=leg['type'],
+      strike=leg['strike']
+    )
+
+    quote = server_helpers.get_quote(environment, occ_symbol)
+
+    if quote is None:
+      return f"Invalid leg: {occ_symbol}"
+
+  return True

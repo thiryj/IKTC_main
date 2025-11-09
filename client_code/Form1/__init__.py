@@ -38,7 +38,7 @@ class Form1(Form1Template):
     self.timer_order_status.interval = 0
 
     #timer
-    self.timer_risk_refresh.interval = 60
+    self.timer_risk_refresh.interval = 360  # one hour
 
   def dropdown_environment_change(self, **event_args):
     """This method is called when an item is selected"""
@@ -403,7 +403,8 @@ class Form1(Form1Template):
           'quantity': int(leg_row_form.textbox_manual_leg_quantity.text),
           'type': leg_row_form.dropdown_manual_leg_type.selected_value,
           'strike': float(leg_row_form.textbox_manual_leg_strike.text),
-          'expiration': leg_row_form.datepicker_manual_leg_expiration.date
+          'expiration': leg_row_form.datepicker_manual_leg_expiration.date,
+          'underlying': underlying
         }
         if not all(leg_data.values()):
           alert("Please fill out all fields for each leg.")
@@ -415,7 +416,18 @@ class Form1(Form1Template):
         alert(f"Error reading leg data: {e}. Please check your inputs.")
         return # Stop processing if there's an error
   
-    try:
+    try: # validate then save
+      validation_result = anvil.server.call(
+        'validate_manual_legs',
+        self.dropdown_environment.selected_value,
+        legs_data_list 
+      )
+
+      # 2. Check the result
+      if validation_result is not True:
+        # Validation failed! Stop and warn the user.
+        alert(f"Validation Error: {validation_result}. Please correct and resave.")
+        return # Stop the save
       response = anvil.server.call('save_manual_trade', 
                         selected_type, 
                         trade_date, 
@@ -544,4 +556,8 @@ class Form1(Form1Template):
 
   def timer_risk_refresh_tick(self, **event_args):
     """This method is called Every [interval] seconds. Does not trigger if [interval] is 0."""
+    self.refresh_open_positions_grid()
+
+  def button_refresh_open_positions_risk_click(self, **event_args):
+    """This method is called when the button is clicked"""
     self.refresh_open_positions_grid()
