@@ -1,389 +1,390 @@
 components:
 - components:
-  - layout_properties: {grid_position: 'JBMXBM,GOGKIJ'}
-    name: column_panel_1
-    properties: {}
-    type: ColumnPanel
-  - layout_properties: {grid_position: 'JBMXBM,CUYQLX'}
-    name: column_panel_2
-    properties: {}
-    type: ColumnPanel
-  - event_bindings: {change: dropdown_environment_change}
-    layout_properties: {grid_position: 'JBMXBM,LFYHRU IAHVAN,NUJVSI'}
-    name: dropdown_environment
-    properties:
-      align: center
-      include_placeholder: false
-      items: [SANDBOX, PROD]
-      placeholder: ''
-    type: DropDown
-  - layout_properties: {grid_position: 'JBMXBM,LFYHRU VWIUDN,UFVBST'}
-    name: label_login
-    properties: {align: right, background: 'theme:Primary Container', border: '', role: null, text: not logged in}
-    type: Label
   - components:
-    - data_bindings: []
-      event_bindings: {click: button_tab_open_positions_click}
-      layout_properties: {grid_position: 'LJXOJV,DFFUVU'}
-      name: button_tab_open_positions
-      properties: {align: center, background: '', foreground: '', role: filled-button, text: Open Positions}
-      type: Button
-    - event_bindings: {click: button_tab_trade_history_click}
-      layout_properties: {grid_position: 'LJXOJV,MWFZEC'}
-      name: button_tab_trade_history
-      properties: {role: outlined-button, text: Trade History}
-      type: Button
+    - layout_properties: {grid_position: 'JBMXBM,GOGKIJ'}
+      name: column_panel_1
+      properties: {}
+      type: ColumnPanel
+    - layout_properties: {grid_position: 'JBMXBM,CUYQLX'}
+      name: column_panel_2
+      properties: {}
+      type: ColumnPanel
+    - event_bindings: {change: dropdown_environment_change}
+      layout_properties: {grid_position: 'JBMXBM,LFYHRU IAHVAN,NUJVSI'}
+      name: dropdown_environment
+      properties:
+        align: center
+        include_placeholder: false
+        items: [SANDBOX, PROD]
+        placeholder: ''
+      type: DropDown
+    - layout_properties: {grid_position: 'JBMXBM,LFYHRU VWIUDN,UFVBST'}
+      name: label_login
+      properties: {align: right, background: 'theme:Primary Container', border: '', role: null, text: not logged in}
+      type: Label
     - components:
+      - data_bindings: []
+        event_bindings: {click: button_tab_open_positions_click}
+        layout_properties: {grid_position: 'LJXOJV,DFFUVU'}
+        name: button_tab_open_positions
+        properties: {align: center, background: '', foreground: '', role: filled-button, text: Open Positions}
+        type: Button
+      - event_bindings: {click: button_tab_trade_history_click}
+        layout_properties: {grid_position: 'LJXOJV,MWFZEC'}
+        name: button_tab_trade_history
+        properties: {role: outlined-button, text: Trade History}
+        type: Button
       - components:
-        - layout_properties: {}
-          name: textbox_symbol
-          properties: {text: IWM, visible: true}
-          type: TextBox
-        - layout_properties: {}
-          name: dropdown_strategy_picker
+        - components:
+          - layout_properties: {}
+            name: textbox_symbol
+            properties: {text: IWM, visible: true}
+            type: TextBox
+          - layout_properties: {}
+            name: dropdown_strategy_picker
+            properties:
+              items: [diagonal put spread, cash secured put]
+              visible: true
+            type: DropDown
+          - event_bindings: {click: button_find_new_trade_click}
+            layout_properties: {}
+            name: button_find_new_trade
+            properties: {role: tonal-button, text: Find New Trade}
+            type: Button
+          layout_properties: {grid_position: 'ZEONBW,LMYPLJ'}
+          name: flow_panel_5
+          properties: {}
+          type: FlowPanel
+        layout_properties: {grid_position: 'MESWAF,HVFKKD'}
+        name: outlined_card_1
+        properties: {role: outlined-card}
+        type: ColumnPanel
+      layout_properties: {grid_position: 'WEXHDV,OVDWXJ'}
+      name: columnpanel_tabs
+      properties: {}
+      type: ColumnPanel
+    - components:
+      - layout_properties: {grid_position: 'FLVIUJ,RTSJFL'}
+        name: label_manual_entry_card
+        properties: {role: title, text: Manual Entry}
+        type: Label
+      - components:
+        - event_bindings: {change: dropdown_manual_transaction_type_change}
+          layout_properties: {col_xs: 0, row: CXCZWP, width_xs: 3}
+          name: dropdown_manual_transaction_type
           properties:
-            items: [diagonal put spread, cash secured put]
-            visible: true
+            include_placeholder: true
+            items: ['Open: Diagonal', 'Roll: Diagonal', 'Close: Diagonal', 'Open: Cash-Secured Put', 'Close: Leg', 'Close: Stock (Covered Call)', 'Event: Assignment (Stock In)', 'Event: Assignment (Stock Out)', 'Roll: Spread']
+            placeholder: Select Transaction Type
+            role: null
           type: DropDown
-        - event_bindings: {click: button_find_new_trade_click}
-          layout_properties: {}
-          name: button_find_new_trade
-          properties: {role: tonal-button, text: Find New Trade}
+        - layout_properties: {col_xs: 3, row: CXCZWP, width_xs: 2}
+          name: textbox_manual_underlying
+          properties: {text: IWM}
+          type: TextBox
+        - layout_properties: {col_xs: 5, row: CXCZWP, width_xs: 3}
+          name: datepicker_manual_date
+          properties: {}
+          type: DatePicker
+        - layout_properties: {col_xs: 9, row: CXCZWP, width_xs: 2}
+          name: textbox_manual_credit_debit
+          properties: {placeholder: credit/debit, type: number}
+          type: TextBox
+        - event_bindings: {change: dropdown_manual_existing_trade_change}
+          layout_properties: {col_xs: 0, row: DWOICU, width_xs: 3}
+          name: dropdown_manual_existing_trade
+          properties: {include_placeholder: true, placeholder: Select Open Trade, visible: false}
+          type: DropDown
+        layout_properties: {grid_position: 'MRHWMP,KALBZV'}
+        name: grid_panel_2
+        properties: {}
+        type: GridPanel
+      - layout_properties: {grid_position: 'NVZSNL,GMBTAX'}
+        name: columnpanel_manual_leg_header
+        properties: {}
+        type: ColumnPanel
+      - layout_properties: {grid_position: 'RHWEOT,BXAXVS'}
+        name: repeatingpanel_manual_legs
+        properties: {item_template: Form1.Form_ManualLegEntry}
+        type: RepeatingPanel
+      - components:
+        - event_bindings: {click: button_save_manual_trade_click}
+          layout_properties: {col_xs: 8, row: HNAJBW, width_xs: 2}
+          name: button_save_manual_trade
+          properties: {enabled: false, role: tonal-button, text: Save Trade}
           type: Button
-        layout_properties: {grid_position: 'ZEONBW,LMYPLJ'}
-        name: flow_panel_5
+        - event_bindings: {click: button_cancel_manual_trade_click}
+          layout_properties: {col_xs: 10, row: HNAJBW, width_xs: 2}
+          name: button_cancel_manual_trade
+          properties: {text: Cancel}
+          type: Button
+        layout_properties: {grid_position: 'EZKAGW,AJBDWK'}
+        name: grid_panel_3
         properties: {}
-        type: FlowPanel
-      layout_properties: {grid_position: 'MESWAF,HVFKKD'}
-      name: outlined_card_1
-      properties: {role: outlined-card}
+        type: GridPanel
+      layout_properties: {grid_position: 'INDILH,QORQWO'}
+      name: card_manual_entry
+      properties: {role: outlined-card, visible: false}
       type: ColumnPanel
-    layout_properties: {grid_position: 'WEXHDV,OVDWXJ'}
-    name: columnpanel_tabs
-    properties: {}
-    type: ColumnPanel
-  - components:
-    - layout_properties: {grid_position: 'FLVIUJ,RTSJFL'}
-      name: label_manual_entry_card
-      properties: {role: title, text: Manual Entry}
-      type: Label
     - components:
-      - event_bindings: {change: dropdown_manual_transaction_type_change}
-        layout_properties: {col_xs: 0, row: CXCZWP, width_xs: 3}
-        name: dropdown_manual_transaction_type
-        properties:
-          include_placeholder: true
-          items: ['Open: Diagonal', 'Roll: Diagonal', 'Close: Diagonal', 'Open: Cash-Secured Put', 'Close: Leg', 'Close: Stock (Covered Call)', 'Event: Assignment (Stock In)', 'Event: Assignment (Stock Out)', 'Roll: Spread']
-          placeholder: Select Transaction Type
-          role: null
-        type: DropDown
-      - layout_properties: {col_xs: 3, row: CXCZWP, width_xs: 2}
-        name: textbox_manual_underlying
-        properties: {text: IWM}
-        type: TextBox
-      - layout_properties: {col_xs: 5, row: CXCZWP, width_xs: 3}
-        name: datepicker_manual_date
+      - layout_properties: {grid_position: 'NJKUND,VBLFDD'}
+        name: label_trade_ticket_title
+        properties: {role: title, text: Trade Ticket}
+        type: Label
+      - event_bindings: {click: button_cancel_trade_ticket_click}
+        layout_properties: {grid_position: 'NJKUND,MSKTRK'}
+        name: button_cancel_trade_ticket
+        properties: {align: right, text: Cancel Trade Ticket}
+        type: Button
+      - components: []
+        layout_properties: {grid_position: 'YIUWNA,HWWRZO'}
+        name: column_panel_6
         properties: {}
-        type: DatePicker
-      - layout_properties: {col_xs: 9, row: CXCZWP, width_xs: 2}
-        name: textbox_manual_credit_debit
-        properties: {placeholder: credit/debit, type: number}
+        type: ColumnPanel
+      - components: []
+        layout_properties: {grid_position: 'YIUWNA,JHUOLA'}
+        name: column_panel_7
+        properties: {}
+        type: ColumnPanel
+      - components:
+        - components:
+          - layout_properties: {}
+            name: label_symbol
+            properties: {text: '---'}
+            type: Label
+          - layout_properties: {}
+            name: label_underlying_price
+            properties: {text: '@ 0.00'}
+            type: Label
+          - layout_properties: {}
+            name: label_quote_status
+            properties: {}
+            type: Label
+          layout_properties: {grid_position: 'YOZNQG,ZAGDME'}
+          name: flow_panel_1
+          properties: {}
+          type: FlowPanel
+        - layout_properties: {grid_position: 'DTYLGW,VVLHDO'}
+          name: label_3
+          properties: {role: body, text: Strategy Legs}
+          type: Label
+        - components:
+          - layout_properties: {}
+            name: label_leg1_action
+            properties: {text: '---'}
+            type: Label
+          - layout_properties: {}
+            name: label_leg1_details
+            properties: {text: 0.00 Put}
+            type: Label
+          - layout_properties: {}
+            name: label_leg1_DTE
+            properties: {}
+            type: Label
+          layout_properties: {grid_position: 'ETLTXZ,VKBGGS'}
+          name: flow_panel_2
+          properties: {}
+          type: FlowPanel
+        - components:
+          - layout_properties: {}
+            name: label_leg2_action
+            properties: {text: '---'}
+            type: Label
+          - layout_properties: {}
+            name: label_leg2_details
+            properties: {text: 0.00 Put}
+            type: Label
+          - layout_properties: {}
+            name: label_leg2_DTE
+            properties: {}
+            type: Label
+          layout_properties: {grid_position: 'TPCRTC,VWZLSG'}
+          name: flow_panel_3
+          properties: {}
+          type: FlowPanel
+        layout_properties: {grid_position: 'ZJGQHK,MLOJRM'}
+        name: column_panel_3
+        properties: {}
+        type: ColumnPanel
+      - layout_properties: {grid_position: 'XGTJOP,VKSPYH'}
+        name: label_4
+        properties: {text: 'Limit Price:'}
+        type: Label
+      - layout_properties: {grid_position: 'XGTJOP,ENJCPE'}
+        name: textbox_net_credit
+        properties: {type: number}
         type: TextBox
-      - event_bindings: {change: dropdown_manual_existing_trade_change}
-        layout_properties: {col_xs: 0, row: DWOICU, width_xs: 3}
-        name: dropdown_manual_existing_trade
-        properties: {include_placeholder: true, placeholder: Select Open Trade, visible: false}
-        type: DropDown
-      layout_properties: {grid_position: 'MRHWMP,KALBZV'}
-      name: grid_panel_2
-      properties: {}
-      type: GridPanel
-    - layout_properties: {grid_position: 'NVZSNL,GMBTAX'}
-      name: columnpanel_manual_leg_header
-      properties: {}
-      type: ColumnPanel
-    - layout_properties: {grid_position: 'RHWEOT,BXAXVS'}
-      name: repeatingpanel_manual_legs
-      properties: {item_template: Form1.Form_ManualLegEntry}
-      type: RepeatingPanel
-    - components:
-      - event_bindings: {click: button_save_manual_trade_click}
-        layout_properties: {col_xs: 8, row: HNAJBW, width_xs: 2}
-        name: button_save_manual_trade
-        properties: {enabled: false, role: tonal-button, text: Save Trade}
-        type: Button
-      - event_bindings: {click: button_cancel_manual_trade_click}
-        layout_properties: {col_xs: 10, row: HNAJBW, width_xs: 2}
-        name: button_cancel_manual_trade
-        properties: {text: Cancel}
-        type: Button
-      layout_properties: {grid_position: 'EZKAGW,AJBDWK'}
-      name: grid_panel_3
-      properties: {}
-      type: GridPanel
-    layout_properties: {grid_position: 'INDILH,QORQWO'}
-    name: card_manual_entry
-    properties: {role: outlined-card, visible: false}
-    type: ColumnPanel
-  - components:
-    - layout_properties: {grid_position: 'NJKUND,VBLFDD'}
-      name: label_trade_ticket_title
-      properties: {role: title, text: Trade Ticket}
-      type: Label
-    - event_bindings: {click: button_cancel_trade_ticket_click}
-      layout_properties: {grid_position: 'NJKUND,MSKTRK'}
-      name: button_cancel_trade_ticket
-      properties: {align: right, text: Cancel Trade Ticket}
-      type: Button
-    - components: []
-      layout_properties: {grid_position: 'YIUWNA,HWWRZO'}
-      name: column_panel_6
-      properties: {}
-      type: ColumnPanel
-    - components: []
-      layout_properties: {grid_position: 'YIUWNA,JHUOLA'}
-      name: column_panel_7
-      properties: {}
-      type: ColumnPanel
-    - components:
+      - layout_properties: {grid_position: 'XGTJOP,ROAGHY'}
+        name: label_spread_credit_debit
+        properties: {}
+        type: Label
+      - layout_properties: {grid_position: 'XGTJOP,KTXHPO'}
+        name: column_panel_4
+        properties: {}
+        type: ColumnPanel
       - components:
         - layout_properties: {}
-          name: label_symbol
-          properties: {text: '---'}
-          type: Label
-        - layout_properties: {}
-          name: label_underlying_price
-          properties: {text: '@ 0.00'}
-          type: Label
-        - layout_properties: {}
-          name: label_quote_status
+          name: label_margin
           properties: {}
           type: Label
-        layout_properties: {grid_position: 'YOZNQG,ZAGDME'}
-        name: flow_panel_1
+        - layout_properties: {}
+          name: label_5
+          properties: {text: 'Return Rate on Margin:'}
+          type: Label
+        - layout_properties: {}
+          name: label_rrom
+          properties: {text: 0.0%}
+          type: Label
+        layout_properties: {grid_position: 'XVVDAZ,NETIUD'}
+        name: flow_panel_4
         properties: {}
         type: FlowPanel
-      - layout_properties: {grid_position: 'DTYLGW,VVLHDO'}
-        name: label_3
-        properties: {role: body, text: Strategy Legs}
-        type: Label
-      - components:
-        - layout_properties: {}
-          name: label_leg1_action
-          properties: {text: '---'}
-          type: Label
-        - layout_properties: {}
-          name: label_leg1_details
-          properties: {text: 0.00 Put}
-          type: Label
-        - layout_properties: {}
-          name: label_leg1_DTE
-          properties: {}
-          type: Label
-        layout_properties: {grid_position: 'ETLTXZ,VKBGGS'}
-        name: flow_panel_2
-        properties: {}
-        type: FlowPanel
-      - components:
-        - layout_properties: {}
-          name: label_leg2_action
-          properties: {text: '---'}
-          type: Label
-        - layout_properties: {}
-          name: label_leg2_details
-          properties: {text: 0.00 Put}
-          type: Label
-        - layout_properties: {}
-          name: label_leg2_DTE
-          properties: {}
-          type: Label
-        layout_properties: {grid_position: 'TPCRTC,VWZLSG'}
-        name: flow_panel_3
-        properties: {}
-        type: FlowPanel
-      layout_properties: {grid_position: 'ZJGQHK,MLOJRM'}
-      name: column_panel_3
-      properties: {}
-      type: ColumnPanel
-    - layout_properties: {grid_position: 'XGTJOP,VKSPYH'}
-      name: label_4
-      properties: {text: 'Limit Price:'}
-      type: Label
-    - layout_properties: {grid_position: 'XGTJOP,ENJCPE'}
-      name: textbox_net_credit
-      properties: {type: number}
-      type: TextBox
-    - layout_properties: {grid_position: 'XGTJOP,ROAGHY'}
-      name: label_spread_credit_debit
-      properties: {}
-      type: Label
-    - layout_properties: {grid_position: 'XGTJOP,KTXHPO'}
-      name: column_panel_4
-      properties: {}
-      type: ColumnPanel
-    - components:
-      - layout_properties: {}
-        name: label_margin
-        properties: {}
-        type: Label
-      - layout_properties: {}
-        name: label_5
-        properties: {text: 'Return Rate on Margin:'}
-        type: Label
-      - layout_properties: {}
-        name: label_rrom
-        properties: {text: 0.0%}
-        type: Label
-      layout_properties: {grid_position: 'XVVDAZ,NETIUD'}
-      name: flow_panel_4
-      properties: {}
-      type: FlowPanel
-    - event_bindings: {click: button_override_price_click}
-      layout_properties: {grid_position: 'SVNQGR,NFTDDO'}
-      name: button_override_price
-      properties: {role: tonal-button, text: 'Override Price?'}
-      type: Button
-    - layout_properties: {grid_position: 'SVNQGR,JOWLFH'}
-      name: textbox_overide_price
-      properties: {role: outlined, type: number, visible: false}
-      type: TextBox
-    - layout_properties: {grid_position: 'SVNQGR,DWJDLA'}
-      name: label_6
-      properties: {}
-      type: Label
-    - layout_properties: {grid_position: 'SVNQGR,YAEFQX'}
-      name: column_panel_5
-      properties: {}
-      type: ColumnPanel
-    - components:
-      - layout_properties: {}
-        name: label_2
-        properties: {text: Quantity}
-        type: Label
-      - layout_properties: {width: 133}
-        name: textbox_quantity
-        properties: {placeholder: '1', text: '1', tooltip: Quantity, type: number}
+      - event_bindings: {click: button_override_price_click}
+        layout_properties: {grid_position: 'SVNQGR,NFTDDO'}
+        name: button_override_price
+        properties: {role: tonal-button, text: 'Override Price?'}
+        type: Button
+      - layout_properties: {grid_position: 'SVNQGR,JOWLFH'}
+        name: textbox_overide_price
+        properties: {role: outlined, type: number, visible: false}
         type: TextBox
-      - event_bindings: {click: button_preview_trade_click}
-        layout_properties: {}
-        name: button_preview_trade
-        properties: {enabled: false, role: tonal-button, text: Preview Trade}
-        type: Button
-      - event_bindings: {click: button_place_trade_click}
-        layout_properties: {}
-        name: button_place_trade
-        properties: {enabled: false, icon_align: right, role: tonal-button, text: Place Trade}
-        type: Button
-      - event_bindings: {tick: timer_order_status_tick}
-        layout_properties: {}
-        name: timer_order_status
+      - layout_properties: {grid_position: 'SVNQGR,DWJDLA'}
+        name: label_6
+        properties: {}
+        type: Label
+      - layout_properties: {grid_position: 'SVNQGR,YAEFQX'}
+        name: column_panel_5
+        properties: {}
+        type: ColumnPanel
+      - components:
+        - layout_properties: {}
+          name: label_2
+          properties: {text: Quantity}
+          type: Label
+        - layout_properties: {width: 133}
+          name: textbox_quantity
+          properties: {placeholder: '1', text: '1', tooltip: Quantity, type: number}
+          type: TextBox
+        - event_bindings: {click: button_preview_trade_click}
+          layout_properties: {}
+          name: button_preview_trade
+          properties: {enabled: false, role: tonal-button, text: Preview Trade}
+          type: Button
+        - event_bindings: {click: button_place_trade_click}
+          layout_properties: {}
+          name: button_place_trade
+          properties: {enabled: false, icon_align: right, role: tonal-button, text: Place Trade}
+          type: Button
+        - event_bindings: {tick: timer_order_status_tick}
+          layout_properties: {}
+          name: timer_order_status
+          properties: {interval: 60}
+          type: Timer
+        - event_bindings: {change: checkbox_status_polling_change}
+          layout_properties: {}
+          name: checkbox_status_polling
+          properties: {enabled: false, text: Status Polling}
+          type: CheckBox
+        - layout_properties: {}
+          name: button_improve_price
+          properties: {enabled: false, role: tonal-button, text: Improve Price}
+          type: Button
+        - event_bindings: {click: button_cancel_trade_click}
+          layout_properties: {}
+          name: button_cancel_trade
+          properties: {enabled: false, role: tonal-button, text: Cancel Order}
+          type: Button
+        layout_properties: {grid_position: 'ZYJRPE,GLPMTC'}
+        name: flow_panel_6
+        properties: {}
+        type: FlowPanel
+      - components:
+        - layout_properties: {}
+          name: label_trade_results_phase
+          properties: {text: 'Preview Results:'}
+          type: Label
+        - layout_properties: {}
+          name: label_trade_results_status
+          properties: {}
+          type: Label
+        - layout_properties: {}
+          name: label_trade_results_price
+          properties: {}
+          type: Label
+        layout_properties: {grid_position: 'RKOLVN,KUPYOF'}
+        name: flow_panel_7
+        properties: {}
+        type: FlowPanel
+      layout_properties: {grid_position: 'AKSRMO,GOTQMF'}
+      name: card_trade_entry
+      properties: {role: outlined-card, visible: false}
+      type: ColumnPanel
+    - components:
+      - layout_properties: {grid_position: 'FHXYUQ,TEFATT'}
+        name: label_open_positions
+        properties: {role: title, text: Open Positions}
+        type: Label
+      - event_bindings: {tick: timer_risk_refresh_tick}
+        layout_properties: {grid_position: 'PLANCP,EHMOFQ'}
+        name: timer_risk_refresh
         properties: {interval: 60}
         type: Timer
-      - event_bindings: {change: checkbox_status_polling_change}
-        layout_properties: {}
-        name: checkbox_status_polling
-        properties: {enabled: false, text: Status Polling}
-        type: CheckBox
-      - layout_properties: {}
-        name: button_improve_price
-        properties: {enabled: false, role: tonal-button, text: Improve Price}
-        type: Button
-      - event_bindings: {click: button_cancel_trade_click}
-        layout_properties: {}
-        name: button_cancel_trade
-        properties: {enabled: false, role: tonal-button, text: Cancel Order}
-        type: Button
-      layout_properties: {grid_position: 'ZYJRPE,GLPMTC'}
-      name: flow_panel_6
-      properties: {}
-      type: FlowPanel
-    - components:
-      - layout_properties: {}
-        name: label_trade_results_phase
-        properties: {text: 'Preview Results:'}
-        type: Label
-      - layout_properties: {}
-        name: label_trade_results_status
+      - components:
+        - event_bindings: {click: button_add_trade_click}
+          layout_properties: {}
+          name: button_add_trade
+          properties: {role: tonal-button, text: Manually Add Trade}
+          type: Button
+        layout_properties: {grid_position: 'AOJHSR,NRZYAU'}
+        name: flow_panel_8
         properties: {}
+        type: FlowPanel
+      - components:
+        - layout_properties: {}
+          name: repeatingpanel_open_positions
+          properties: {item_template: Form1.RowTemplate_OpenPositions}
+          type: RepeatingPanel
+        layout_properties: {grid_position: 'CPQNAQ,LRQOGI'}
+        name: datagrid_open_positions
+        properties:
+          auto_header: true
+          columns:
+          - {data_key: OpenDate, id: VLJSED, title: OpenDate}
+          - {data_key: Underlying, id: WKXBSM, title: Underlying}
+          - {data_key: Strategy, id: DXDYPM, title: Strategy}
+        type: DataGrid
+      layout_properties: {grid_position: 'GTPMWJ,UIKURD'}
+      name: card_open_positions
+      properties: {role: outlined-card}
+      type: ColumnPanel
+    - components:
+      - layout_properties: {grid_position: 'EJBIJZ,SQVQFN'}
+        name: label_trade_history
+        properties: {role: title, text: Trade History}
         type: Label
-      - layout_properties: {}
-        name: label_trade_results_price
-        properties: {}
-        type: Label
-      layout_properties: {grid_position: 'RKOLVN,KUPYOF'}
-      name: flow_panel_7
-      properties: {}
-      type: FlowPanel
-    layout_properties: {grid_position: 'AKSRMO,GOTQMF'}
-    name: card_trade_entry
-    properties: {role: outlined-card, visible: false}
+      - components:
+        - name: repeatingpanel_trade_history
+          properties: {item_template: Form1.RowTemplate2}
+          type: RepeatingPanel
+        layout_properties: {grid_position: 'QXISEK,RPEFCD'}
+        name: datagrid_trade_history
+        properties:
+          columns:
+          - {data_key: Underlying, id: VLVEVX, title: Underlying}
+          - {data_key: Strategy, id: XDNIRW, title: Strategy}
+          - {data_key: OpenDate, id: XTBLRO, title: OpenDate}
+          - {data_key: CloseDate, id: QXSJXY, title: CloseDate}
+          - {data_key: TotalPL, id: XDVKMG, title: TotalPL}
+        type: DataGrid
+      layout_properties: {grid_position: 'TGWAEE,GSGXMD'}
+      name: card_trade_history
+      properties: {role: outlined-card, visible: false}
+      type: ColumnPanel
+    layout_properties: {}
+    name: content_panel
+    properties: {col_widths: '{}'}
     type: ColumnPanel
-  - components:
-    - layout_properties: {grid_position: 'FHXYUQ,TEFATT'}
-      name: label_open_positions
-      properties: {role: title, text: Open Positions}
-      type: Label
-    - event_bindings: {tick: timer_risk_refresh_tick}
-      layout_properties: {grid_position: 'PLANCP,EHMOFQ'}
-      name: timer_risk_refresh
-      properties: {interval: 60}
-      type: Timer
-    - components:
-      - event_bindings: {click: button_add_trade_click}
-        layout_properties: {}
-        name: button_add_trade
-        properties: {role: tonal-button, text: Manually Add Trade}
-        type: Button
-      layout_properties: {grid_position: 'AOJHSR,NRZYAU'}
-      name: flow_panel_8
-      properties: {}
-      type: FlowPanel
-    - components:
-      - layout_properties: {}
-        name: repeatingpanel_open_positions
-        properties: {item_template: Form1.RowTemplate_OpenPositions}
-        type: RepeatingPanel
-      layout_properties: {grid_position: 'CPQNAQ,LRQOGI'}
-      name: datagrid_open_positions
-      properties:
-        auto_header: true
-        columns:
-        - {data_key: OpenDate, id: VLJSED, title: OpenDate}
-        - {data_key: Underlying, id: WKXBSM, title: Underlying}
-        - {data_key: Strategy, id: DXDYPM, title: Strategy}
-      type: DataGrid
-    layout_properties: {grid_position: 'GTPMWJ,UIKURD'}
-    name: card_open_positions
-    properties: {role: outlined-card}
-    type: ColumnPanel
-  - components:
-    - layout_properties: {grid_position: 'EJBIJZ,SQVQFN'}
-      name: label_trade_history
-      properties: {role: title, text: Trade History}
-      type: Label
-    - components:
-      - name: repeatingpanel_trade_history
-        properties: {item_template: Form1.RowTemplate2}
-        type: RepeatingPanel
-      layout_properties: {grid_position: 'QXISEK,RPEFCD'}
-      name: datagrid_trade_history
-      properties:
-        columns:
-        - {data_key: Underlying, id: VLVEVX, title: Underlying}
-        - {data_key: Strategy, id: XDNIRW, title: Strategy}
-        - {data_key: OpenDate, id: XTBLRO, title: OpenDate}
-        - {data_key: CloseDate, id: QXSJXY, title: CloseDate}
-        - {data_key: TotalPL, id: XDVKMG, title: TotalPL}
-      type: DataGrid
-    layout_properties: {grid_position: 'TGWAEE,GSGXMD'}
-    name: card_trade_history
-    properties: {role: outlined-card, visible: false}
-    type: ColumnPanel
-  layout_properties: {slot: default}
-  name: content_panel
-  properties: {col_widths: '{}'}
-  type: ColumnPanel
-- layout_properties: {slot: nav-right}
+  layout_properties: {slot: nav-right}
   name: navbar_links
   properties: {}
   type: FlowPanel
