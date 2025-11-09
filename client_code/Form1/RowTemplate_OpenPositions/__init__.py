@@ -54,18 +54,18 @@ class RowTemplate_OpenPositions(RowTemplate_OpenPositionsTemplate):
                             trade=trade_to_close,
                             action_type='Close: Diagonal')
 
-def button_roll_click(self, **event_args):
-  """
-    Called when the 'Roll' button on this row is clicked.
+  def button_roll_click(self, **event_args):
     """
-
-  # 'self.item' is the enriched DTO for this row.
-  # We need the original database row, which we stored in it.
-  trade_to_close = self.item['trade_row']
-
-  # 'self.parent' is the repeating panel.
-  # We raise a custom event on it, passing the trade to be closed.
-  self.parent.raise_event('x-manual-entry-requested',
-                          trade=trade_to_close,
-                          action_type='Roll: Diagonal')
+      Called when the 'Roll' button on this row is clicked.
+      """
+  
+    # 'self.item' is the enriched DTO for this row.
+    # We need the original database row, which we stored in it.
+    trade_to_roll = self.item['trade_row']
+  
+    # 'self.parent' is the repeating panel.
+    # We raise a custom event on it, passing the trade to be closed.
+    self.parent.raise_event('x-manual-entry-requested',
+                            trade=trade_to_roll,
+                            action_type='Roll: Spread')
           
