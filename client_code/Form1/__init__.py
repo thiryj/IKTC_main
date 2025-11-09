@@ -38,7 +38,7 @@ class Form1(Form1Template):
     self.timer_order_status.interval = 0
 
     #timer
-    self.timer_risk_refresh.interval = 60
+    self.timer_risk_refresh.interval = 60*60    # once per hour
 
   def dropdown_environment_change(self, **event_args):
     """This method is called when an item is selected"""
