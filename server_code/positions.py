@@ -6,7 +6,7 @@ import anvil.server
 from typing import Dict
 
 from tradier_python.models import Quote
-from datetime import date
+import datetime
 
 class DiagonalPutSpread:    
   def __init__(self, short_put: Quote, long_put: Quote):
@@ -21,7 +21,7 @@ class DiagonalPutSpread:
     self.net_premium = self.calculate_net_premium()
     self.margin = self.calculate_margin()
     self.ROM = self.net_premium / self.margin
-    self.short_put_DTE = max(1, (self.short_put.expiration_date - date.today()).days)
+    self.short_put_DTE = max(1, (self.short_put.expiration_date - datetime.date.today()).days)
     self.ROM_rate = self.ROM / self.short_put_DTE
 
   def calculate_net_premium(self):

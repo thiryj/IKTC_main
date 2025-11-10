@@ -218,6 +218,7 @@ def build_multileg_payload(
   }
 
   #position_to_open = trade_dto[]
+  print(f"trade_dto is: {trade_dto}")
   short_leg_symbol = trade_dto['short_put']['symbol']
   long_leg_symbol = trade_dto['long_put']['symbol']
   legs.append({'symbol': short_leg_symbol, 'side': 'sell_to_open'})
@@ -367,7 +368,8 @@ def find_new_diagonal_trade(environment: str='SANDBOX',
                       ]
 
     # find best put diag based on highest return on margin per day of trade
-    today = datetime.date.today()
+    
+    today = date.today()
     sorted_positions = sorted(
       valid_positions,
       key=lambda pos: get_net_roll_rom_per_day(pos, cost_to_close, today),

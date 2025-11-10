@@ -594,9 +594,13 @@ class Form1(Form1Template):
     print(f"Handling roll request for trade: {trade['Underlying']}")
   
     try:
-      # 1. Get the environment
+      # 1. Get the environment and populate intro fields
       env = self.dropdown_environment.selected_value
-  
+      self.label_symbol.text = trade['Underlying']  
+      underlying_price = anvil.server.call('get_underlying_quote', env, self.label_symbol.text) 
+      if underlying_price is None:
+        alert("unable to get underlying price")
+        
       # 2. Call the server to get the 4-leg package
       self.label_quote_status.text = "Calculating best roll..."
       roll_package = anvil.server.call('get_roll_package_dto', env, trade)
@@ -635,11 +639,12 @@ class Form1(Form1Template):
       self.textbox_net_credit.text = f"{total_credit:.2f}"
   
       # (We'll skip ROM for now as it's more complex for a roll)
-      self.label_rom.text = "ROM: N/A"
+      self.label_rrom.text = "ROM: N/A"
   
       # 5. Show the card, ready for the user to preview/submit
       self.card_trade_entry.visible = True
       self.label_quote_status.text = "Roll package loaded. Ready for preview."
+      self.button_preview_trade.enabled = True
   
     except Exception as e:
       alert(f"Error calculating roll: {e}")

@@ -560,7 +560,8 @@ def get_roll_package_dto(environment: str, trade_row: Row):
 
   return {
     'legs_to_populate': all_4_legs,
-    'total_roll_credit': total_roll_credit
+    'total_roll_credit': total_roll_credit,
+    'new_spread_dto': new_spread_dto
   }
 
 @anvil.server.callable
