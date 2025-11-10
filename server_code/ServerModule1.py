@@ -244,7 +244,7 @@ def find_new_diagonal_trade(environment: str='SANDBOX',
     short_expiry = None
   if roll:     # use roll logic
     short_symbol = position_to_roll.short_put.symbol
-    print(f"position to roll short symbol: {short_symbol}")
+    #print(f"position to roll short symbol: {short_symbol}")
     short_strike = server_helpers.get_strike(short_symbol)
     short_expiry = server_helpers.get_expiration_date(short_symbol)
     #short_quantity = position_to_roll[0].quantity
@@ -257,7 +257,7 @@ def find_new_diagonal_trade(environment: str='SANDBOX',
     cost_to_close = live_position_to_roll.calculate_cost_to_close()
       
   # get list of valid positions
-  print("calling get_valid_diagonal_put_spreads")
+  #print("calling get_valid_diagonal_put_spreads")
   valid_positions = server_helpers.get_valid_diagonal_put_spreads(short_strike=short_strike, 
                                                                   tradier_client=t, 
                                                                   symbol=underlying_symbol, 
@@ -320,7 +320,7 @@ def find_new_diagonal_trade(environment: str='SANDBOX',
   best_position.print_leg_details()
   best_position.describe()
   best_position_dto = best_position.get_dto()
-  print(f"best dto is: {best_position_dto}")
+  #print(f"best dto is: {best_position_dto}")
   return best_position_dto
 
 @anvil.server.callable

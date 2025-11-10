@@ -19,6 +19,6 @@ ROLL = False
 #ENUMS and sets
 OPEN_ACTIONS = {'Sell to Open', 'Buy to Open'}
 CLOSE_ACTIONS = {'Sell to Close', 'Buy to Close'}
-OPTION_TYPE_PUT = 'Put'
-OPTION_TYPE_CALL = 'Call'
+OPTION_TYPE_PUT = 'PUT'
+OPTION_TYPE_CALL = 'CALL'
 

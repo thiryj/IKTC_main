@@ -90,14 +90,14 @@ def get_valid_diagonal_put_spreads(short_strike: float,
                                    symbol: str,
                                    max_days_out: int = 10,
                                    short_expiry: date = None)->List[positions.DiagonalPutSpread]:
-  print(f"get_valid: short strike:{short_strike}, symbol: {symbol}, short expiry: {short_expiry}")
+  #print(f"get_valid: short strike:{short_strike}, symbol: {symbol}, short expiry: {short_expiry}")
   # get list of valid expirations
   expirations = get_near_term_expirations(tradier_client=tradier_client, symbol=symbol, max_days_out=max_days_out)
   # if roll, exclude all expirations equal to or before existing short expiry.  if not roll, then short_expiry = today
   expirations = expirations if short_expiry is None else [expiry for expiry in expirations if expiry > short_expiry]
   exp_count = len(expirations)
   valid_positions = []
-  print(f"expirations: {expirations}")
+  #print(f"expirations: {expirations}")
   for i in range(3):
     short_put_expiration = expirations[i]
     for j in range(i+1, exp_count):

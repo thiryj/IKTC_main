@@ -12,7 +12,7 @@ components:
   - layout_properties: {col_xs: 4, row: YOSOIP, width_xs: 2}
     name: dropdown_manual_leg_type
     properties:
-      items: [Put, Call]
+      items: [PUT, CALL]
     type: DropDown
   - layout_properties: {col_xs: 6, row: YOSOIP, width_xs: 2}
     name: textbox_manual_leg_strike
