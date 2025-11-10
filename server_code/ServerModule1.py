@@ -9,7 +9,7 @@ import math
 from typing import Dict, Tuple
 import datetime
 import json
-from tradier_python import TradierAPI
+from tradier_python import TradierAPI, Position
 
 # personal lib section
 import server_helpers
@@ -220,20 +220,35 @@ def get_closed_trades():
   return app_tables.trades.search(Status='Closed')
 
 @anvil.server.callable
-def find_new_diagonal_trade(environment='SANDBOX', 
-                            underlying_symbol=None)->Dict:
+def find_new_diagonal_trade(environment: str='SANDBOX', 
+                            underlying_symbol: str=None,
+                            roll: bool=False,
+                            position_to_roll: positions.DiagonalPutSpread=None)->Dict:
   """
-  This function will contain the logic to connect to Tradier,
-  find a suitable short put diagonal, and return its parameters.
+  Connect to Tradier,
+  find an optimal new short put diagonal, and return its parameters.
   """
   print("Server function 'find_new_diagonal_trade' was called.")
   if underlying_symbol is None:
     anvil.alert("must select underlying symbol")
     return
   t, endpoint_url = server_helpers.get_tradier_client(environment)
-  underlying_price = get_underlying_quote(environment, underlying_symbol)
-  short_strike = math.ceil(underlying_price)
   
+
+  if not roll:
+    underlying_price = get_underlying_quote(environment, underlying_symbol)
+    short_strike = math.ceil(underlying_price)
+    short_expiry = None
+  if roll:
+    short_symbol = position_to_roll[0].symbol
+    short_strike = server_helpers.get_strike(short_symbol)
+    short_expiry = server_helpers.get_expiration_date(short_symbol)
+    short_quantity = position_to_roll[0].quantity
+    short_quote = t.get_quotes([short_symbol, "bogus"],greeks=False)[0]
+    long_symbol = position_to_roll[1].symbol
+    long_quote = t.get_quotes([long_symbol, "bogus"], greeks=False)[0]
+    cost_to_close = short_quote.ask = long_quote.bid
+      
   # get list of valid positions
   print("calling get_valid_diagonal_put_spreads")
   valid_positions = server_helpers.get_valid_diagonal_put_spreads(short_strike=short_strike, 
@@ -246,15 +261,52 @@ def find_new_diagonal_trade(environment='SANDBOX',
     print("Halting script - no positions")
     return "no positions"
   
-  # find best put diag based on highest return on margin per day of trade
-  best_position = max(
-    valid_positions,
-    key=lambda pos: pos.ROM_rate,
-    default=None
-  )
+  if roll:
+    # positions must have a larger credit to open than the existing spread cost to close    
+    valid_positions = [pos for pos in valid_positions if 
+                        (pos.net_premium > 0.01 and #abs(cost_to_close) and 
+                        pos.short_put.expiration_date >= short_quote.expiration_date and
+                        pos.long_put.expiration_date != long_quote.expiration_date
+                        )
+                      ]
+
+    # find best put diag based on highest return on margin per day of trade
+    today = datetime.date.today()
+    sorted_positions = sorted(
+      valid_positions,
+      key=lambda pos: server_helpers.get_net_roll_rom_per_day(pos, cost_to_close, today),
+      reverse=True
+    )
+    best_position = sorted_positions[0] if sorted_positions else None
+  else:
+    best_position = max(
+      valid_positions,
+      key=lambda pos: pos.ROM_rate,
+      default=None
+    )
   if not best_position:
     print("No good roll to position identified")
     return 1
+
+    if roll:
+      #TODO: code preview 4 legged roll
+      # build position with existing legs
+      position_to_close = positions.DiagonalPutSpread(short_quote, long_quote)
+      #positions_list = [best_position, position_to_close]
+      #quantity = -short_quantity
+      roll_premium = best_position.net_premium - position_to_close.calculate_cost_to_close() 
+      print(f'Roll premium: {roll_premium}')
+      print('To Close:')
+      position_to_close.print_leg_details()
+      position_to_close.describe()
+    else:
+      pass
+      #positions_list = [best_position]
+      # calculate quantity based on fixed allocation.  
+      #TODO: generalize this to lookup available capital t.get_account_balance().cash.cash_available
+      #quantity = math.floor(ALLOCATION / best_position.margin) if best_position.margin > 0 else 0
+      #quantity = 1 if TRADE_ONE else quantity
+      #quantity = 1
   
   print('To Open')
   best_position.print_leg_details()

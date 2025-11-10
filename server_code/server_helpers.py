@@ -88,7 +88,8 @@ def get_near_term_expirations(tradier_client: TradierAPI,
 def get_valid_diagonal_put_spreads(short_strike: float,
                                    tradier_client: TradierAPI,
                                    symbol: str,
-                                   max_days_out: int = 10)->List[positions.DiagonalPutSpread]:
+                                   max_days_out: int = 10,
+                                   short_expiry: date = None)->List[positions.DiagonalPutSpread]:
   # get list of valid expirations
   expirations = get_near_term_expirations(tradier_client=tradier_client, symbol=symbol, max_days_out=max_days_out)
   exp_count = len(expirations)
