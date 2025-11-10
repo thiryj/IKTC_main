@@ -33,6 +33,7 @@ class Form1(Form1Template):
 
     # Trade ticket init
     self.best_trade_dto = None # the selected position returned by find_new_diagonal_trade
+    self.trade_dto = None # the new combined var to hold 2 leg new spreads or 4 leg roll spreads
     self.trade_preview_data = None # A place to store the server data
     self.button_place_trade.enabled = False
     self.label_quote_status.text = "Enter quantity and review trade."
@@ -101,8 +102,8 @@ class Form1(Form1Template):
         
       if trade_strategy == 'diagonal put spread':
         self.label_quote_status.text = "Getting best trade..."
-        print("calling find_new_diagonal_trade")
-        best_trade_dto = anvil.server.call('find_new_diagonal_trade',
+        print("calling get_new_open_trade_dto")
+        best_trade_dto = anvil.server.call('get_new_open_trade_dto',
                                            self.dropdown_environment.selected_value,
                                            symbol)
       elif trade_strategy == 'cash secured put':
@@ -113,7 +114,8 @@ class Form1(Form1Template):
         print(f"best put diag DTO is: {best_trade_dto}")
 
         # 4. Store the best trade DTO (the dictionary)
-        self.best_trade_dto = best_trade_dto
+        #self.best_trade_dto = best_trade_dto
+        self.trade_dto = best_trade_dto
 
         # 5. Populate strategy leg fields
       
@@ -239,7 +241,7 @@ class Form1(Form1Template):
     trade_dict = anvil.server.call('submit_order',
                                      self.dropdown_environment.selected_value,
                                      self.textbox_symbol.text,
-                                     self.best_trade_dto,
+                                     self.trade_dto,
                                      quantity,
                                      preview=preview,
                                      limit_price=limit_price,
@@ -559,7 +561,7 @@ class Form1(Form1Template):
       try:
         env = self.dropdown_environment.selected_value
         # Call our new function to get all 4 legs and the credit
-        roll_package = anvil.server.call('get_roll_package', env, trade)
+        roll_package = anvil.server.call('get_roll_package_dto', env, trade)
 
         # Use the 4-leg DTO list to populate the repeating panel
         self.repeatingpanel_manual_legs.items = roll_package['legs_to_populate']
@@ -583,8 +585,6 @@ class Form1(Form1Template):
     """This method is called when the button is clicked"""
     self.refresh_open_positions_grid()
 
-# In Form1 code
-
   def handle_roll_trade_request(self, trade, **event_args):
     """
       Called by a row's 'Roll' button.
@@ -599,7 +599,7 @@ class Form1(Form1Template):
   
       # 2. Call the server to get the 4-leg package
       self.label_quote_status.text = "Calculating best roll..."
-      roll_package = anvil.server.call('get_roll_package', env, trade)
+      roll_package = anvil.server.call('get_roll_package_dto', env, trade)
   
       if not roll_package:
         alert("Could not find a suitable roll for this position.")
@@ -608,6 +608,7 @@ class Form1(Form1Template):
         # 3. Store the 4-leg DTO list. We'll need this when we submit.
         #    This is different from self.best_trade_dto, which is for 2-leg opens.
       self.current_roll_dto_list = roll_package['legs_to_populate']
+      self.trade_dto = self.current_roll_dto_list
   
       # 4. Populate the Trade Ticket UI.
       #    We will display the two *new* legs (legs 3 and 4)

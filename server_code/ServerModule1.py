@@ -220,110 +220,6 @@ def get_closed_trades():
   return app_tables.trades.search(Status='Closed')
 
 @anvil.server.callable
-def find_new_diagonal_trade(environment: str='SANDBOX', 
-                            underlying_symbol: str=None,
-                            position_to_roll: positions.DiagonalPutSpread=None)->Dict:
-  """
-  Connect to Tradier,
-  find an optimal new short put diagonal, and return its parameters.
-  if an existing position is passed in, then use roll logic,otherwise its a simple open
-  """
-  print("Server function 'find_new_diagonal_trade' was called.")
-  if underlying_symbol is None:
-    anvil.alert("must select underlying symbol")
-    return
-    
-  if position_to_roll is not None:
-    roll = True
-    
-  t, endpoint_url = server_helpers.get_tradier_client(environment)
-  
-  if not roll: # use simple open logic
-    underlying_price = get_underlying_quote(environment, underlying_symbol)
-    short_strike = math.ceil(underlying_price)
-    short_expiry = None
-  if roll:     # use roll logic
-    short_symbol = position_to_roll.short_put.symbol
-    #print(f"position to roll short symbol: {short_symbol}")
-    short_strike = server_helpers.get_strike(short_symbol)
-    short_expiry = server_helpers.get_expiration_date(short_symbol)
-    #short_quantity = position_to_roll[0].quantity
-    short_quote = t.get_quotes([short_symbol, "bogus"],greeks=False)[0]
-    long_symbol = position_to_roll.long_put.symbol
-    long_quote = t.get_quotes([long_symbol, "bogus"], greeks=False)[0]
-
-    live_position_to_roll = positions.DiagonalPutSpread(short_quote, long_quote)
-    #cost_to_close = short_quote.ask = long_quote.bid
-    cost_to_close = live_position_to_roll.calculate_cost_to_close()
-      
-  # get list of valid positions
-  #print("calling get_valid_diagonal_put_spreads")
-  valid_positions = server_helpers.get_valid_diagonal_put_spreads(short_strike=short_strike, 
-                                                                  tradier_client=t, 
-                                                                  symbol=underlying_symbol, 
-                                                                  max_days_out=server_config.MAX_DTE,
-                                                                  short_expiry=short_expiry)
-  number_positions = len(valid_positions)
-  print(f"Number of valid positions: {len(valid_positions)}")
-  if number_positions == 0:
-    print("Halting script - no positions")
-    return "no positions"
-  
-  if roll:
-    # positions must have a larger credit to open than the existing spread cost to close    
-    valid_positions = [pos for pos in valid_positions if 
-                        (pos.net_premium > 0.01 and #abs(cost_to_close) and 
-                        pos.short_put.expiration_date >= short_quote.expiration_date and
-                        pos.long_put.expiration_date != long_quote.expiration_date
-                        )
-                      ]
-
-    # find best put diag based on highest return on margin per day of trade
-    today = datetime.date.today()
-    sorted_positions = sorted(
-      valid_positions,
-      key=lambda pos: server_helpers.get_net_roll_rom_per_day(pos, cost_to_close, today),
-      reverse=True
-    )
-    best_position = sorted_positions[0] if sorted_positions else None
-  else:
-    best_position = max(
-      valid_positions,
-      key=lambda pos: pos.ROM_rate,
-      default=None
-    )
-  if not best_position:
-    print("No good roll to position identified")
-    return 1
-
-  if roll:
-    #TODO: code preview 4 legged roll
-    # build position with existing legs
-    position_to_close = positions.DiagonalPutSpread(short_quote, long_quote)
-    #positions_list = [best_position, position_to_close]
-    #quantity = -short_quantity
-    roll_premium = best_position.net_premium - position_to_close.calculate_cost_to_close() 
-    print(f'Roll premium: {roll_premium}')
-    print('To Close:')
-    position_to_close.print_leg_details()
-    position_to_close.describe()
-  else:
-    pass
-    #positions_list = [best_position]
-    # calculate quantity based on fixed allocation.  
-    #TODO: generalize this to lookup available capital t.get_account_balance().cash.cash_available
-    #quantity = math.floor(ALLOCATION / best_position.margin) if best_position.margin > 0 else 0
-    #quantity = 1 if TRADE_ONE else quantity
-    #quantity = 1
-  
-  print('To Open')
-  best_position.print_leg_details()
-  best_position.describe()
-  best_position_dto = best_position.get_dto()
-  #print(f"best dto is: {best_position_dto}")
-  return best_position_dto
-
-@anvil.server.callable
 def submit_order(environment: str='SANDBOX', 
                            underlying_symbol: str=None,
                            trade_dto: Dict=None, 
@@ -558,7 +454,7 @@ def validate_manual_legs(environment, legs_data_list):
   return True
 
 @anvil.server.callable
-def get_roll_package(environment: str, trade_row: Row):
+def get_roll_package_dto(environment: str, trade_row: Row):
   """
     Finds active legs, gets live prices, and calculates
     a full 4-leg roll package with standardized keys.
@@ -626,29 +522,31 @@ def get_roll_package(environment: str, trade_row: Row):
 
   # --- 3.  Find NEW Legs ---
   # call find_new_diagonal_trade with the closing legs as the third arg
-  new_spread = find_new_diagonal_trade(environment, trade_row['Underlying'], current_spread)
+  new_spread_object = server_helpers.find_new_diagonal_trade(environment, trade_row['Underlying'], current_spread)
   #print(f"new spread is: {new_spread}")
-  new_short_leg_quote = new_spread['short_put']
-  new_long_leg_quote = new_spread['long_put']
 
   # --- 4. Calculate Opening Credit & Build Opening Leg Dicts (FIXED) ---
-  #total_open_credit = new_spread.calculate_net_premium()
-  total_open_credit = new_short_leg_quote['bid'] - new_long_leg_quote['ask']
+  total_open_credit = new_spread_object.calculate_net_premium()
   #print(f"open credit of roll to: {total_open_credit}")
 
+  # prepare for serialization
+  new_spread_dto = new_spread_object.get_dto()
+  new_short_leg_dto = new_spread_dto['short_put']
+  new_long_leg_dto = new_spread_dto['long_put']
+  
   # Build standardized dicts for the opening legs
   opening_leg_1 = {
     'action': 'Sell to Open',
-    'type': new_short_leg_quote['option_type'],
-    'strike': new_short_leg_quote['strike'],
-    'expiration': new_short_leg_quote['expiration_date'],
+    'type': new_short_leg_dto['option_type'],
+    'strike': new_short_leg_dto['strike'],
+    'expiration': new_short_leg_dto['expiration_date'],
     'quantity': 1 # Assuming quantity 1
   }
   opening_leg_2 = {
     'action': 'Buy to Open',
-    'type': new_long_leg_quote['option_type'],
-    'strike': new_long_leg_quote['strike'],
-    'expiration': new_long_leg_quote['expiration_date'],
+    'type': new_long_leg_dto['option_type'],
+    'strike': new_long_leg_dto['strike'],
+    'expiration': new_long_leg_dto['expiration_date'],
     'quantity': 1 # Assuming quantity 1
   }
   opening_legs_list = [opening_leg_1, opening_leg_2]
@@ -664,3 +562,24 @@ def get_roll_package(environment: str, trade_row: Row):
     'legs_to_populate': all_4_legs,
     'total_roll_credit': total_roll_credit
   }
+
+@anvil.server.callable
+def get_new_open_trade_dto(environment: str, symbol: str) -> Dict:
+  """
+    This is the new "wrapper" for the 'Find New Trade' button.
+    It calls the main engine and returns a serializable DTO.
+    """
+
+  # 1. Call your main engine (which is now a helper)
+  best_position_object = server_helpers.find_new_diagonal_trade(
+    environment=environment,
+    underlying_symbol=symbol,
+    position_to_roll=None  # We pass None to trigger 'open' logic
+  )
+
+  # 2. Check the result
+  if not best_position_object:
+    return None # Or return an error string
+
+    # 3. Convert the object to a DTO and return it
+  return best_position_object.get_dto()
