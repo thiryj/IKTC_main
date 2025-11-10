@@ -3,7 +3,7 @@ from anvil import *
 import anvil.server
 import anvil.tables as tables
 import anvil.tables.query as q
-from anvil.tables import app_tables
+from anvil.tables import app_tables, Row
 from .Form_ConfirmTrade import Form_ConfirmTrade # Import your custom form
 from .. import config
 from datetime import date
@@ -524,7 +524,7 @@ class Form1(Form1Template):
         
   # In Form1 code
 
-  def handle_manual_entry_request(self, trade, action_type, **event_args):
+  def handle_manual_entry_request(self, trade: Row, action_type: str, **event_args):
     """
       Called by a row's 'Close' or 'Roll' button.
       Opens the manual entry card and pre-fills it.

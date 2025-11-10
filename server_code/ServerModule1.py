@@ -2,7 +2,7 @@
 import anvil.server
 import anvil.secrets
 import anvil.tables.query as q
-from anvil.tables import app_tables
+from anvil.tables import app_tables, Row
 
 # public lib sectoin
 import math
@@ -222,39 +222,47 @@ def get_closed_trades():
 @anvil.server.callable
 def find_new_diagonal_trade(environment: str='SANDBOX', 
                             underlying_symbol: str=None,
-                            roll: bool=False,
                             position_to_roll: positions.DiagonalPutSpread=None)->Dict:
   """
   Connect to Tradier,
   find an optimal new short put diagonal, and return its parameters.
+  if an existing position is passed in, then use roll logic,otherwise its a simple open
   """
   print("Server function 'find_new_diagonal_trade' was called.")
   if underlying_symbol is None:
     anvil.alert("must select underlying symbol")
     return
+    
+  if position_to_roll is not None:
+    roll = True
+    
   t, endpoint_url = server_helpers.get_tradier_client(environment)
   
-
-  if not roll:
+  if not roll: # use simple open logic
     underlying_price = get_underlying_quote(environment, underlying_symbol)
     short_strike = math.ceil(underlying_price)
     short_expiry = None
-  if roll:
-    short_symbol = position_to_roll[0].symbol
+  if roll:     # use roll logic
+    short_symbol = position_to_roll.short_put.symbol
+    print(f"position to roll short symbol: {short_symbol}")
     short_strike = server_helpers.get_strike(short_symbol)
     short_expiry = server_helpers.get_expiration_date(short_symbol)
-    short_quantity = position_to_roll[0].quantity
+    #short_quantity = position_to_roll[0].quantity
     short_quote = t.get_quotes([short_symbol, "bogus"],greeks=False)[0]
-    long_symbol = position_to_roll[1].symbol
+    long_symbol = position_to_roll.long_put.symbol
     long_quote = t.get_quotes([long_symbol, "bogus"], greeks=False)[0]
-    cost_to_close = short_quote.ask = long_quote.bid
+
+    live_position_to_roll = positions.DiagonalPutSpread(short_quote, long_quote)
+    #cost_to_close = short_quote.ask = long_quote.bid
+    cost_to_close = live_position_to_roll.calculate_cost_to_close()
       
   # get list of valid positions
   print("calling get_valid_diagonal_put_spreads")
   valid_positions = server_helpers.get_valid_diagonal_put_spreads(short_strike=short_strike, 
                                                                   tradier_client=t, 
                                                                   symbol=underlying_symbol, 
-                                                                  max_days_out=server_config.MAX_DTE)
+                                                                  max_days_out=server_config.MAX_DTE,
+                                                                  short_expiry=short_expiry)
   number_positions = len(valid_positions)
   print(f"Number of valid positions: {len(valid_positions)}")
   if number_positions == 0:
@@ -549,7 +557,7 @@ def validate_manual_legs(environment, legs_data_list):
   return True
 
 @anvil.server.callable
-def get_roll_package(environment, trade_row):
+def get_roll_package(environment: str, trade_row: Row):
   """
     Finds active legs, gets live prices, and calculates
     a full 4-leg roll package with standardized keys.
@@ -616,12 +624,12 @@ def get_roll_package(environment, trade_row):
   closing_legs_list = [closing_leg_1, closing_leg_2]
 
   # --- 3. (Placeholder) Find NEW Legs ---
-  # (Your proprietary logic will replace this)
-  new_short_leg_quote = short_leg_quote 
-  new_long_leg_quote = long_leg_quote   
+  # call find_new_diagonal_trade with the closing legs as the third arg
+  new_spread = find_new_diagonal_trade(environment, trade_row['Underlying'], current_spread)
+  new_short_leg_quote = new_spread[0]
+  new_long_leg_quote = new_spread[1]
 
   # --- 4. Calculate Opening Credit & Build Opening Leg Dicts (FIXED) ---
-  new_spread = positions.DiagonalPutSpread(new_short_leg_quote, new_long_leg_quote)
   total_open_credit = new_spread.calculate_net_premium()
 
   # Build standardized dicts for the opening legs
