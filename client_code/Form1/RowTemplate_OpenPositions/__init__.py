@@ -65,7 +65,7 @@ class RowTemplate_OpenPositions(RowTemplate_OpenPositionsTemplate):
   
     # 'self.parent' is the repeating panel.
     # We raise a custom event on it, passing the trade to be closed.
-    self.parent.raise_event('x-manual-entry-requested',
+    self.parent.raise_event('x-roll-trade-requested',
                             trade=trade_to_roll,
                             action_type='Roll: Spread')
           

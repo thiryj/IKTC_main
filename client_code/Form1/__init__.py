@@ -22,6 +22,11 @@ class Form1(Form1Template):
     self.repeatingpanel_open_positions.set_event_handler(
       'x-manual-entry-requested', self.handle_manual_entry_request
     )
+
+    # subscribe to the Roll Positions event broadcast
+    self.repeatingpanel_open_positions.set_event_handler(
+      'x-roll-trade-requested', self.handle_roll_trade_request
+    )
     
     # Load data for the trade history grid
     self.repeatingpanel_trade_history.items = anvil.server.call('get_closed_trades')
@@ -577,3 +582,64 @@ class Form1(Form1Template):
   def button_refresh_open_positions_risk_click(self, **event_args):
     """This method is called when the button is clicked"""
     self.refresh_open_positions_grid()
+
+# In Form1 code
+
+  def handle_roll_trade_request(self, trade, **event_args):
+    """
+      Called by a row's 'Roll' button.
+      Calls the server to get a full 4-leg roll package
+      and pre-fills the trade ticket card.
+      """
+    print(f"Handling roll request for trade: {trade['Underlying']}")
+  
+    try:
+      # 1. Get the environment
+      env = self.dropdown_environment.selected_value
+  
+      # 2. Call the server to get the 4-leg package
+      self.label_quote_status.text = "Calculating best roll..."
+      roll_package = anvil.server.call('get_roll_package', env, trade)
+  
+      if not roll_package:
+        alert("Could not find a suitable roll for this position.")
+        return
+  
+        # 3. Store the 4-leg DTO list. We'll need this when we submit.
+        #    This is different from self.best_trade_dto, which is for 2-leg opens.
+      self.current_roll_dto_list = roll_package['legs_to_populate']
+  
+      # 4. Populate the Trade Ticket UI.
+      #    We will display the two *new* legs (legs 3 and 4)
+      #    and the *total* net credit for the entire roll.
+  
+      # The 'to open' legs are the last two in the list
+      opening_short = self.current_roll_dto_list[2]
+      opening_long = self.current_roll_dto_list[3]
+  
+      self.label_leg1_action.text = opening_short['action']
+      self.label_leg1_details.text = (
+        f"Strike: {opening_short['strike']}, "
+        f"Expiry: {opening_short['expiration'].strftime('%Y-%m-%d')}"
+      )
+  
+      self.label_leg2_action.text = opening_long['action']
+      self.label_leg2_details.text = (
+        f"Strike: {opening_long['strike']}, "
+        f"Expiry: {opening_long['expiration'].strftime('%Y-%m-%d')}"
+      )
+  
+      # Use the total calculated credit for the whole roll
+      total_credit = roll_package['total_roll_credit']
+      self.textbox_net_credit.text = f"{total_credit:.2f}"
+  
+      # (We'll skip ROM for now as it's more complex for a roll)
+      self.label_rom.text = "ROM: N/A"
+  
+      # 5. Show the card, ready for the user to preview/submit
+      self.card_trade_entry.visible = True
+      self.label_quote_status.text = "Roll package loaded. Ready for preview."
+  
+    except Exception as e:
+      alert(f"Error calculating roll: {e}")
+      self.card_trade_entry.visible = False

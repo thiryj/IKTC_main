@@ -634,7 +634,7 @@ def get_roll_package(environment: str, trade_row: Row):
   # --- 4. Calculate Opening Credit & Build Opening Leg Dicts (FIXED) ---
   #total_open_credit = new_spread.calculate_net_premium()
   total_open_credit = new_short_leg_quote['bid'] - new_long_leg_quote['ask']
-  print(f"open credit of roll to: {total_open_credit}")
+  #print(f"open credit of roll to: {total_open_credit}")
 
   # Build standardized dicts for the opening legs
   opening_leg_1 = {
@@ -652,13 +652,13 @@ def get_roll_package(environment: str, trade_row: Row):
     'quantity': 1 # Assuming quantity 1
   }
   opening_legs_list = [opening_leg_1, opening_leg_2]
-  print(f" open leg list: {opening_legs_list}")
+  #print(f" open leg list: {opening_legs_list}")
 
   # --- 5. Package and Return ---
   all_4_legs = closing_legs_list + opening_legs_list
   total_roll_credit = total_open_credit - total_close_cost
 
-  print(f"in get_roll: roll legs:{all_4_legs}, roll credit: {total_roll_credit}")
+  #print(f"in get_roll: roll legs:{all_4_legs}, roll credit: {total_roll_credit}")
 
   return {
     'legs_to_populate': all_4_legs,
