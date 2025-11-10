@@ -296,30 +296,31 @@ def find_new_diagonal_trade(environment: str='SANDBOX',
     print("No good roll to position identified")
     return 1
 
-    if roll:
-      #TODO: code preview 4 legged roll
-      # build position with existing legs
-      position_to_close = positions.DiagonalPutSpread(short_quote, long_quote)
-      #positions_list = [best_position, position_to_close]
-      #quantity = -short_quantity
-      roll_premium = best_position.net_premium - position_to_close.calculate_cost_to_close() 
-      print(f'Roll premium: {roll_premium}')
-      print('To Close:')
-      position_to_close.print_leg_details()
-      position_to_close.describe()
-    else:
-      pass
-      #positions_list = [best_position]
-      # calculate quantity based on fixed allocation.  
-      #TODO: generalize this to lookup available capital t.get_account_balance().cash.cash_available
-      #quantity = math.floor(ALLOCATION / best_position.margin) if best_position.margin > 0 else 0
-      #quantity = 1 if TRADE_ONE else quantity
-      #quantity = 1
+  if roll:
+    #TODO: code preview 4 legged roll
+    # build position with existing legs
+    position_to_close = positions.DiagonalPutSpread(short_quote, long_quote)
+    #positions_list = [best_position, position_to_close]
+    #quantity = -short_quantity
+    roll_premium = best_position.net_premium - position_to_close.calculate_cost_to_close() 
+    print(f'Roll premium: {roll_premium}')
+    print('To Close:')
+    position_to_close.print_leg_details()
+    position_to_close.describe()
+  else:
+    pass
+    #positions_list = [best_position]
+    # calculate quantity based on fixed allocation.  
+    #TODO: generalize this to lookup available capital t.get_account_balance().cash.cash_available
+    #quantity = math.floor(ALLOCATION / best_position.margin) if best_position.margin > 0 else 0
+    #quantity = 1 if TRADE_ONE else quantity
+    #quantity = 1
   
   print('To Open')
   best_position.print_leg_details()
   best_position.describe()
   best_position_dto = best_position.get_dto()
+  print(f"best dto is: {best_position_dto}")
   return best_position_dto
 
 @anvil.server.callable
@@ -623,35 +624,41 @@ def get_roll_package(environment: str, trade_row: Row):
   }
   closing_legs_list = [closing_leg_1, closing_leg_2]
 
-  # --- 3. (Placeholder) Find NEW Legs ---
+  # --- 3.  Find NEW Legs ---
   # call find_new_diagonal_trade with the closing legs as the third arg
   new_spread = find_new_diagonal_trade(environment, trade_row['Underlying'], current_spread)
-  new_short_leg_quote = new_spread[0]
-  new_long_leg_quote = new_spread[1]
+  #print(f"new spread is: {new_spread}")
+  new_short_leg_quote = new_spread['short_put']
+  new_long_leg_quote = new_spread['long_put']
 
   # --- 4. Calculate Opening Credit & Build Opening Leg Dicts (FIXED) ---
-  total_open_credit = new_spread.calculate_net_premium()
+  #total_open_credit = new_spread.calculate_net_premium()
+  total_open_credit = new_short_leg_quote['bid'] - new_long_leg_quote['ask']
+  print(f"open credit of roll to: {total_open_credit}")
 
   # Build standardized dicts for the opening legs
   opening_leg_1 = {
     'action': 'Sell to Open',
-    'type': new_short_leg_quote.option_type.name,
-    'strike': new_short_leg_quote.strike,
-    'expiration': new_short_leg_quote.expiration_date,
+    'type': new_short_leg_quote['option_type'],
+    'strike': new_short_leg_quote['strike'],
+    'expiration': new_short_leg_quote['expiration_date'],
     'quantity': 1 # Assuming quantity 1
   }
   opening_leg_2 = {
     'action': 'Buy to Open',
-    'type': new_long_leg_quote.option_type.name,
-    'strike': new_long_leg_quote.strike,
-    'expiration': new_long_leg_quote.expiration_date,
+    'type': new_long_leg_quote['option_type'],
+    'strike': new_long_leg_quote['strike'],
+    'expiration': new_long_leg_quote['expiration_date'],
     'quantity': 1 # Assuming quantity 1
   }
   opening_legs_list = [opening_leg_1, opening_leg_2]
+  print(f" open leg list: {opening_legs_list}")
 
   # --- 5. Package and Return ---
   all_4_legs = closing_legs_list + opening_legs_list
   total_roll_credit = total_open_credit - total_close_cost
+
+  print(f"in get_roll: roll legs:{all_4_legs}, roll credit: {total_roll_credit}")
 
   return {
     'legs_to_populate': all_4_legs,
