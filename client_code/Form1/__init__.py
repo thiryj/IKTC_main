@@ -14,6 +14,10 @@ class Form1(Form1Template):
     # Set Form properties and Data Bindings.
     self.init_components(**properties)
 
+    # populate dropdowns
+    self.dropdown_manual_transaction_type.items = config.POSITION_TYPES
+    self.dropdown_manual_position_action.items = config.POSITION_ACTIONS
+    
     # Log into default environment as displayed in the dropdown
     self.dropdown_environment_change()
     self.refresh_open_positions_grid() 
@@ -316,7 +320,7 @@ class Form1(Form1Template):
     # This will be the list of dictionaries for the repeating panel
     leg_definitions = []
     
-    if selected_type == 'Open: Cash-Secured Put':
+    if selected_type == 'Open: Cash Secured Put':
       leg_definitions = [
         {'action': 'Sell to Open', 'type': 'Put'}
       ]
@@ -326,10 +330,12 @@ class Form1(Form1Template):
         {'action': 'Sell to Open', 'type': 'Put'},
         {'action': 'Buy to Open', 'type': 'Put'}
       ]
-    elif selected_type == 'Roll: Leg':
+    elif selected_type == 'Roll: Diagonal':
       leg_definitions = [
         {'action': 'Buy to Close', 'type': 'Put'},
-        {'action': 'Sell to Open', 'type': 'Put'}
+        {'action': 'Sell to Close', 'type': 'Put'},
+        {'action': 'Sell to Open', 'type': 'Put'},
+        {'action': 'Buy to Open', 'type': 'Put'}
       ]
       
     elif selected_type == 'Close: Diagonal':
@@ -337,13 +343,12 @@ class Form1(Form1Template):
         {'action': 'Buy to Close', 'type': 'Put'},
         {'action': 'Sell to Close', 'type': 'Put'}
       ]
-    elif selected_type == 'Roll: Spread':
+    
+    elif selected_type == 'Roll: Leg':
       leg_definitions = [
-        {'action': 'Buy to Close', 'type': 'Put'},
-        {'action': 'Sell to Close', 'type': 'Put'},
-        {'action': 'Sell to Open', 'type': 'Put'},
-        {'action': 'Buy to Open', 'type': 'Put'}
-      ]
+      {'action': 'Buy to Close', 'type': 'Put'},
+      {'action': 'Sell to Open', 'type': 'Put'}
+    ]
     # Now, assign this list to the repeating panel
     if leg_definitions:
       self.repeatingpanel_manual_legs.items = leg_definitions

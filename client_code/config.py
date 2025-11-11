@@ -13,6 +13,9 @@ UNDERLYING_SYMBOL = "IWM"
 TRADE_TYPE_OPEN = 'open'
 TRADE_TYPE_ROLL = 'roll'
 NEW_TRADE_TYPES = {'Open: Diagonal', 'Open: Cash Secured Put'}
+POSITION_TYPES = ["Diagonal", "CSP", "Covered Call", "Stock", "Misc"]
+POSITION_ACTIONS = ["Open", "Roll", "Close"]
+
 
 
 # Globals

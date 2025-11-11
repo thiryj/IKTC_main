@@ -73,14 +73,19 @@ components:
         name: dropdown_manual_transaction_type
         properties:
           include_placeholder: true
-          items: ['Open: Diagonal', 'Roll: Diagonal', 'Close: Diagonal', 'Open: Cash-Secured Put', 'Close: Leg', 'Close: Stock (Covered Call)', 'Event: Assignment (Stock In)', 'Event: Assignment (Stock Out)', 'Roll: Spread']
+          items: ['Open: Diagonal', 'Roll: Diagonal', 'Close: Diagonal', 'Open: Cash Secured Put', 'Open: Covered Call', 'Close: Leg', 'Close: Stock (Covered Call)', 'Event: Assignment (Stock In)', 'Event: Assignment (Stock Out)']
           placeholder: Select Transaction Type
           role: null
         type: DropDown
-      - layout_properties: {col_xs: 3, row: CXCZWP, width_xs: 2}
-        name: textbox_manual_underlying
-        properties: {text: IWM}
-        type: TextBox
+      - data_bindings:
+        - {code: '', property: items, writeback: false}
+        layout_properties: {col_xs: 3, row: CXCZWP, width_xs: 2}
+        name: dropdown_manual_position_action
+        properties:
+          include_placeholder: true
+          items: [config.POSITION_ACTIONS]
+          placeholder: Action
+        type: DropDown
       - layout_properties: {col_xs: 5, row: CXCZWP, width_xs: 3}
         name: datepicker_manual_date
         properties: {}
@@ -89,15 +94,24 @@ components:
         name: textbox_manual_credit_debit
         properties: {placeholder: credit/debit, type: number}
         type: TextBox
-      - event_bindings: {change: dropdown_manual_existing_trade_change}
-        layout_properties: {col_xs: 0, row: DWOICU, width_xs: 3}
-        name: dropdown_manual_existing_trade
-        properties: {include_placeholder: true, placeholder: Select Open Trade, visible: false}
-        type: DropDown
       layout_properties: {grid_position: 'MRHWMP,KALBZV'}
       name: grid_panel_2
       properties: {}
       type: GridPanel
+    - components:
+      - event_bindings: {change: dropdown_manual_existing_trade_change}
+        layout_properties: {}
+        name: dropdown_manual_existing_trade
+        properties: {include_placeholder: true, placeholder: Select Open Trade, visible: false}
+        type: DropDown
+      - layout_properties: {}
+        name: textbox_manual_underlying
+        properties: {text: IWM}
+        type: TextBox
+      layout_properties: {grid_position: 'DWTKBI,CVTPYA'}
+      name: flow_panel_9
+      properties: {}
+      type: FlowPanel
     - layout_properties: {grid_position: 'NVZSNL,GMBTAX'}
       name: columnpanel_manual_leg_header
       properties: {}
