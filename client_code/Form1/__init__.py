@@ -193,21 +193,22 @@ class Form1(Form1Template):
   
         # 3. Store the 4-leg DTO list. We'll need this when we submit.
       current_roll_dto_list = roll_package['legs_to_populate']
-      self.trade_dto = self.current_roll_dto_list
+      self.trade_dto = current_roll_dto_list
+      print(f"handle_roll_trade_request: self.trade_dto:{self.trade_dto}")
   
       # 4. Populate the Trade Ticket UI.
       #    We will display the two *new* legs (legs 3 and 4)
       #    and the *total* net credit for the entire roll.
       # The 'to close' legs are the first two in the list
-      number_legs_dto = len(self.current_roll_dto_list)
+      number_legs_dto = len(current_roll_dto_list)
       
       # The 'to close' legs are the first two in the list
-      closing_short = self.current_roll_dto_list[0]
-      closing_long = self.current_roll_dto_list[1]
+      closing_short = current_roll_dto_list[0]
+      closing_long = current_roll_dto_list[1]
       
       # The 'to open' legs are the last two in the list
-      opening_short = self.current_roll_dto_list[2]
-      opening_long = self.current_roll_dto_list[3]
+      opening_short = current_roll_dto_list[2]
+      opening_long = current_roll_dto_list[3]
   
       self.label_leg1_action.text = opening_short['action']
       self.label_leg1_details.text = (
@@ -238,12 +239,12 @@ class Form1(Form1Template):
       alert(f"Error calculating roll: {e}")
       self.card_trade_entry.visible = False
 
-  def common_trade_ticket(self, trade_dto: str):
+  def common_trade_ticket(self):
     """
     Called from find new trade button or Roll button.  Places live trades
     """
     #pop the trade entry card and gather data
-    self.button_preview_trade.enabled = False
+    self.button_preview_trade.enabled = True
     self.button_place_trade.enabled = False
     self.card_trade_entry.visible = True   
 

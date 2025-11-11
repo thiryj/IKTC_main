@@ -199,16 +199,20 @@ def submit_diagonal_spread_order(
 
 def build_multileg_payload(
   underlying_symbol: str, 
-  quantity: int, 
-  trade_dto: Dict,
-  trade_type: str=None
-):
+  leg_dtos: List
+)->Dict:
   """
+    trade_dto is a list of legs with: 
+    {'action': 'Buy to Close', 
+    'type': 'PUT', 
+    'strike': 244, 
+    'expiration': datetime.date(2025, 11, 11), 
+    'quantity': 1}
     Builds the API payload for a multileg order from a list of positions.
     - A list with 1 position is treated as an 'open'.
     - A list with 2 positions is treated as a 'roll' [open, close].
     """
-  legs = []
+
   # --- Build the common payload keys ---
   payload = {
     'class': 'multileg',
@@ -216,14 +220,10 @@ def build_multileg_payload(
     'duration': 'day',
     'type': 'credit',
   }
-
-  #position_to_open = trade_dto[]
+  
   print(f"trade_dto is: {trade_dto}")
-  short_leg_symbol = trade_dto['short_put']['symbol']
-  long_leg_symbol = trade_dto['long_put']['symbol']
-  legs.append({'symbol': short_leg_symbol, 'side': 'sell_to_open'})
-  legs.append({'symbol': long_leg_symbol, 'side': 'buy_to_open'})
-  if trade_type is None or trade_type == 'open':
+  
+  if len(leg_dtos) == 2:  # this is an open
     payload['price'] = f"{trade_dto['net_premium']:.2f}"
     payload['type'] = 'credit'
 
