@@ -322,16 +322,16 @@ def find_new_diagonal_trade(environment: str='SANDBOX',
     anvil.alert("must select underlying symbol")
     return
 
-  if position_to_roll is not None:
-    roll = True
-
   t, endpoint_url = get_tradier_client(environment)
 
-  if not roll: # use simple open logic
+  roll = True if position_to_roll else None
+
+  if roll is None: # use simple open logic
+    print("simple open")
     underlying_price = ServerModule1.get_underlying_quote(environment, underlying_symbol)
     short_strike = math.ceil(underlying_price)
     short_expiry = None
-  if roll:     # use roll logic
+  else:     # use roll logic
     short_symbol = position_to_roll.short_put.symbol
     #print(f"position to roll short symbol: {short_symbol}")
     short_strike = get_strike(short_symbol)
@@ -346,7 +346,7 @@ def find_new_diagonal_trade(environment: str='SANDBOX',
     cost_to_close = live_position_to_roll.calculate_cost_to_close()
 
   # get list of valid positions
-  #print("calling get_valid_diagonal_put_spreads")
+  print("calling get_valid_diagonal_put_spreads")
   valid_positions = get_valid_diagonal_put_spreads(short_strike=short_strike, 
                                                                   tradier_client=t, 
                                                                   symbol=underlying_symbol, 
@@ -368,7 +368,6 @@ def find_new_diagonal_trade(environment: str='SANDBOX',
                       ]
 
     # find best put diag based on highest return on margin per day of trade
-    
     today = date.today()
     sorted_positions = sorted(
       valid_positions,
@@ -386,27 +385,21 @@ def find_new_diagonal_trade(environment: str='SANDBOX',
     print("No good roll to position identified")
     return 1
 
-  if roll:
-    #TODO: code preview 4 legged roll
-    # build position with existing legs
-    position_to_close = positions.DiagonalPutSpread(short_quote, long_quote)
-    #positions_list = [best_position, position_to_close]
-    #quantity = -short_quantity
-    roll_premium = best_position.net_premium - position_to_close.calculate_cost_to_close() 
-    print(f'Roll premium: {roll_premium}')
-    print('To Close:')
-    position_to_close.print_leg_details()
-    position_to_close.describe()
-  else:
-    pass
-    #positions_list = [best_position]
-    # calculate quantity based on fixed allocation.  
-    #TODO: generalize this to lookup available capital t.get_account_balance().cash.cash_available
-    #quantity = math.floor(ALLOCATION / best_position.margin) if best_position.margin > 0 else 0
-    #quantity = 1 if TRADE_ONE else quantity
-    #quantity = 1
-
   print('To Open')
   best_position.print_leg_details()
   best_position.describe()
   return best_position
+
+def build_leg_dto(spread_dto: Dict, option_index)->Dict:
+  """
+  takes a spread dto and return a leg dto
+  """
+  selected_leg = spread_dto[option_index]
+  leg_dto = {
+    'action': 'Sell to Open',
+    'type': selected_leg['option_type'],
+    'strike': selected_leg['strike'],
+    'expiration': selected_leg['expiration_date'],
+    'quantity': None # filled in later
+  }
+  return leg_dto

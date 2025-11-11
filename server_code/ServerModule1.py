@@ -454,7 +454,7 @@ def validate_manual_legs(environment, legs_data_list):
   return True
 
 @anvil.server.callable
-def get_roll_package_dto(environment: str, trade_row: Row):
+def get_roll_package_dto(environment: str, trade_row: Row)->Dict:
   """
     Finds active legs, gets live prices, and calculates
     a full 4-leg roll package with standardized keys.
@@ -528,7 +528,7 @@ def get_roll_package_dto(environment: str, trade_row: Row):
   # --- 4. Calculate Opening Credit & Build Opening Leg Dicts (FIXED) ---
   total_open_credit = new_spread_object.calculate_net_premium()
   #print(f"open credit of roll to: {total_open_credit}")
-
+  
   # prepare for serialization
   new_spread_dto = new_spread_object.get_dto()
   new_short_leg_dto = new_spread_dto['short_put']
@@ -556,12 +556,12 @@ def get_roll_package_dto(environment: str, trade_row: Row):
   all_4_legs = closing_legs_list + opening_legs_list
   total_roll_credit = total_open_credit - total_close_cost
 
-  #print(f"in get_roll: roll legs:{all_4_legs}, roll credit: {total_roll_credit}")
+  print(f"in get_roll: roll legs:{all_4_legs}, roll credit: {total_roll_credit}")
 
   return {
-    'legs_to_populate': all_4_legs,
+    'legs_to_populate': all_4_legs, # list of leg_dto [{leg1}, {leg2}, etc] closing-short, closing-long, opening-short, opening-long
     'total_roll_credit': total_roll_credit,
-    'new_spread_dto': new_spread_dto
+    'new_spread_dto': new_spread_dto # full nested { meta, 'short_put', 'long_put'} position dto
   }
 
 @anvil.server.callable
@@ -580,7 +580,19 @@ def get_new_open_trade_dto(environment: str, symbol: str) -> Dict:
 
   # 2. Check the result
   if not best_position_object:
+    print("find new diagonal trade did not return a best trade dto")
     return None # Or return an error string
 
-    # 3. Convert the object to a DTO and return it
-  return best_position_object.get_dto()
+  # 3. Convert the object to a the spread DTO
+  best_position_object_dto = best_position_object.get_dto()
+
+  # 4. create leg dtos from spread dto
+  # prepare for serialization
+  new_short_leg_dto = best_position_object_dto['short_put']
+  new_long_leg_dto = best_position_object_dto['long_put']
+    
+  return {
+    'legs_to_populate': None,
+    'total_roll_credit': None,
+    'new_spread_dto': best_position_object_dto
+  }

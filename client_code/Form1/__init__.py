@@ -1,3 +1,4 @@
+# Anvil libs
 from ._anvil_designer import Form1Template
 from anvil import *
 import anvil.server
@@ -5,51 +6,52 @@ import anvil.tables as tables
 import anvil.tables.query as q
 from anvil.tables import app_tables, Row
 from .Form_ConfirmTrade import Form_ConfirmTrade # Import your custom form
-from .. import config
+
+# Public libs
 from datetime import date
 
+# Private libs
+from .. import config
 
 class Form1(Form1Template):
   def __init__(self, **properties):
     # Set Form properties and Data Bindings.
     self.init_components(**properties)
 
-    # populate dropdowns
-    self.dropdown_manual_transaction_type.items = config.POSITION_TYPES
-    self.dropdown_manual_position_action.items = config.POSITION_ACTIONS
-    
-    # Log into default environment as displayed in the dropdown
-    self.dropdown_environment_change()
-    self.refresh_open_positions_grid() 
+    # Globals
+    self.trade_dto = None # the new combined var to hold 2 leg new spreads or 4 leg roll spreads
+    self.preview_data = None # dict that is returned by Preview Trade button
+    self.pending_order_id = None 
 
-    # subscribe to the Open Positions event broadcast
+    # Timers
+    self.timer_order_status.interval = 0 # disabled for now
+    self.timer_risk_refresh.interval = 3600  # one hour
+
+    # Events
+    # Open Positions event broadcast
     self.repeatingpanel_open_positions.set_event_handler(
       'x-manual-entry-requested', self.handle_manual_entry_request
     )
-
-    # subscribe to the Roll Positions event broadcast
+    # Roll Positions event broadcast
     self.repeatingpanel_open_positions.set_event_handler(
       'x-roll-trade-requested', self.handle_roll_trade_request
     )
-    
-    # Load data for the trade history grid
+    # Populate misc components
+    # Trade history grid
     self.repeatingpanel_trade_history.items = anvil.server.call('get_closed_trades')
-
-    # Trade ticket init
-    self.best_trade_dto = None # the selected position returned by find_new_diagonal_trade
-    self.trade_dto = None # the new combined var to hold 2 leg new spreads or 4 leg roll spreads
-    self.trade_preview_data = None # A place to store the server data
+    
+    # Manual Trade Entry Card (records trade history into db)
+    self.dropdown_manual_transaction_type.items = config.POSITION_TYPES
+    self.dropdown_manual_position_action.items = config.POSITION_ACTIONS
+    
+    # Trade Ticket
     self.button_place_trade.enabled = False
     self.label_quote_status.text = "Enter quantity and review trade."
-    self.preview_data = None
-    # Store the ID of the order we are tracking
-    self.pending_order_id = None
-    # Disable the timer initially
-    self.timer_order_status.interval = 0
 
-    #timer
-    self.timer_risk_refresh.interval = 3600  # one hour
-
+    # Log into default environment as displayed in the dropdown
+    self.dropdown_environment_change()
+    self.refresh_open_positions_grid() 
+    
   def dropdown_environment_change(self, **event_args):
     """This method is called when an item is selected"""
     selected_env = self.dropdown_environment.selected_value
@@ -96,9 +98,7 @@ class Form1(Form1Template):
     self.label_underlying_price.text = f"{underlying_price:.2f}"
     self.label_trade_ticket_title.text = f"{self.label_trade_ticket_title.text} \
                                           - Open {self.dropdown_strategy_picker.selected_value}"
-    #pop the trade entry card and gather data
-    self.button_place_trade.enabled = False
-    self.card_trade_entry.visible = True   
+
     
     # get type of trade from strategy drop down
     trade_strategy = self.dropdown_strategy_picker.selected_value
@@ -118,7 +118,6 @@ class Form1(Form1Template):
         print(f"best put diag DTO is: {best_trade_dto}")
 
         # 4. Store the best trade DTO (the dictionary)
-        #self.best_trade_dto = best_trade_dto
         self.trade_dto = best_trade_dto
 
         # 5. Populate strategy leg fields
@@ -163,6 +162,90 @@ class Form1(Form1Template):
       
     self.label_quote_status.text = "Best trade identified"
     self.button_preview_trade.enabled = True
+
+  def handle_roll_trade_request(self, trade, **event_args):
+    """
+    Called by a row's 'Roll' button.
+    Calls the server to get a full 4-leg roll package
+    and pre-fills the trade ticket card.
+    """
+    print(f"Handling roll request for trade: {trade['Underlying']}")
+  
+    try:
+      # 1. Get the environment and populate intro fields
+      env = self.dropdown_environment.selected_value
+      self.label_symbol.text = trade['Underlying']  
+      underlying_price = anvil.server.call('get_underlying_quote', env, self.label_symbol.text) 
+      if underlying_price is None:
+        alert("unable to get underlying price")
+  
+      # 2. Call the server to get the 4-leg package
+      self.label_quote_status.text = "Calculating best roll..."
+      # roll_package is a dict with 3 items
+      # 'legs_to_populate' is a list of 4 leg dtos
+      # 'total_roll_credit' is a float 
+      # 'new_spread_dto' is the full dict with meta and legs
+      roll_package = anvil.server.call('get_roll_package_dto', env, trade)
+  
+      if not roll_package:
+        alert("Could not find a suitable roll for this position.")
+        return
+  
+        # 3. Store the 4-leg DTO list. We'll need this when we submit.
+      current_roll_dto_list = roll_package['legs_to_populate']
+      self.trade_dto = self.current_roll_dto_list
+  
+      # 4. Populate the Trade Ticket UI.
+      #    We will display the two *new* legs (legs 3 and 4)
+      #    and the *total* net credit for the entire roll.
+      # The 'to close' legs are the first two in the list
+      number_legs_dto = len(self.current_roll_dto_list)
+      
+      # The 'to close' legs are the first two in the list
+      closing_short = self.current_roll_dto_list[0]
+      closing_long = self.current_roll_dto_list[1]
+      
+      # The 'to open' legs are the last two in the list
+      opening_short = self.current_roll_dto_list[2]
+      opening_long = self.current_roll_dto_list[3]
+  
+      self.label_leg1_action.text = opening_short['action']
+      self.label_leg1_details.text = (
+        f"Strike: {opening_short['strike']}, "
+        f"Expiry: {opening_short['expiration'].strftime('%Y-%m-%d')}"
+      )
+  
+      self.label_leg2_action.text = opening_long['action']
+      self.label_leg2_details.text = (
+        f"Strike: {opening_long['strike']}, "
+        f"Expiry: {opening_long['expiration'].strftime('%Y-%m-%d')}"
+      )
+  
+      # Use the total calculated credit for the whole roll
+      total_credit = roll_package['total_roll_credit']
+      self.textbox_net_credit.text = f"{total_credit:.2f}"
+  
+      # (We'll skip ROM for now as it's more complex for a roll)
+      self.label_rrom.text = "ROM: N/A"
+  
+      # 5. Show the card, ready for the user to preview/submit
+  
+      self.label_quote_status.text = "Roll package loaded. Ready for preview."
+      self.button_preview_trade.enabled = True
+      self.common_trade_ticket()
+  
+    except Exception as e:
+      alert(f"Error calculating roll: {e}")
+      self.card_trade_entry.visible = False
+
+  def common_trade_ticket(self, trade_dto: str):
+    """
+    Called from find new trade button or Roll button.  Places live trades
+    """
+    #pop the trade entry card and gather data
+    self.button_preview_trade.enabled = False
+    self.button_place_trade.enabled = False
+    self.card_trade_entry.visible = True   
 
   def button_preview_trade_click(self, **event_args):
     """Fired when the 'Preview Trade' button is clicked."""
@@ -241,7 +324,7 @@ class Form1(Form1Template):
       print("common_trade_button must have limit price")
       return
     # set trade type.  TODO: add logic for roll later
-    print("calling submit order")        
+    print(f"calling submit order with preview: {preview}")        
     trade_dict = anvil.server.call('submit_order',
                                      self.dropdown_environment.selected_value,
                                      self.textbox_symbol.text,
@@ -255,26 +338,6 @@ class Form1(Form1Template):
     # handle return dict
     print(f"trade response data:{trade_dict}")
     return trade_dict
-
-  def timer_order_status_tick(self, **event_args):
-    """This method is called Every [interval] seconds. Does not trigger if [interval] is 0."""
-    if self.pending_order_id:
-      env = self.dropdown_environment.selected_value
-      status = anvil.server.call('get_order_status', env, self.pending_order_id)
-
-      self.label_trade_results_status.text = f"Order {self.pending_order_id}: {status}"
-
-      # Check if the order is filled or in another final state
-      if status in ['filled', 'canceled', 'rejected', 'expired']:
-        # Stop the timer, we're done.
-        self.timer_order_status.enabled = False
-        self.pending_order_id = None
-        #self.label_trade_results_price.text = f"Limit Price: ${order_details['price']:.2f}"
-        print("Order is in a final state. Stopping timer.")
-        # You would now refresh your main positions grid
-
-    # update Extrinsic assign risk 
-    
 
   def button_cancel_trade_click(self, **event_args):
     """This method is called when the cancel button is clicked"""
@@ -294,13 +357,6 @@ class Form1(Form1Template):
         alert(f"Failed to cancel order: {status}")
     else:
       alert("No pending order to cancel.")
-
-  def checkbox_status_polling_change(self, **event_args):
-    """This method is called when this checkbox is checked or unchecked"""
-    if self.checkbox_status_polling.checked:    
-      self.timer_order_status.enabled = True
-    else:
-      self.timer_order_status.enabled = False
 
   def dropdown_manual_transaction_type_change(self, **event_args):
     """Shows the correct number of leg entry rows based on
@@ -538,7 +594,7 @@ class Form1(Form1Template):
 
   def handle_manual_entry_request(self, trade: Row, action_type: str, **event_args):
     """
-      Called by a row's 'Close' or 'Roll' button.
+      Called by a row's 'Close' button.
       Opens the manual entry card and pre-fills it.
       """
     print(f"Handling manual entry request for: {action_type}")
@@ -582,75 +638,35 @@ class Form1(Form1Template):
     # 6. Show the card
     self.card_manual_entry.visible = True  
 
-  def timer_risk_refresh_tick(self, **event_args):
-    """This method is called Every [interval] seconds. Does not trigger if [interval] is 0."""
-    self.refresh_open_positions_grid()
-
   def button_refresh_open_positions_risk_click(self, **event_args):
     """This method is called when the button is clicked"""
     self.refresh_open_positions_grid()
 
-  def handle_roll_trade_request(self, trade, **event_args):
-    """
-      Called by a row's 'Roll' button.
-      Calls the server to get a full 4-leg roll package
-      and pre-fills the trade ticket card.
-      """
-    print(f"Handling roll request for trade: {trade['Underlying']}")
-  
-    try:
-      # 1. Get the environment and populate intro fields
+  def timer_risk_refresh_tick(self, **event_args):
+    """This method is called Every [interval] seconds. Does not trigger if [interval] is 0."""
+    self.refresh_open_positions_grid()
+
+  def checkbox_status_polling_change(self, **event_args):
+    """This method is called when this checkbox is checked or unchecked"""
+    if self.checkbox_status_polling.checked:    
+      self.timer_order_status.enabled = True
+    else:
+      self.timer_order_status.enabled = False
+
+  def timer_order_status_tick(self, **event_args):
+    """This method is called Every [interval] seconds. Does not trigger if [interval] is 0."""
+    if self.pending_order_id:
       env = self.dropdown_environment.selected_value
-      self.label_symbol.text = trade['Underlying']  
-      underlying_price = anvil.server.call('get_underlying_quote', env, self.label_symbol.text) 
-      if underlying_price is None:
-        alert("unable to get underlying price")
-        
-      # 2. Call the server to get the 4-leg package
-      self.label_quote_status.text = "Calculating best roll..."
-      roll_package = anvil.server.call('get_roll_package_dto', env, trade)
+      status = anvil.server.call('get_order_status', env, self.pending_order_id)
   
-      if not roll_package:
-        alert("Could not find a suitable roll for this position.")
-        return
+      self.label_trade_results_status.text = f"Order {self.pending_order_id}: {status}"
   
-        # 3. Store the 4-leg DTO list. We'll need this when we submit.
-        #    This is different from self.best_trade_dto, which is for 2-leg opens.
-      self.current_roll_dto_list = roll_package['legs_to_populate']
-      self.trade_dto = self.current_roll_dto_list
+      # Check if the order is filled or in another final state
+      if status in ['filled', 'canceled', 'rejected', 'expired']:
+        # Stop the timer, we're done.
+        self.timer_order_status.enabled = False
+        self.pending_order_id = None
+        #self.label_trade_results_price.text = f"Limit Price: ${order_details['price']:.2f}"
+        print("Order is in a final state. Stopping timer.")
+        # You would now refresh your main positions grid
   
-      # 4. Populate the Trade Ticket UI.
-      #    We will display the two *new* legs (legs 3 and 4)
-      #    and the *total* net credit for the entire roll.
-  
-      # The 'to open' legs are the last two in the list
-      opening_short = self.current_roll_dto_list[2]
-      opening_long = self.current_roll_dto_list[3]
-  
-      self.label_leg1_action.text = opening_short['action']
-      self.label_leg1_details.text = (
-        f"Strike: {opening_short['strike']}, "
-        f"Expiry: {opening_short['expiration'].strftime('%Y-%m-%d')}"
-      )
-  
-      self.label_leg2_action.text = opening_long['action']
-      self.label_leg2_details.text = (
-        f"Strike: {opening_long['strike']}, "
-        f"Expiry: {opening_long['expiration'].strftime('%Y-%m-%d')}"
-      )
-  
-      # Use the total calculated credit for the whole roll
-      total_credit = roll_package['total_roll_credit']
-      self.textbox_net_credit.text = f"{total_credit:.2f}"
-  
-      # (We'll skip ROM for now as it's more complex for a roll)
-      self.label_rrom.text = "ROM: N/A"
-  
-      # 5. Show the card, ready for the user to preview/submit
-      self.card_trade_entry.visible = True
-      self.label_quote_status.text = "Roll package loaded. Ready for preview."
-      self.button_preview_trade.enabled = True
-  
-    except Exception as e:
-      alert(f"Error calculating roll: {e}")
-      self.card_trade_entry.visible = False

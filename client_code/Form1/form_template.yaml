@@ -106,7 +106,7 @@ components:
         type: DropDown
       - layout_properties: {}
         name: textbox_manual_underlying
-        properties: {text: IWM}
+        properties: {text: IWM, visible: false}
         type: TextBox
       layout_properties: {grid_position: 'DWTKBI,CVTPYA'}
       name: flow_panel_9
