@@ -20,6 +20,7 @@ class Form1(Form1Template):
 
     # Globals
     self.trade_dto = None # the new combined var to hold 2 leg new spreads or 4 leg roll spreads
+    # {spread meta, 'short_put':{quote}, 'long_put':{quote}}
     self.preview_data = None # dict that is returned by Preview Trade button
     self.pending_order_id = None 
 
@@ -107,13 +108,20 @@ class Form1(Form1Template):
       if trade_strategy == 'diagonal put spread':
         self.label_quote_status.text = "Getting best trade..."
         print("calling get_new_open_trade_dto")
-        best_trade_dto = anvil.server.call('get_new_open_trade_dto',
+        # best_trade_dto is really a dict with 'new_spread_dto' as the payload
+        best_trade_dict = anvil.server.call('get_new_open_trade_dto',
                                            self.dropdown_environment.selected_value,
                                            symbol)
       elif trade_strategy == 'cash secured put':
         alert("strategy not implemented")
 
       # Check if the server call was successful
+      # extract trade_dto from dict
+      if best_trade_dict:
+        best_trade_dto = best_trade_dict['new_spread_dto']
+      else:
+        alert("No Valide open trade")
+        return
       if best_trade_dto:
         print(f"best put diag DTO is: {best_trade_dto}")
 
@@ -161,7 +169,7 @@ class Form1(Form1Template):
       self.label_quote_status.foreground = "error"
       
     self.label_quote_status.text = "Best trade identified"
-    self.button_preview_trade.enabled = True
+    self.common_trade_ticket()
 
   def handle_roll_trade_request(self, trade, **event_args):
     """
@@ -232,7 +240,6 @@ class Form1(Form1Template):
       # 5. Show the card, ready for the user to preview/submit
   
       self.label_quote_status.text = "Roll package loaded. Ready for preview."
-      self.button_preview_trade.enabled = True
       self.common_trade_ticket()
   
     except Exception as e:
@@ -243,23 +250,17 @@ class Form1(Form1Template):
     """
     Called from find new trade button or Roll button.  Places live trades
     """
-    #pop the trade entry card and gather data
+    #pop the trade entry card and preview
     self.button_preview_trade.enabled = True
-    self.button_place_trade.enabled = False
     self.card_trade_entry.visible = True   
+    # auto run preview trade:  why wait?
+    self.button_preview_trade_click()
+    #self.button_place_trade.enabled = False
+    
 
   def button_preview_trade_click(self, **event_args):
     """Fired when the 'Preview Trade' button is clicked."""
-    override_price_text = self.textbox_overide_price.text
-  
-    # First, check if the textbox is not empty
-    if override_price_text:
-      try:
-        limit_price = float(override_price_text)    
-      except ValueError:        
-        alert("Please enter a valid number for the override price.")
-    else:
-      limit_price = self.textbox_net_credit.text
+    limit_price = self.trade_dto.get('net_premium')
     
     self.preview_data = self.common_trade_button(preview=True, limit_price=limit_price)
 
@@ -289,7 +290,21 @@ class Form1(Form1Template):
 
   def button_place_trade_click(self, **event_args):
     """This method is called when the Place Trade button is clicked"""
-    limit_price = self.preview_data['order']['price']
+    # deal with over-ride price
+    if self.textbox_overide_price.text:
+      override_price_text = self.textbox_overide_price.text
+      try:
+        limit_price = float(override_price_text)    
+      except ValueError:        
+        alert("Please enter a valid number for the override price.")
+        return
+    else:
+      if self.preview_data:
+        limit_price = self.preview_data['order']['price']
+      else:
+        alert("Bad preview data")
+        return
+    
     trade_response = self.common_trade_button(preview=False, limit_price=limit_price)
 
     if trade_response and trade_response.get('order', {}).get('status') == 'ok':
@@ -329,7 +344,7 @@ class Form1(Form1Template):
     trade_dict = anvil.server.call('submit_order',
                                      self.dropdown_environment.selected_value,
                                      self.textbox_symbol.text,
-                                     self.trade_dto,
+                                     self.trade_dto, # dict with {spread meta..., 'short_put', 'long_put'}
                                      quantity,
                                      preview=preview,
                                      limit_price=limit_price,

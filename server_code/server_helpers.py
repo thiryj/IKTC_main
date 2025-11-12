@@ -13,6 +13,7 @@ from typing import Dict, List, Tuple
 from datetime import date, datetime
 from pydantic_core import ValidationError
 from tradier_python import TradierAPI
+from tradier_python.models import Quote
 
 # Private libs
 import server_config
@@ -114,10 +115,12 @@ def get_valid_diagonal_put_spreads(short_strike: float,
       try:
         short_put_chain = tradier_client.get_option_chains(symbol=symbol, expiration=short_put_expiration.strftime('%Y-%m-%d'), greeks=False)
       except ValidationError as e:
+        print(f"get short option chain: {e}")
         continue
       try:
         long_put_chain = tradier_client.get_option_chains(symbol=symbol, expiration=long_put_expiration.strftime('%Y-%m-%d'), greeks=False)
       except ValidationError as e:
+        print(f"get long option chain: {e}")
         continue
 
         # for a valid expiration pair, iterate through long put strikes
@@ -147,7 +150,7 @@ def submit_diagonal_spread_order(
   endpoint_url: str,
   underlying_symbol: str,
   quantity: int,
-  trade_dto: Dict,
+  trade_dto: Dict, # dict with {spread meta..., 'short_put', 'long_put'}
   preview: bool = True,
   limit_price: float = None,
   trade_type: str = None
@@ -161,7 +164,7 @@ def submit_diagonal_spread_order(
       endpoint_url (str): The endpoint url
       underlying_symbol (str)
       quantity (int): The number of contracts for each leg.
-      trade_dto: The list of positions.  First is to open, second (optional) is to close
+      trade_dto: # dict with {spread meta..., 'short_put', 'long_put'}
       preview (bool, optional): If True, submits as a preview order.
                                 Defaults to False.
 
@@ -184,6 +187,7 @@ def submit_diagonal_spread_order(
     payload['preview'] = 'true'
 
   try:
+    print(f"payload is: {payload}")
     response = tradier_client.session.post(api_url, data=payload)
     response.raise_for_status()  # Raise HTTPError for bad responses (4xx or 5xx)
     return response.json()
@@ -199,7 +203,8 @@ def submit_diagonal_spread_order(
 
 def build_multileg_payload(
   underlying_symbol: str, 
-  leg_dtos: List
+  quantity: int,
+  trade_dto: Dict # nested dict with {spread meta..., 'short_put', 'long_put'}
 )->Dict:
   """
     trade_dto is a list of legs with: 
@@ -212,7 +217,7 @@ def build_multileg_payload(
     - A list with 1 position is treated as an 'open'.
     - A list with 2 positions is treated as a 'roll' [open, close].
     """
-
+  legs = []
   # --- Build the common payload keys ---
   payload = {
     'class': 'multileg',
@@ -222,13 +227,20 @@ def build_multileg_payload(
   }
   
   print(f"trade_dto is: {trade_dto}")
+  # extract legs from nested dict and create position objects
+  short_put_dto = trade_dto.get('short_put')
+  long_put_dto = trade_dto.get('long_put')
   
-  if len(leg_dtos) == 2:  # this is an open
+  position_to_open = [short_put_dto, long_put_dto]
+  legs.append({'symbol': position_to_open[0].get('symbol'), 'side': 'sell_to_open'})
+  legs.append({'symbol': position_to_open[1].get('symbol'), 'side': 'buy_to_open'})
+  
+  if len(position_to_open) == 2:  # this is an open
     payload['price'] = f"{trade_dto['net_premium']:.2f}"
-    payload['type'] = 'credit'
 
     # --- Case 2: Roll a 4-leg position ---
-  elif trade_type == 'roll':
+    # TODO:  following line is a hack.  need to deal with 4 legged trade_dto
+  elif len(position_to_open) == 4 == 'roll':
     """
     # Convention: The first position is to open, the second is to close.
     position_to_close = trade_list[1]
@@ -314,7 +326,7 @@ def find_new_diagonal_trade(environment: str='SANDBOX',
                             position_to_roll: positions.DiagonalPutSpread=None)->positions.DiagonalPutSpread:
   """
   Connect to Tradier,
-  find an optimal new short put diagonal, and return its parameters.
+  find an optimal new short put diagonal, and return a position object.
   if an existing position is passed in, then use roll logic,otherwise its a simple open
   """
   print("Server function 'find_new_diagonal_trade' was called.")
@@ -388,6 +400,7 @@ def find_new_diagonal_trade(environment: str='SANDBOX',
   print('To Open')
   best_position.print_leg_details()
   best_position.describe()
+  # best_position is a position object
   return best_position
 
 def build_leg_dto(spread_dto: Dict, option_index)->Dict:

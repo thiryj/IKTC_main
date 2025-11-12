@@ -183,6 +183,7 @@ def get_open_trades_with_risk(environment: str='SANDBOX'):
         strike=current_short_leg['Strike']
       )
       # 4. Get live option price
+      print(f"calling get_quote on: {occ_symbol}")
       option_quote = server_helpers.get_quote(environment, occ_symbol)
       option_price = option_quote.bid # Use bid price for a short option
 
@@ -222,7 +223,7 @@ def get_closed_trades():
 @anvil.server.callable
 def submit_order(environment: str='SANDBOX', 
                            underlying_symbol: str=None,
-                           trade_dto: Dict=None, 
+                           trade_dto: Dict=None, # dict with {spread meta..., 'short_put', 'long_put'}
                            quantity: int=1,
                            preview: bool=True,
                            limit_price: float=None,
@@ -238,7 +239,7 @@ def submit_order(environment: str='SANDBOX',
                                                               endpoint_url, 
                                                               underlying_symbol, 
                                                               quantity, 
-                                                              trade_dto, 
+                                                              trade_dto, # dict with {spread meta..., 'short_put', 'long_put'}
                                                               preview,
                                                               limit_price,
                                                             trade_type)
@@ -568,10 +569,16 @@ def get_roll_package_dto(environment: str, trade_row: Row)->Dict:
 def get_new_open_trade_dto(environment: str, symbol: str) -> Dict:
   """
     This is the new "wrapper" for the 'Find New Trade' button.
-    It calls the main engine and returns a serializable DTO.
+    It calls the main engine and returns a Dict with:
+    {
+    'legs_to_populate': None,
+    'total_roll_credit': None,
+    'new_spread_dto': best_position_object_dto
+  }
     """
 
   # 1. Call your main engine (which is now a helper)
+  # we get back a position object
   best_position_object = server_helpers.find_new_diagonal_trade(
     environment=environment,
     underlying_symbol=symbol,
@@ -583,7 +590,7 @@ def get_new_open_trade_dto(environment: str, symbol: str) -> Dict:
     print("find new diagonal trade did not return a best trade dto")
     return None # Or return an error string
 
-  # 3. Convert the object to a the spread DTO
+  # 3. Convert the object to the spread DTO
   best_position_object_dto = best_position_object.get_dto()
 
   # 4. create leg dtos from spread dto
