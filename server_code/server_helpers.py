@@ -173,7 +173,8 @@ def submit_diagonal_spread_order(
             error occurred.
   """
   #api_url = f"{endpoint_url}/accounts/{tradier_client.default_account_id}/orders"
-  path = f"/accounts/{tradier_client.default_account_id}/orders"
+  path = f"accounts/{tradier_client.default_account_id}/orders"
+  #print(f"endpoint_url: {endpoint_url}")
   api_url = urljoin(endpoint_url, path)
 
   payload = build_multileg_payload(underlying_symbol, quantity, trade_dto)
@@ -187,8 +188,10 @@ def submit_diagonal_spread_order(
     payload['preview'] = 'true'
 
   try:
-    print(f"payload is: {payload}")
-    response = tradier_client.session.post(api_url, data=payload)
+    #print(f"payload is: {payload}")
+    #print(f"api_url is: {api_url}")
+    response = tradier_client.session.post(api_url, data=payload, headers={'accept': 'application/json'})
+    #print(f"response is: {response.text}")
     response.raise_for_status()  # Raise HTTPError for bad responses (4xx or 5xx)
     return response.json()
   except requests.exceptions.HTTPError as e:  # <-- Catch the specific HTTP error

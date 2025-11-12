@@ -243,7 +243,7 @@ def submit_order(environment: str='SANDBOX',
                                                               preview,
                                                               limit_price,
                                                             trade_type)
-  print(f"trade response: {trade_response}")
+  #print(f"trade response: {trade_response}")
   return trade_response
   
 @anvil.server.callable

@@ -316,10 +316,11 @@ class Form1(Form1Template):
       if trade_response and trade_response.get('order', {}).get('status') == 'ok':
         self.pending_order_id = trade_response['order']['id']
         self.label_trade_results_status.text = f"Order {self.pending_order_id} submitted. Awaiting fill..."
+        #self.label_trade_results_price.text = f"Limit Price: ${order_details['price']:.2f}"
         # Enable the timer toggle switch!
         self.checkbox_status_polling.enabled = True
         self.button_improve_price.enabled = True
-        self.button_cancel_trade = True
+        self.button_cancel_trade.enabled = True
       else:
         self.label_trade_results_status.text = "Order submission failed."
 
