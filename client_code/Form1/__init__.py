@@ -20,7 +20,9 @@ class Form1(Form1Template):
 
     # Globals
     self.trade_dto = None # the new combined var to hold 2 leg new spreads or 4 leg roll spreads
-    # {spread meta, 'short_put':{quote}, 'long_put':{quote}}
+    self.trade_dto_list = []
+    # {spread meta, 'short_put':{}, 'long_put':{}}
+    self.roll_dto_list = []
     self.preview_data = None # dict that is returned by Preview Trade button
     self.pending_order_id = None 
 
@@ -127,6 +129,7 @@ class Form1(Form1Template):
 
         # 4. Store the best trade DTO (the dictionary)
         self.trade_dto = best_trade_dto
+        self.trade_dto_list = [self.trade_dto]
 
         # 5. Populate strategy leg fields
       
@@ -174,11 +177,11 @@ class Form1(Form1Template):
   def handle_roll_trade_request(self, trade, **event_args):
     """
     Called by a row's 'Roll' button.
+    trade is anvil.tables.Row object of 
     Calls the server to get a full 4-leg roll package
     and pre-fills the trade ticket card.
     """
-    print(f"Handling roll request for trade: {trade['Underlying']}")
-  
+    print(f"Handling roll request for trade: {trade['Underlying']} {trade.get('Strategy')}")
     try:
       # 1. Get the environment and populate intro fields
       env = self.dropdown_environment.selected_value
@@ -201,8 +204,8 @@ class Form1(Form1Template):
   
         # 3. Store the 4-leg DTO list. We'll need this when we submit.
       current_roll_dto_list = roll_package['legs_to_populate']
-      self.trade_dto = current_roll_dto_list
-      print(f"handle_roll_trade_request: self.trade_dto:{self.trade_dto}")
+      self.roll_dto_list = current_roll_dto_list
+      print(f"handle_roll_trade_request: self.roll_dto_list:{self.roll_dto_list}")
   
       # 4. Populate the Trade Ticket UI.
       #    We will display the two *new* legs (legs 3 and 4)
@@ -210,21 +213,19 @@ class Form1(Form1Template):
       # The 'to close' legs are the first two in the list
       number_legs_dto = len(current_roll_dto_list)
       
-      # The 'to close' legs are the first two in the list
-      closing_short = current_roll_dto_list[0]
-      closing_long = current_roll_dto_list[1]
-      
-      # The 'to open' legs are the last two in the list
-      opening_short = current_roll_dto_list[2]
-      opening_long = current_roll_dto_list[3]
-  
-      self.label_leg1_action.text = opening_short['action']
+      # extract the legs from the list
+      closing_short = [p for p in current_roll_dto_list if p.get('action')=='Buy to Close']
+      closing_long = [p for p in current_roll_dto_list if p.get('action')=='Sell to Close']
+      opening_short = [p for p in current_roll_dto_list if p.get('action')=='Sell to Open']
+      opening_long = [p for p in current_roll_dto_list if p.get('action')=='Buy to Open']
+        
+      self.label_leg1_action.text = opening_short.get('action')
       self.label_leg1_details.text = (
         f"Strike: {opening_short['strike']}, "
         f"Expiry: {opening_short['expiration'].strftime('%Y-%m-%d')}"
       )
   
-      self.label_leg2_action.text = opening_long['action']
+      self.label_leg2_action.text = opening_long.get('action')
       self.label_leg2_details.text = (
         f"Strike: {opening_long['strike']}, "
         f"Expiry: {opening_long['expiration'].strftime('%Y-%m-%d')}"
@@ -259,10 +260,8 @@ class Form1(Form1Template):
     
 
   def button_preview_trade_click(self, **event_args):
-    """Fired when the 'Preview Trade' button is clicked."""
-    limit_price = self.trade_dto.get('net_premium')
-    
-    self.preview_data = self.common_trade_button(preview=True, limit_price=limit_price)
+    """Fired when the 'Preview Trade' button is clicked."""    
+    self.preview_data = self.common_trade_button(preview=True)
 
     if self.preview_data and self.preview_data.get('order', {}).get('status') == 'ok':
       order_details = self.preview_data['order']
@@ -337,15 +336,12 @@ class Form1(Form1Template):
   def common_trade_button(self, preview: str=True, limit_price: float=None):
     """code common to both preview and trade button clicks"""
     quantity = int(self.textbox_quantity.text)
-    if limit_price is None:
-      print("common_trade_button must have limit price")
-      return
-    # set trade type.  TODO: add logic for roll later
+    
     print(f"calling submit order with preview: {preview}")        
     trade_dict = anvil.server.call('submit_order',
                                      self.dropdown_environment.selected_value,
                                      self.textbox_symbol.text,
-                                     self.trade_dto, # dict with {spread meta..., 'short_put', 'long_put'}
+                                     self.trade_dto_list, # list of nested dict with {spread meta..., 'short_put', 'long_put'}
                                      quantity,
                                      preview=preview,
                                      limit_price=limit_price,

@@ -150,7 +150,7 @@ def submit_diagonal_spread_order(
   endpoint_url: str,
   underlying_symbol: str,
   quantity: int,
-  trade_dto: Dict, # dict with {spread meta..., 'short_put', 'long_put'}
+  trade_dto_list: List, # list of dicts with {spread meta..., 'short_put', 'long_put'}
   preview: bool = True,
   limit_price: float = None,
   trade_type: str = None
@@ -164,7 +164,7 @@ def submit_diagonal_spread_order(
       endpoint_url (str): The endpoint url
       underlying_symbol (str)
       quantity (int): The number of contracts for each leg.
-      trade_dto: # dict with {spread meta..., 'short_put', 'long_put'}
+      trade_dto_list: # list of dicts with {spread meta..., 'short_put', 'long_put'}
       preview (bool, optional): If True, submits as a preview order.
                                 Defaults to False.
 
@@ -177,7 +177,7 @@ def submit_diagonal_spread_order(
   #print(f"endpoint_url: {endpoint_url}")
   api_url = urljoin(endpoint_url, path)
 
-  payload = build_multileg_payload(underlying_symbol, quantity, trade_dto)
+  payload = build_multileg_payload(underlying_symbol, quantity, trade_dto_list, environment)
 
   # override price if limit_price sent in
   if limit_price is not None:
@@ -207,18 +207,13 @@ def submit_diagonal_spread_order(
 def build_multileg_payload(
   underlying_symbol: str, 
   quantity: int,
-  trade_dto: Dict # nested dict with {spread meta..., 'short_put', 'long_put'}
+  trade_dto_list: List, # list of nested dicts with {spread meta..., 'short_put', 'long_put'}
+  environment: str
 )->Dict:
   """
-    trade_dto is a list of legs with: 
-    {'action': 'Buy to Close', 
-    'type': 'PUT', 
-    'strike': 244, 
-    'expiration': datetime.date(2025, 11, 11), 
-    'quantity': 1}
-    Builds the API payload for a multileg order from a list of positions.
-    - A list with 1 position is treated as an 'open'.
-    - A list with 2 positions is treated as a 'roll' [open, close].
+    Builds the API payload for a multileg order from a list of spreads.
+    - A list with 1 spread is treated as an 'open' [open].
+    - A list with 2 spreads is treated as a 'roll' [open, close].
     """
   legs = []
   # --- Build the common payload keys ---
@@ -228,37 +223,39 @@ def build_multileg_payload(
     'duration': 'day',
     'type': 'credit',
   }
+
   
-  print(f"trade_dto is: {trade_dto}")
+  print(f"trade_dto_list is: {trade_dto_list}")
   # extract legs from nested dict and create position objects
-  short_put_dto = trade_dto.get('short_put')
-  long_put_dto = trade_dto.get('long_put')
+  #short_put_dto = trade_dto.get('short_put')
+  #long_put_dto = trade_dto.get('long_put')
   
-  position_to_open = [short_put_dto, long_put_dto]
-  legs.append({'symbol': position_to_open[0].get('symbol'), 'side': 'sell_to_open'})
-  legs.append({'symbol': position_to_open[1].get('symbol'), 'side': 'buy_to_open'})
+  position_to_open = trade_dto_list[0]
+  legs.append({'symbol': position_to_open.get('short_put',{}).get('symbol'), 'side': 'sell_to_open'})
+  legs.append({'symbol': position_to_open.get('long_put', {}).get('symbol'), 'side': 'buy_to_open'})
   
-  if len(position_to_open) == 2:  # this is an open
-    payload['price'] = f"{trade_dto['net_premium']:.2f}"
+  if len(trade_dto_list) == 1:  # this is an open
+    payload['price'] = f"{position_to_open.get('net_premium'):.2f}"
 
     # --- Case 2: Roll a 4-leg position ---
     # TODO:  following line is a hack.  need to deal with 4 legged trade_dto
-  elif len(position_to_open) == 4 == 'roll':
-    """
+  elif len(trade_dto_list) == 2:
     # Convention: The first position is to open, the second is to close.
-    position_to_close = trade_list[1]
-
+    position_to_close_dto = trade_dto_list[1]
+    short_position_to_close_symbol = position_to_close_dto.get('short_put',{}).get('symbol')
+    long_position_to_close_symbol = position_to_close_dto.get('long_put',  {}).get('symbol')
     # Add legs to CLOSE the existing position
-    legs.append({'symbol': position_to_close.short_put.symbol, 'side': 'buy_to_close'})
-    legs.append({'symbol': position_to_close.long_put.symbol, 'side': 'sell_to_close'})
-    credit_to_open = position_to_open.net_premium
-    cost_to_close = position_to_close.calculate_cost_to_close()
+    legs.append({'symbol': short_position_to_close_symbol, 'side': 'buy_to_close'})
+    legs.append({'symbol': long_position_to_close_symbol, 'side': 'sell_to_close'})
+    
+    credit_to_open = position_to_open.get('net_premium')
+    # get fresh cost to close
+    short_position_to_close_quote = trad
+    cost_to_close = position_to_close_dto.calculate_cost_to_close()
     roll_value = credit_to_open - cost_to_close
 
     payload['price'] = f"{abs(roll_value):.2f}"
     payload['type'] = 'credit' if roll_value >= 0 else 'debit'
-    """
-    pass
 
   else:
     # Handle invalid input
@@ -351,7 +348,6 @@ def find_new_diagonal_trade(environment: str='SANDBOX',
     #print(f"position to roll short symbol: {short_symbol}")
     short_strike = get_strike(short_symbol)
     short_expiry = get_expiration_date(short_symbol)
-    #short_quantity = position_to_roll[0].quantity
     short_quote = t.get_quotes([short_symbol, "bogus"],greeks=False)[0]
     long_symbol = position_to_roll.long_put.symbol
     long_quote = t.get_quotes([long_symbol, "bogus"], greeks=False)[0]

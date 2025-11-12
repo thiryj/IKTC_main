@@ -6,7 +6,7 @@ from anvil.tables import app_tables, Row
 
 # public lib sectoin
 import math
-from typing import Dict, Tuple
+from typing import Dict, Tuple, List
 import datetime
 import json
 from tradier_python import TradierAPI, Position
@@ -183,7 +183,7 @@ def get_open_trades_with_risk(environment: str='SANDBOX'):
         strike=current_short_leg['Strike']
       )
       # 4. Get live option price
-      print(f"calling get_quote on: {occ_symbol}")
+      #print(f"calling get_quote on: {occ_symbol}")
       option_quote = server_helpers.get_quote(environment, occ_symbol)
       option_price = option_quote.bid # Use bid price for a short option
 
@@ -223,13 +223,13 @@ def get_closed_trades():
 @anvil.server.callable
 def submit_order(environment: str='SANDBOX', 
                            underlying_symbol: str=None,
-                           trade_dto: Dict=None, # dict with {spread meta..., 'short_put', 'long_put'}
+                           trade_dto_list: List=[], # list of dicts with {spread meta..., 'short_put', 'long_put'}
                            quantity: int=1,
                            preview: bool=True,
                            limit_price: float=None,
                            trade_type: str=None)->Dict:
   # verify symbol and positions are present
-  if underlying_symbol is None or trade_dto is None:
+  if underlying_symbol is None or trade_dto_list is None:
     print("no symbol or position in submit_preview_order")
   # get client and endpoint
   t, endpoint_url = server_helpers.get_tradier_client(environment)
@@ -239,7 +239,7 @@ def submit_order(environment: str='SANDBOX',
                                                               endpoint_url, 
                                                               underlying_symbol, 
                                                               quantity, 
-                                                              trade_dto, # dict with {spread meta..., 'short_put', 'long_put'}
+                                                              trade_dto_list, # list of dicts with {spread meta..., 'short_put', 'long_put'}
                                                               preview,
                                                               limit_price,
                                                             trade_type)
@@ -459,6 +459,14 @@ def get_roll_package_dto(environment: str, trade_row: Row)->Dict:
   """
     Finds active legs, gets live prices, and calculates
     a full 4-leg roll package with standardized keys.
+    It calls the main engine and returns a Dict with:
+    {
+    'legs_to_populate': None,
+    'total_roll_credit': None,
+    'new_spread_dto': best_position_object_dto,
+    'closing_spread_dto': existing spread to close dto
+    }
+    'new_spread_dto' is a nested dict with {meta..., 'short_put', 'long_put'}
     """
 
   # --- 1. Get Live Quotes for CURRENT Active Legs ---
@@ -502,6 +510,7 @@ def get_roll_package_dto(environment: str, trade_row: Row)->Dict:
 
     # --- 2. Calculate Closing Cost & Build Closing Leg Dicts ---
   current_spread = positions.DiagonalPutSpread(short_leg_quote, long_leg_quote)
+  closing_spread_dto = current_spread.get_dto()
   total_close_cost = current_spread.calculate_cost_to_close()
 
   # Build standardized dicts for the closing legs
@@ -562,7 +571,8 @@ def get_roll_package_dto(environment: str, trade_row: Row)->Dict:
   return {
     'legs_to_populate': all_4_legs, # list of leg_dto [{leg1}, {leg2}, etc] closing-short, closing-long, opening-short, opening-long
     'total_roll_credit': total_roll_credit,
-    'new_spread_dto': new_spread_dto # full nested { meta, 'short_put', 'long_put'} position dto
+    'new_spread_dto': new_spread_dto,  # full nested { meta, 'short_put', 'long_put'} position dto
+    'closing_spread_dto': closing_spread_dto # full nested { meta, 'short_put', 'long_put'} position dto
   }
 
 @anvil.server.callable

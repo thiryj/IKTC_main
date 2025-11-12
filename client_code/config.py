@@ -20,4 +20,26 @@ POSITION_ACTIONS = ["Open", "Roll", "Close"]
 
 # Globals
 
-# Client side helpers
+# data structs:
+"""
+trade row in open positions
+{
+      'trade_row': trade,
+      'Underlying': trade['Underlying'],
+      'Strategy': trade['Strategy'],
+      'OpenDate': trade['OpenDate'],
+      'extrinsic_value': None, # Placeholder
+      'is_at_risk': False       # Placeholder
+    }
+
+self.trade_dto: Dict
+{meta, leg1, leg2 ,(leg3), (leg4)}
+
+roll_dto_list list of Dicts
+[
+{'action': 'Buy to Close', 'type': 'PUT', 'strike': 245, 'expiration': datetime.date(2025, 11, 13), 'quantity': 1}, 
+{'action': 'Sell to Close', 'type': 'PUT', 'strike': 246, 'expiration': datetime.date(2025, 11, 14), 'quantity': 1}, 
+{'action': 'Sell to Open', 'type': 'PUT', 'strike': 245, 'expiration': datetime.date(2025, 11, 14), 'quantity': 1}, 
+{'action': 'Buy to Open', 'type': 'PUT', 'strike': 244, 'expiration': datetime.date(2025, 11, 17), 'quantity': 1}
+]
+"""
