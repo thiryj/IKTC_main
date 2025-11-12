@@ -22,3 +22,7 @@ CLOSE_ACTIONS = {'Sell to Close', 'Buy to Close'}
 OPTION_TYPE_PUT = 'PUT'
 OPTION_TYPE_CALL = 'CALL'
 
+# server globals
+ACTIVE_ENV = None
+
+

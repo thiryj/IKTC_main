@@ -228,12 +228,17 @@ def submit_order(environment: str='SANDBOX',
                            preview: bool=True,
                            limit_price: float=None,
                            trade_type: str=None)->Dict:
+  
+  # save the environment to server global
+  server_config.ACTIVE_ENV = environment
+  
   # verify symbol and positions are present
   if underlying_symbol is None or trade_dto_list is None:
     print("no symbol or position in submit_preview_order")
   # get client and endpoint
   t, endpoint_url = server_helpers.get_tradier_client(environment)
 
+  #print(f"submit order: trade_dto_list: {trade_dto_list}")
   # submit order
   trade_response = server_helpers.submit_diagonal_spread_order(t, 
                                                               endpoint_url, 
@@ -468,7 +473,7 @@ def get_roll_package_dto(environment: str, trade_row: Row)->Dict:
     }
     'new_spread_dto' is a nested dict with {meta..., 'short_put', 'long_put'}
     """
-
+  
   # --- 1. Get Live Quotes for CURRENT Active Legs ---
   short_leg_quote = None
   long_leg_quote = None

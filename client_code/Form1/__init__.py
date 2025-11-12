@@ -22,7 +22,7 @@ class Form1(Form1Template):
     self.trade_dto = None # the new combined var to hold 2 leg new spreads or 4 leg roll spreads
     self.trade_dto_list = []
     # {spread meta, 'short_put':{}, 'long_put':{}}
-    self.roll_dto_list = []
+    #self.roll_dto_list = []
     self.preview_data = None # dict that is returned by Preview Trade button
     self.pending_order_id = None 
 
@@ -181,7 +181,7 @@ class Form1(Form1Template):
     Calls the server to get a full 4-leg roll package
     and pre-fills the trade ticket card.
     """
-    print(f"Handling roll request for trade: {trade['Underlying']} {trade.get('Strategy')}")
+    print(f"Handling roll request for trade: {trade['Underlying']} {trade['Strategy']}")
     try:
       # 1. Get the environment and populate intro fields
       env = self.dropdown_environment.selected_value
@@ -204,8 +204,8 @@ class Form1(Form1Template):
   
         # 3. Store the 4-leg DTO list. We'll need this when we submit.
       current_roll_dto_list = roll_package['legs_to_populate']
-      self.roll_dto_list = current_roll_dto_list
-      print(f"handle_roll_trade_request: self.roll_dto_list:{self.roll_dto_list}")
+      self.trade_dto_list = [roll_package.get('new_spread_dto'), roll_package.get('closing_spread_dto')]
+      print(f"handle_roll_trade_request: self.trade_dto_list:{self.trade_dto_list}")
   
       # 4. Populate the Trade Ticket UI.
       #    We will display the two *new* legs (legs 3 and 4)
@@ -214,10 +214,10 @@ class Form1(Form1Template):
       number_legs_dto = len(current_roll_dto_list)
       
       # extract the legs from the list
-      closing_short = [p for p in current_roll_dto_list if p.get('action')=='Buy to Close']
-      closing_long = [p for p in current_roll_dto_list if p.get('action')=='Sell to Close']
-      opening_short = [p for p in current_roll_dto_list if p.get('action')=='Sell to Open']
-      opening_long = [p for p in current_roll_dto_list if p.get('action')=='Buy to Open']
+      closing_short = [p for p in current_roll_dto_list if p.get('action')=='Buy to Close'][0]
+      closing_long = [p for p in current_roll_dto_list if p.get('action')=='Sell to Close'][0]
+      opening_short = [p for p in current_roll_dto_list if p.get('action')=='Sell to Open'][0]
+      opening_long = [p for p in current_roll_dto_list if p.get('action')=='Buy to Open'][0]
         
       self.label_leg1_action.text = opening_short.get('action')
       self.label_leg1_details.text = (
