@@ -54,12 +54,15 @@ def get_underlying_quote(environment: str, symbol: str) ->float:
   return underlying_price
 
 @anvil.server.callable
-def get_open_trades_for_dropdown():
+def get_open_trades_for_dropdown(environment: str=server_config.ENV_SANDBOX):
   """
     Fetches all open trades and formats them as a list
     of (display_text, item) tuples for a DropDown.
     """
-  open_trades = app_tables.trades.search(Status='Open')
+  open_trades = app_tables.trades.search(
+                                          Status='Open',
+                                          Account=environment
+  )
   dropdown_items = []
 
   for trade in open_trades:
@@ -134,20 +137,20 @@ def get_tradier_positions(environment: str):
     return e
 
 @anvil.server.callable
-def get_open_trades():
+def get_open_trades(environment: str=server_config.ENV_SANDBOX):
   """Fetches all trades with a status of 'Open'."""
-  open_trades_list = list(app_tables.trades.search(Status=q.full_text_match('Open')))
+  open_trades_list = list(app_tables.trades.search(Status=q.full_text_match('Open'),Account=environment))
   #print(f"Found {len(open_trades_list)} open trades.")
   return open_trades_list
 
 @anvil.server.callable
-def get_open_trades_with_risk(environment: str='SANDBOX'):
+def get_open_trades_with_risk(environment: str=server_config.ENV_SANDBOX):
   """
     Fetches all open trades, then enriches them with live
     pricing and assignment risk data from the Tradier API.
     """
-  open_trades = app_tables.trades.search(Status='Open')
-  print(f"Found {len(open_trades)} open trades to analyze...")
+  open_trades = app_tables.trades.search(Status='Open', Account=environment)
+  print(f"Found {len(open_trades)} open trades for {environment}")
   enriched_trades_list = []
 
   tradier_client, endpoint_url = server_helpers.get_tradier_client(environment)
@@ -216,9 +219,9 @@ def get_open_trades_with_risk(environment: str='SANDBOX'):
   return enriched_trades_list
   
 @anvil.server.callable
-def get_closed_trades():
+def get_closed_trades(environment: str=server_config.ENV_SANDBOX):
   """Fetches all trades with a status of 'Closed'."""
-  return app_tables.trades.search(Status='Closed')
+  return app_tables.trades.search(Status='Closed', Account=environment)
 
 @anvil.server.callable
 def submit_order(environment: str='SANDBOX', 
@@ -332,10 +335,10 @@ def get_active_legs_for_trade(trade_row):
 # In ServerModule1.py
 
 @anvil.server.callable
-def save_manual_trade(transaction_type, trade_date, net_price, legs_data, 
+def save_manual_trade(account, transaction_type, trade_date, net_price, legs_data, 
                       underlying=None, existing_trade_row=None):
 
-  print(f"Server saving: {transaction_type}")
+  print(f"Server saving to account {account}: {transaction_type}")
   new_trade = None
 
   try:
@@ -350,7 +353,8 @@ def save_manual_trade(transaction_type, trade_date, net_price, legs_data,
         Underlying=underlying,
         Strategy=transaction_type,
         Status=status,
-        OpenDate=trade_date
+        OpenDate=trade_date,
+        Account=account
       )
     else:
       raise ValueError("Must provide either an existing trade or a new underlying.")

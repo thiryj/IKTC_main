@@ -19,6 +19,7 @@ class Form1(Form1Template):
     self.init_components(**properties)
 
     # Globals
+    self.environment = config.ENV_SANDBOX
     self.trade_dto = None # the new combined var to hold 2 leg new spreads or 4 leg roll spreads
     self.trade_dto_list = []
     # {spread meta, 'short_put':{}, 'long_put':{}}
@@ -41,7 +42,8 @@ class Form1(Form1Template):
     )
     # Populate misc components
     # Trade history grid
-    self.repeatingpanel_trade_history.items = anvil.server.call('get_closed_trades')
+    self.repeatingpanel_trade_history.items = anvil.server.call('get_closed_trades', 
+                                                               self.dropdown_environment.selected_value)
     
     # Manual Trade Entry Card (records trade history into db)
     self.dropdown_manual_transaction_type.items = config.POSITION_TYPES
@@ -57,8 +59,10 @@ class Form1(Form1Template):
     
   def dropdown_environment_change(self, **event_args):
     """This method is called when an item is selected"""
-    selected_env = self.dropdown_environment.selected_value
-    profile_details = anvil.server.call('get_tradier_profile', environment=selected_env)
+    self.environment= self.dropdown_environment.selected_value # save to form global
+    self.refresh_open_positions_grid()
+    self.repeatingpanel_trade_history.items = anvil.server.call('get_closed_trades', self.environment)
+    profile_details = anvil.server.call('get_tradier_profile', environment=self.environment)
     if profile_details:
       account_number = profile_details['account_number']
       nickname = anvil.server.call('get_account_nickname', account_number)
@@ -93,9 +97,8 @@ class Form1(Form1Template):
       alert("must select symbol")
       return
     self.label_symbol.text = symbol
-    environment = self.dropdown_environment.selected_value
     self.label_quote_status.text = "Getting underlying price..."
-    underlying_price = anvil.server.call('get_underlying_quote', environment, symbol) 
+    underlying_price = anvil.server.call('get_underlying_quote', self.environment, symbol) 
     if underlying_price is None:
       alert("unable to get underlying price")
     self.label_underlying_price.text = f"{underlying_price:.2f}"
@@ -182,11 +185,9 @@ class Form1(Form1Template):
     and pre-fills the trade ticket card.
     """
     print(f"Handling roll request for trade: {trade['Underlying']} {trade['Strategy']}")
-    try:
-      # 1. Get the environment and populate intro fields
-      env = self.dropdown_environment.selected_value
+    try:      
       self.label_symbol.text = trade['Underlying']  
-      underlying_price = anvil.server.call('get_underlying_quote', env, self.label_symbol.text) 
+      underlying_price = anvil.server.call('get_underlying_quote', self.environment, self.label_symbol.text) 
       if underlying_price is None:
         alert("unable to get underlying price")
   
@@ -196,7 +197,7 @@ class Form1(Form1Template):
       # 'legs_to_populate' is a list of 4 leg dtos
       # 'total_roll_credit' is a float 
       # 'new_spread_dto' is the full dict with meta and legs
-      roll_package = anvil.server.call('get_roll_package_dto', env, trade)
+      roll_package = anvil.server.call('get_roll_package_dto', self.environment, trade)
   
       if not roll_package:
         alert("Could not find a suitable roll for this position.")
@@ -356,10 +357,9 @@ class Form1(Form1Template):
     """This method is called when the cancel button is clicked"""
     # Check if we are actually tracking a pending order
     if self.pending_order_id:
-      env = self.dropdown_environment.selected_value
 
       # Call the new server function
-      status = anvil.server.call('cancel_order', env, self.pending_order_id)
+      status = anvil.server.call('cancel_order', self.environment, self.pending_order_id)
 
       if status == "Order canceled":
         # Stop the timer, we're done
@@ -435,7 +435,7 @@ class Form1(Form1Template):
     self.card_manual_entry.visible = True
     self.datepicker_manual_date.max_date=date.today()
     self.datepicker_manual_date.date=date.today()
-    trade_list = anvil.server.call('get_open_trades_for_dropdown')
+    trade_list = anvil.server.call('get_open_trades_for_dropdown', self.environment)
     self.dropdown_manual_existing_trade.items = trade_list
 
   def button_cancel_trade_ticket_click(self, **event_args):
@@ -500,7 +500,7 @@ class Form1(Form1Template):
     try: # validate then save
       validation_result = anvil.server.call(
         'validate_manual_legs',
-        self.dropdown_environment.selected_value,
+        self.environment,
         legs_data_list 
       )
 
@@ -510,12 +510,13 @@ class Form1(Form1Template):
         alert(f"Validation Error: {validation_result}. Please correct and resave.")
         return # Stop the save
       response = anvil.server.call('save_manual_trade', 
-                        selected_type, 
-                        trade_date, 
-                        net_price,
-                        legs_data_list,
-                        underlying,          # Pass the new underlying (or None)
-                        existing_trade_row   # Pass the existing trade (or None)
+                                   self.environment,
+                                   selected_type, 
+                                   trade_date, 
+                                   net_price,
+                                   legs_data_list,
+                                   underlying,          # Pass the new underlying (or None)
+                                   existing_trade_row   # Pass the existing trade (or None)
                         )
       alert(response)
 
@@ -531,11 +532,9 @@ class Form1(Form1Template):
 
   def refresh_open_positions_grid(self):
     print("Refreshing open positions with live risk data...")
-    # Get the environment from your dropdown
-    env = self.dropdown_environment.selected_value 
-  
+          
     # Call the new "smart" function and pass the environment
-    open_trades_data = anvil.server.call('get_open_trades_with_risk', env)
+    open_trades_data = anvil.server.call('get_open_trades_with_risk', self.environment)
   
     self.repeatingpanel_open_positions.items = open_trades_data
     print("...Risk data loaded.")
@@ -613,7 +612,7 @@ class Form1(Form1Template):
     print(f"Handling manual entry request for: {action_type}")
   
     self.reset_manual_trade_card()
-    trade_list = anvil.server.call('get_open_trades_for_dropdown')
+    trade_list = anvil.server.call('get_open_trades_for_dropdown', self.environment)
     self.dropdown_manual_existing_trade.items = trade_list
   
     # 2. Pre-select the transaction type
@@ -633,9 +632,8 @@ class Form1(Form1Template):
     elif action_type == 'Roll: Spread':
       # This is the new, smart logic for a roll
       try:
-        env = self.dropdown_environment.selected_value
         # Call our new function to get all 4 legs and the credit
-        roll_package = anvil.server.call('get_roll_package_dto', env, trade)
+        roll_package = anvil.server.call('get_roll_package_dto', self.environment, trade)
 
         # Use the 4-leg DTO list to populate the repeating panel
         self.repeatingpanel_manual_legs.items = roll_package['legs_to_populate']
@@ -669,8 +667,7 @@ class Form1(Form1Template):
   def timer_order_status_tick(self, **event_args):
     """This method is called Every [interval] seconds. Does not trigger if [interval] is 0."""
     if self.pending_order_id:
-      env = self.dropdown_environment.selected_value
-      status = anvil.server.call('get_order_status', env, self.pending_order_id)
+      status = anvil.server.call('get_order_status', self.environment, self.pending_order_id)
   
       self.label_trade_results_status.text = f"Order {self.pending_order_id}: {status}"
   

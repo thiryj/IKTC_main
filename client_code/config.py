@@ -9,6 +9,8 @@ from anvil.tables import app_tables
 #
 #    Module1.say_hello()
 #
+ENV_SANDBOX = 'SANDBOX'
+ENV_PRODUCTION = 'PROD'
 UNDERLYING_SYMBOL = "IWM"
 TRADE_TYPE_OPEN = 'open'
 TRADE_TYPE_ROLL = 'roll'

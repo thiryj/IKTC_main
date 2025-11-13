@@ -48,6 +48,9 @@ db_schema:
     - admin_ui: {order: 5, width: 200}
       name: TotalPL
       type: number
+    - admin_ui: {order: 6, width: 200}
+      name: Account
+      type: string
     server: full
     title: Trades
   transactions:
