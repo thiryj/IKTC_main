@@ -5,13 +5,14 @@ import anvil.server
 import anvil.tables as tables
 import anvil.tables.query as q
 from anvil.tables import app_tables, Row
-from .Form_ConfirmTrade import Form_ConfirmTrade # Import your custom form
 
 # Public libs
 from datetime import date
 
 # Private libs
 from .. import config
+from . import manual_trade
+from .Form_ConfirmTrade import Form_ConfirmTrade # Import your custom form
 
 class Form1(Form1Template):
   def __init__(self, **properties):
@@ -23,7 +24,7 @@ class Form1(Form1Template):
     self.trade_dto = None # the new combined var to hold 2 leg new spreads or 4 leg roll spreads
     self.trade_dto_list = []
     # {spread meta, 'short_put':{}, 'long_put':{}}
-    #self.roll_dto_list = []
+    self.manual_entry_state = None    # open or edit
     self.preview_data = None # dict that is returned by Preview Trade button
     self.pending_order_id = None 
 
@@ -32,11 +33,11 @@ class Form1(Form1Template):
     self.timer_risk_refresh.interval = 3600  # one hour
 
     # Events
-    # Open Positions event broadcast
+    # Open Positions edit event broadcast
     self.repeatingpanel_open_positions.set_event_handler(
-      'x-manual-entry-requested', self.handle_manual_entry_request
+      'x-manual-edit-requested', self.handle_manual_edit_request
     )
-    # Roll Positions event broadcast
+    # Open Positions roll live event broadcast
     self.repeatingpanel_open_positions.set_event_handler(
       'x-roll-trade-requested', self.handle_roll_trade_request
     )
@@ -47,15 +48,13 @@ class Form1(Form1Template):
     
     # Manual Trade Entry Card (records trade history into db)
     self.dropdown_manual_transaction_type.items = config.POSITION_TYPES
-    self.dropdown_manual_position_action.items = config.POSITION_ACTIONS
-    
+        
     # Trade Ticket
     self.button_place_trade.enabled = False
     self.label_quote_status.text = "Enter quantity and review trade."
 
     # Log into default environment as displayed in the dropdown
     self.dropdown_environment_change()
-    self.refresh_open_positions_grid() 
     
   def dropdown_environment_change(self, **event_args):
     """This method is called when an item is selected"""
@@ -373,112 +372,57 @@ class Form1(Form1Template):
     alert("need to code the clear trade entry logic")
     self.card_trade_entry.visible=False
 
-  def button_add_trade_click(self, **event_args):
+### Manual Entry Card 
+
+  def button_open_record_click(self, **event_args):
     """This method is called when the button is clicked"""
     self.reset_manual_trade_card()
     self.card_manual_entry.visible = True
+    self.label_manual_entry_card.text = "Manual Entry: Open (record) new position" 
+    self.manual_entry_state = config.MANUAL_ENTRY_STATE_OPEN
     self.datepicker_manual_date.max_date=date.today()
     self.datepicker_manual_date.date=date.today()
-    trade_list = anvil.server.call('get_open_trades_for_dropdown', self.environment)
-    self.dropdown_manual_existing_trade.items = trade_list
+    self.dropdown_manual_transaction_type.visible=True
+    self.textbox_manual_underlying.visible = True
 
   def dropdown_manual_transaction_type_change(self, **event_args):
     """Shows the correct number of leg entry rows based on
     what type of manual transaction is being entered.
     """
-    if self.dropdown_manual_position_action.selected_value:
-      self.manual_trade_combined_change()
-      
+    #manual_trade.manual_transaction_type_change(self, action=config.TRADE_ACTION_OPEN)
     selected_type = self.dropdown_manual_transaction_type.selected_value
-
-    # Check if the selected type implies a new trade
-    if selected_type and selected_type in config.NEW_TRADE_ACTIONS:
-      # Show fields for a NEW trade
-      self.textbox_manual_underlying.visible = True
-      self.dropdown_manual_existing_trade.visible = False
-    else:
-      # Show fields for an EXISTING trade
-      self.textbox_manual_underlying.visible = False
-      self.dropdown_manual_existing_trade.visible = True
-    # This will be the list of dictionaries for the repeating panel
-    leg_definitions = []
-    
-    if selected_type == 'Open: Cash Secured Put':
-      leg_definitions = [
-        {'action': 'Sell to Open', 'type': 'Put'}
-      ]
-
-    elif selected_type == 'Open: Diagonal':
-      leg_definitions = [
-        {'action': 'Sell to Open', 'type': 'Put'},
-        {'action': 'Buy to Open', 'type': 'Put'}
-      ]
-    elif selected_type == 'Roll: Diagonal':
-      leg_definitions = [
-        {'action': 'Buy to Close', 'type': 'Put'},
-        {'action': 'Sell to Close', 'type': 'Put'},
-        {'action': 'Sell to Open', 'type': 'Put'},
-        {'action': 'Buy to Open', 'type': 'Put'}
-      ]
-      
-    elif selected_type == 'Close: Diagonal':
-      leg_definitions = [
-        {'action': 'Buy to Close', 'type': 'Put'},
-        {'action': 'Sell to Close', 'type': 'Put'}
-      ]
-    
-    elif selected_type == 'Roll: Leg':
-      leg_definitions = [
-      {'action': 'Buy to Close', 'type': 'Put'},
-      {'action': 'Sell to Open', 'type': 'Put'}
-    ]
-    # Now, assign this list to the repeating panel
-    if leg_definitions:
-      self.repeatingpanel_manual_legs.items = leg_definitions
-      self.repeatingpanel_manual_legs.visible = True
-    else:
-      # Hide the panel if no legs are needed
-      self.repeatingpanel_manual_legs.items = []
-      self.repeatingpanel_manual_legs.visible = False
-    
+    manual_trade.new_leg_builder(self, selected_type)
     self.button_save_manual_trade.enabled=True
 
-  def dropdown_manual_position_action_change(self, **event_args):
-    """This method is called when an item is selected"""
-    if self.dropdown_manual_transaction_type.selected_value:
-      self.manual_trade_combined_change()
-
-  def manual_trade_combined_change(self):
-    # called when both manual type and manual action have changed
-    print("both manual dropdowns are changed")
-
   def button_save_manual_trade_click(self, **event_args):
-    
-    # 1. Get the data that's common to the whole transaction
-    selected_type = self.dropdown_manual_transaction_type.selected_value
+    # get common elements
     trade_date = self.datepicker_manual_date.date
-    # This will be either the full Trade row or None
-    existing_trade_row = None
-    underlying = None
-
-    # 2. Get EITHER the new underlying OR the existing trade
-    if selected_type in config.NEW_TRADE_ACTIONS:
-      underlying = self.textbox_manual_underlying.text
-      if not underlying:
-        alert("Please enter an underlying symbol for a new trade.")
-        return
-    else:
-      existing_trade_row = self.dropdown_manual_existing_trade.selected_value
-      if not existing_trade_row:
-        alert("Please select an existing trade.")
-        return
-    
     try:
       net_price = float(self.textbox_manual_credit_debit.text)
     except (TypeError, ValueError):
       alert("Please enter a valid net credit/debit number (e.g., 1.50 or -0.25).")
       return
-  
+
+    # initialize local vars
+    existing_trade_row = None
+    selected_type = None
+    
+    # determine state: open mode or edit mode
+    card_mode = self.manual_entry_state
+
+    # branch on state
+    if card_mode == config.MANUAL_ENTRY_STATE_OPEN:
+      underlying = self.textbox_manual_underlying.text
+      if not underlying:
+        alert("Please enter an underlying symbol for a new trade.")
+        return
+      selected_type = self.dropdown_manual_transaction_type.selected_value
+    else:  #the mode is edit
+      existing_trade_row = self.dropdown_manual_existing_trade.selected_value
+      if not existing_trade_row:
+        alert("Please select an existing trade.")
+        return
+        
     # 2. Create a list to hold the data from each leg row
     legs_data_list = []
   
@@ -521,6 +465,7 @@ class Form1(Form1Template):
       response = anvil.server.call('save_manual_trade', 
                                    self.environment,
                                    selected_type, 
+                                   self.manual_entry_state,  # open or close. roll will need special handling
                                    trade_date, 
                                    net_price,
                                    legs_data_list,
@@ -530,7 +475,6 @@ class Form1(Form1Template):
       alert(response)
 
       # 5. Hide the card and refresh your open positions
-      self.dropdown_manual_existing_trade.visible = False
       self.card_manual_entry.visible = False
       # You'll need a function to refresh your grids
       self.refresh_open_positions_grid() 
@@ -547,26 +491,6 @@ class Form1(Form1Template):
   
     self.repeatingpanel_open_positions.items = open_trades_data
     print("...Risk data loaded.")
-
-  def button_cancel_manual_trade_click(self, **event_args):
-    """
-      Called when the 'Cancel' button on the manual entry card is clicked.
-      """
-    self.card_manual_entry.visible = False
-    self.reset_manual_trade_card()
-    self.refresh_open_positions_grid()
-
-  def reset_manual_trade_card(self):
-    """
-      Resets all input components on the manual entry card to a default state.
-      """
-    self.dropdown_manual_transaction_type.selected_value = None
-    self.dropdown_manual_
-    self.dropdown_manual_existing_trade.visible = False
-    self.textbox_manual_underlying.text = None
-    self.textbox_manual_underlying.visible = False
-    self.datepicker_manual_date.date = date.today() 
-    self.repeatingpanel_manual_legs.items = []
 
   def dropdown_manual_existing_trade_change(self, **event_args):
     """
@@ -614,9 +538,7 @@ class Form1(Form1Template):
       self.repeatingpanel_manual_legs.items = []
       self.repeatingpanel_manual_legs.visible = False
         
-  # In Form1 code
-
-  def handle_manual_entry_request(self, trade: Row, action_type: str, **event_args):
+  def handle_manual_edit_request(self, trade: Row, action_type: str, **event_args):
     """
       Called by a row's 'Close' button.
       Opens the manual entry card and pre-fills it.
@@ -624,21 +546,24 @@ class Form1(Form1Template):
     print(f"Handling manual entry request for: {action_type}")
   
     self.reset_manual_trade_card()
+    self.label_manual_entry_card.text = "Manual Entry: Edit (record) existing position"
     trade_list = anvil.server.call('get_open_trades_for_dropdown', self.environment)
     self.dropdown_manual_existing_trade.items = trade_list
+    self.dropdown_manual_existing_trade.visible=True
   
     # 2. Pre-select the transaction type
-    self.dropdown_manual_transaction_type.selected_value = action_type
-  
+    # could be either roll (record) or close(record)
+      
     # 4. Pre-select the existing trade
     # Note: We must pass the full 'trade' row object, not just an ID
     self.dropdown_manual_existing_trade.selected_value = trade
   
-    # 5. Manually trigger the 'change' events to populate the form
+
+    """
+        # 5. Manually trigger the 'change' events to populate the form
     # This simulates the user clicking the dropdowns, which runs your
     # existing logic to show/hide fields and pre-fill the legs.
     self.dropdown_manual_transaction_type_change()
-
     if action_type == 'Close: Diagonal':
       self.dropdown_manual_existing_trade_change()
     elif action_type == 'Roll: Spread':
@@ -657,9 +582,33 @@ class Form1(Form1Template):
       except Exception as e:
         alert(f"Error calculating roll: {e}")
         self.repeatingpanel_manual_legs.items = [] # Clear the panel
+        """
   
     # 6. Show the card
     self.card_manual_entry.visible = True  
+    self.button_save_manual_trade.enabled = True
+
+  def button_cancel_manual_trade_click(self, **event_args):
+    """
+      Called when the 'Cancel' button on the manual entry card is clicked.
+      """
+    self.card_manual_entry.visible = False
+    self.reset_manual_trade_card()
+    self.refresh_open_positions_grid()
+
+  def reset_manual_trade_card(self):
+    """
+      Resets all input components on the manual entry card to a default state.
+      """
+    self.dropdown_manual_transaction_type.selected_value = None
+    self.dropdown_manual_transaction_type.visible = False
+    self.dropdown_manual_existing_trade.selected_value = None
+    self.dropdown_manual_existing_trade.visible = False
+    self.textbox_manual_underlying.text = None
+    self.textbox_manual_underlying.visible = False
+    self.datepicker_manual_date.date = date.today() 
+    self.repeatingpanel_manual_legs.items = []
+    self.manual_entry_state = None
 
   def button_refresh_open_positions_risk_click(self, **event_args):
     """This method is called when the button is clicked"""

@@ -335,7 +335,7 @@ def get_active_legs_for_trade(trade_row):
 # In ServerModule1.py
 
 @anvil.server.callable
-def save_manual_trade(account, transaction_type, trade_date, net_price, legs_data, 
+def save_manual_trade(account, transaction_type, transaction_direction, trade_date, net_price, legs_data, 
                       underlying=None, existing_trade_row=None):
 
   print(f"Server saving to account {account}: {transaction_type}")
@@ -345,10 +345,10 @@ def save_manual_trade(account, transaction_type, trade_date, net_price, legs_dat
     # --- 1. Find or Create the Trade (Your existing logic) ---
     if existing_trade_row:
       new_trade = existing_trade_row
-      if 'Close:' in transaction_type:
+      if transaction_direction == 'CLOSE':
         existing_trade_row.update(Status='Closed', CloseDate=trade_date)
     elif underlying:
-      status = 'Open' if 'Open:' in transaction_type else 'Closed'
+      status = 'Open' if 'OPEN' in transaction_direction else 'Closed'
       new_trade = app_tables.trades.add_row(
         Underlying=underlying,
         Strategy=transaction_type,
@@ -611,11 +611,6 @@ def get_new_open_trade_dto(environment: str, symbol: str) -> Dict:
 
   # 3. Convert the object to the spread DTO
   best_position_object_dto = best_position_object.get_dto()
-
-  # 4. create leg dtos from spread dto
-  # prepare for serialization
-  new_short_leg_dto = best_position_object_dto['short_put']
-  new_long_leg_dto = best_position_object_dto['long_put']
     
   return {
     'legs_to_populate': None,

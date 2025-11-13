@@ -69,31 +69,36 @@ components:
       properties: {role: title, text: Manual Entry}
       type: Label
     - components:
-      - data_bindings: []
-        event_bindings: {change: dropdown_manual_transaction_type_change}
-        layout_properties: {col_xs: 0, row: CXCZWP, width_xs: 3}
-        name: dropdown_manual_transaction_type
-        properties:
-          include_placeholder: true
-          items: ['Open: Diagonal', 'Roll: Diagonal', 'Close: Diagonal', 'Open: Cash Secured Put', 'Open: Covered Call', 'Close: Leg', 'Close: Stock (Covered Call)', 'Event: Assignment (Stock In)', 'Event: Assignment (Stock Out)']
-          placeholder: Select Transaction Type
-          role: null
-        type: DropDown
-      - data_bindings:
-        - {code: '', property: items, writeback: false}
-        event_bindings: {change: dropdown_manual_position_action_change}
-        layout_properties: {col_xs: 3, row: CXCZWP, width_xs: 2}
-        name: dropdown_manual_position_action
-        properties:
-          include_placeholder: true
-          items: [config.POSITION_ACTIONS]
-          placeholder: Action
-        type: DropDown
-      - layout_properties: {col_xs: 5, row: CXCZWP, width_xs: 3}
+      - components:
+        - data_bindings: []
+          event_bindings: {change: dropdown_manual_transaction_type_change}
+          layout_properties: {width: 174}
+          name: dropdown_manual_transaction_type
+          properties:
+            include_placeholder: true
+            items: []
+            placeholder: Transaction Type
+            role: null
+            visible: false
+          type: DropDown
+        - layout_properties: {width: 113}
+          name: textbox_manual_underlying
+          properties: {text: IWM, visible: false}
+          type: TextBox
+        - event_bindings: {change: dropdown_manual_existing_trade_change}
+          layout_properties: {}
+          name: dropdown_manual_existing_trade
+          properties: {include_placeholder: true, placeholder: Select Open Trade, visible: false}
+          type: DropDown
+        layout_properties: {col_xs: 0, row: JOTRAX, width_xs: 7}
+        name: flow_panel_9
+        properties: {}
+        type: FlowPanel
+      - layout_properties: {col_xs: 7, row: JOTRAX, width_xs: 3}
         name: datepicker_manual_date
         properties: {}
         type: DatePicker
-      - layout_properties: {col_xs: 9, row: CXCZWP, width_xs: 2}
+      - layout_properties: {col_xs: 10, row: JOTRAX, width_xs: 2}
         name: textbox_manual_credit_debit
         properties: {placeholder: credit/debit, type: number}
         type: TextBox
@@ -101,20 +106,6 @@ components:
       name: grid_panel_2
       properties: {}
       type: GridPanel
-    - components:
-      - event_bindings: {change: dropdown_manual_existing_trade_change}
-        layout_properties: {}
-        name: dropdown_manual_existing_trade
-        properties: {include_placeholder: true, placeholder: Select Open Trade, visible: false}
-        type: DropDown
-      - layout_properties: {}
-        name: textbox_manual_underlying
-        properties: {text: IWM, visible: false}
-        type: TextBox
-      layout_properties: {grid_position: 'DWTKBI,CVTPYA'}
-      name: flow_panel_9
-      properties: {}
-      type: FlowPanel
     - layout_properties: {grid_position: 'NVZSNL,GMBTAX'}
       name: columnpanel_manual_leg_header
       properties: {}
@@ -346,10 +337,10 @@ components:
       properties: {interval: 360}
       type: Timer
     - components:
-      - event_bindings: {click: button_add_trade_click}
+      - event_bindings: {click: button_open_record_click}
         layout_properties: {}
-        name: button_add_trade
-        properties: {role: tonal-button, text: Manually Add Trade}
+        name: button_open_record
+        properties: {role: tonal-button, text: Open (Record)}
         type: Button
       - event_bindings: {click: button_refresh_open_positions_risk_click}
         layout_properties: {}

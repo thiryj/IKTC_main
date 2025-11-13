@@ -34,15 +34,15 @@ class RowTemplate_OpenPositions(RowTemplate_OpenPositionsTemplate):
       if is_at_risk:
         # Set the label's color to red
         self.label_assignment_risk.foreground = 'red'
-        self.button_roll.background = 'theme:Error'
+        self.button_roll_live.background = 'theme:Error'
       else:
         # Reset to default colors
         self.label_assignment_risk.foreground = None
-        self.button_roll.background = None
+        self.button_roll_live.background = None
 
-  def button_close_click(self, **event_args):
+  def button_edit_click(self, **event_args):
     """
-      Called when the 'Close' button on this row is clicked.
+      Called when the 'Edit' button on this row is clicked.
       """
     # 'self.item' is the enriched DTO for this row.
     # We need the original database row, which we stored in it.
@@ -50,13 +50,13 @@ class RowTemplate_OpenPositions(RowTemplate_OpenPositionsTemplate):
   
     # 'self.parent' is the repeating panel.
     # We raise a custom event on it, passing the trade to be closed.
-    self.parent.raise_event('x-manual-entry-requested',
+    self.parent.raise_event('x-manual-edit-requested',
                             trade=trade_to_close,
-                            action_type='Close')
+                            action_type='Edit')
 
-  def button_roll_click(self, **event_args):
+  def button_roll_live_click(self, **event_args):
     """
-      Called when the 'Roll' button on this row is clicked.
+      Called when the 'Roll (Live)' button on this row is clicked.
       """
   
     # 'self.item' is the enriched DTO for this row.

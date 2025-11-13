@@ -13,6 +13,7 @@ unique_ids:
     Form1.RowTemplate3: '1762361909690323775980092.4994'
     Form1.RowTemplate_OpenPositions: '1761773563840247664674971.00497'
   modules:
+    Form1.manual_trade: '1763040911586920372901002.5742'
     config: '1761841609118216428021898.92917'
   scripts: {}
   server_modules:
