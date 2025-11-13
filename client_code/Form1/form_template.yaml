@@ -69,7 +69,8 @@ components:
       properties: {role: title, text: Manual Entry}
       type: Label
     - components:
-      - event_bindings: {change: dropdown_manual_transaction_type_change}
+      - data_bindings: []
+        event_bindings: {change: dropdown_manual_transaction_type_change}
         layout_properties: {col_xs: 0, row: CXCZWP, width_xs: 3}
         name: dropdown_manual_transaction_type
         properties:
@@ -80,6 +81,7 @@ components:
         type: DropDown
       - data_bindings:
         - {code: '', property: items, writeback: false}
+        event_bindings: {change: dropdown_manual_position_action_change}
         layout_properties: {col_xs: 3, row: CXCZWP, width_xs: 2}
         name: dropdown_manual_position_action
         properties:

@@ -212,8 +212,7 @@ class Form1(Form1Template):
       #    We will display the two *new* legs (legs 3 and 4)
       #    and the *total* net credit for the entire roll.
       # The 'to close' legs are the first two in the list
-      number_legs_dto = len(current_roll_dto_list)
-      
+            
       # extract the legs from the list
       closing_short = [p for p in current_roll_dto_list if p.get('action')=='Buy to Close'][0]
       closing_long = [p for p in current_roll_dto_list if p.get('action')=='Sell to Close'][0]
@@ -258,7 +257,6 @@ class Form1(Form1Template):
     # auto run preview trade:  why wait?
     self.button_preview_trade_click()
     #self.button_place_trade.enabled = False
-    
 
   def button_preview_trade_click(self, **event_args):
     """Fired when the 'Preview Trade' button is clicked."""    
@@ -345,8 +343,7 @@ class Form1(Form1Template):
                                      self.trade_dto_list, # list of nested dict with {spread meta..., 'short_put', 'long_put'}
                                      quantity,
                                      preview=preview,
-                                     limit_price=limit_price,
-                                     trade_type=config.TRADE_TYPE_OPEN
+                                     limit_price=limit_price                    
                                     )
 
     # handle return dict
@@ -370,15 +367,32 @@ class Form1(Form1Template):
         alert(f"Failed to cancel order: {status}")
     else:
       alert("No pending order to cancel.")
+      
+  def button_cancel_trade_ticket_click(self, **event_args):
+    """This method is called when the button is clicked"""
+    alert("need to code the clear trade entry logic")
+    self.card_trade_entry.visible=False
+
+  def button_add_trade_click(self, **event_args):
+    """This method is called when the button is clicked"""
+    self.reset_manual_trade_card()
+    self.card_manual_entry.visible = True
+    self.datepicker_manual_date.max_date=date.today()
+    self.datepicker_manual_date.date=date.today()
+    trade_list = anvil.server.call('get_open_trades_for_dropdown', self.environment)
+    self.dropdown_manual_existing_trade.items = trade_list
 
   def dropdown_manual_transaction_type_change(self, **event_args):
     """Shows the correct number of leg entry rows based on
     what type of manual transaction is being entered.
     """
+    if self.dropdown_manual_position_action.selected_value:
+      self.manual_trade_combined_change()
+      
     selected_type = self.dropdown_manual_transaction_type.selected_value
 
     # Check if the selected type implies a new trade
-    if selected_type and selected_type in config.NEW_TRADE_TYPES:
+    if selected_type and selected_type in config.NEW_TRADE_ACTIONS:
       # Show fields for a NEW trade
       self.textbox_manual_underlying.visible = True
       self.dropdown_manual_existing_trade.visible = False
@@ -429,19 +443,14 @@ class Form1(Form1Template):
     
     self.button_save_manual_trade.enabled=True
 
-  def button_add_trade_click(self, **event_args):
-    """This method is called when the button is clicked"""
-    self.reset_manual_trade_card()
-    self.card_manual_entry.visible = True
-    self.datepicker_manual_date.max_date=date.today()
-    self.datepicker_manual_date.date=date.today()
-    trade_list = anvil.server.call('get_open_trades_for_dropdown', self.environment)
-    self.dropdown_manual_existing_trade.items = trade_list
+  def dropdown_manual_position_action_change(self, **event_args):
+    """This method is called when an item is selected"""
+    if self.dropdown_manual_transaction_type.selected_value:
+      self.manual_trade_combined_change()
 
-  def button_cancel_trade_ticket_click(self, **event_args):
-    """This method is called when the button is clicked"""
-    alert("need to code the clear trade entry logic")
-    self.card_trade_entry.visible=False
+  def manual_trade_combined_change(self):
+    # called when both manual type and manual action have changed
+    print("both manual dropdowns are changed")
 
   def button_save_manual_trade_click(self, **event_args):
     
@@ -453,7 +462,7 @@ class Form1(Form1Template):
     underlying = None
 
     # 2. Get EITHER the new underlying OR the existing trade
-    if selected_type in config.NEW_TRADE_TYPES:
+    if selected_type in config.NEW_TRADE_ACTIONS:
       underlying = self.textbox_manual_underlying.text
       if not underlying:
         alert("Please enter an underlying symbol for a new trade.")
@@ -521,11 +530,11 @@ class Form1(Form1Template):
       alert(response)
 
       # 5. Hide the card and refresh your open positions
+      self.dropdown_manual_existing_trade.visible = False
       self.card_manual_entry.visible = False
       # You'll need a function to refresh your grids
       self.refresh_open_positions_grid() 
       self.reset_manual_trade_card()
-      self.card_manual_entry.visible=False
 
     except Exception as e:
         alert(f"Failed to save trade: {e}")
@@ -552,7 +561,10 @@ class Form1(Form1Template):
       Resets all input components on the manual entry card to a default state.
       """
     self.dropdown_manual_transaction_type.selected_value = None
-    self.textbox_manual_underlying.text = config.UNDERLYING_SYMBOL
+    self.dropdown_manual_
+    self.dropdown_manual_existing_trade.visible = False
+    self.textbox_manual_underlying.text = None
+    self.textbox_manual_underlying.visible = False
     self.datepicker_manual_date.date = date.today() 
     self.repeatingpanel_manual_legs.items = []
 
@@ -679,4 +691,6 @@ class Form1(Form1Template):
         #self.label_trade_results_price.text = f"Limit Price: ${order_details['price']:.2f}"
         print("Order is in a final state. Stopping timer.")
         # You would now refresh your main positions grid
+
+
   

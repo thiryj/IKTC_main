@@ -229,8 +229,8 @@ def submit_order(environment: str='SANDBOX',
                            trade_dto_list: List=[], # list of dicts with {spread meta..., 'short_put', 'long_put'}
                            quantity: int=1,
                            preview: bool=True,
-                           limit_price: float=None,
-                           trade_type: str=None)->Dict:
+                           limit_price: float=None
+                           )->Dict:
   
   # save the environment to server global
   server_config.ACTIVE_ENV = environment
@@ -249,8 +249,8 @@ def submit_order(environment: str='SANDBOX',
                                                               quantity, 
                                                               trade_dto_list, # list of dicts with {spread meta..., 'short_put', 'long_put'}
                                                               preview,
-                                                              limit_price,
-                                                            trade_type)
+                                                              limit_price
+                                                            )
   #print(f"trade response: {trade_response}")
   return trade_response
   

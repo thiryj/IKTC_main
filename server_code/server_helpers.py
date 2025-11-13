@@ -152,8 +152,7 @@ def submit_diagonal_spread_order(
   quantity: int,
   trade_dto_list: List, # list of dicts with {spread meta..., 'short_put', 'long_put'}
   preview: bool = True,
-  limit_price: float = None,
-  trade_type: str = None
+  limit_price: float = None
 ) -> Dict:
   """
   Submits a multi-leg option order directly using the session,

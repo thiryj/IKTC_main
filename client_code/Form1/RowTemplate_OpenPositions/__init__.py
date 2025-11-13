@@ -52,7 +52,7 @@ class RowTemplate_OpenPositions(RowTemplate_OpenPositionsTemplate):
     # We raise a custom event on it, passing the trade to be closed.
     self.parent.raise_event('x-manual-entry-requested',
                             trade=trade_to_close,
-                            action_type='Close: Diagonal')
+                            action_type='Close')
 
   def button_roll_click(self, **event_args):
     """
