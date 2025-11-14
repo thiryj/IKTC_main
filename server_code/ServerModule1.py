@@ -424,7 +424,7 @@ def save_manual_trade(account, transaction_type, transaction_direction, trade_da
         active=is_active_flag # This will be False for "Close" actions
       )
     print("starting pl update")  
-    if 'Close:' in transaction_type:
+    if transaction_type and 'Close:' in transaction_type:
       # Now that the closing transaction is saved, sum the P/L
       # Find all transactions for this trade
       all_transactions = app_tables.transactions.search(Trade=new_trade)
@@ -442,6 +442,8 @@ def save_manual_trade(account, transaction_type, transaction_direction, trade_da
         CloseDate=trade_date,
         TotalPL=total_pl
       )
+    else:
+      print(f"transaction type is: {transaction_type}")
     return "Trade saved successfully!"
 
   except Exception as e:

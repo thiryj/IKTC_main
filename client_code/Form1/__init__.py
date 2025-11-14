@@ -422,7 +422,9 @@ class Form1(Form1Template):
       if not existing_trade_row:
         alert("Please select an existing trade.")
         return
-      underlying = dict(existing_trade_row).get('Underlying')
+      trade_row_dict = dict(existing_trade_row)
+      underlying = trade_row_dict.get('Underlying')
+      selected_type= trade_row_dict.get('Strategy')
     # 2. Create a list to hold the data from each leg row
     legs_data_list = []
   
