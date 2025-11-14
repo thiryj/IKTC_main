@@ -163,9 +163,9 @@ def get_open_trades_with_risk(environment: str=server_config.ENV_SANDBOX):
       'OpenDate': trade['OpenDate'],
       'extrinsic_value': None, # Placeholder
       'is_at_risk': False,       # Placeholder
-      'short_strike': float,
-      'long_strike': float,
-      'short_expiry': datetime.date
+      'short_strike': None,
+      'long_strike': None,
+      'short_expiry': None
     }
     
     try:
@@ -219,7 +219,7 @@ def get_open_trades_with_risk(environment: str=server_config.ENV_SANDBOX):
     except Exception as e:
       print(f"Could not analyze risk for {trade['Underlying']}: {e}")
       pass # This trade will be skipped
-      
+    print(f"dto is: {trade_dto}")  
     enriched_trades_list.append(trade_dto)
     # get live quotes, and do the risk calculation.
     # 3. Return the new list of DTOs

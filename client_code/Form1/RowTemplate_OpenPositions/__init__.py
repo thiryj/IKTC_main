@@ -12,10 +12,13 @@ class RowTemplate_OpenPositions(RowTemplate_OpenPositionsTemplate):
 
     # --- 1. Your existing code to set labels ---
     if self.item:
-      self.label_underlying.text = self.item['Underlying']
+      print(f"short_expiry is {self.item.get('short_expiry')}")
+      self.label_underlying.text = f"{self.item['Underlying']} {self.item.get('short_strike')}/{self.item.get('long_strike')}"
       self.label_strategy.text = self.item['Strategy']
       if self.item['OpenDate']:
-        self.label_open_date.text = self.item['OpenDate'].strftime("%Y-%m-%d")
+        se = self.item.get('short_expiry')
+        se_str = f"{se:%d-%b}" if se else "-"
+        self.label_open_date.text = f"{self.item['OpenDate']:%d-%b} / {se_str}"
 
     # --- 2. NEW RISK INDICATOR LOGIC ---
     if self.item:
