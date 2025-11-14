@@ -17,8 +17,12 @@ DAYS_TO_NOT_OPEN = (4,)  # data shows don't open bullish positions on Friday bec
 ROLL = False
 
 #ENUMS and sets
-OPEN_ACTIONS = {'Sell to Open', 'Buy to Open'}
-CLOSE_ACTIONS = {'Sell to Close', 'Buy to Close'}
+SHORT_OPEN_ACTION = 'Sell to Open'
+SHORT_CLOSE_ACTION = 'Buy to Close'
+LONG_OPEN_ACTION = 'Buy to Open'
+LONG_CLOSE_ACTION = 'Sell to Close'
+OPEN_ACTIONS = {SHORT_OPEN_ACTION, LONG_OPEN_ACTION}
+CLOSE_ACTIONS = {SHORT_CLOSE_ACTION, LONG_CLOSE_ACTION}
 OPTION_TYPE_PUT = 'PUT'
 OPTION_TYPE_CALL = 'CALL'
 ENV_SANDBOX = 'SANDBOX'

@@ -162,17 +162,21 @@ def get_open_trades_with_risk(environment: str=server_config.ENV_SANDBOX):
       'Strategy': trade['Strategy'],
       'OpenDate': trade['OpenDate'],
       'extrinsic_value': None, # Placeholder
-      'is_at_risk': False       # Placeholder
+      'is_at_risk': False,       # Placeholder
+      'short_strike': float,
+      'long_strike': float,
+      'short_expiry': datetime.date
     }
     
     try:
       # 1. Find the active short leg (your existing query)
       trade_transactions = app_tables.transactions.search(Trade=trade)
-      current_short_leg = app_tables.legs.search(
+      active_legs = list(app_tables.legs.search(
         Transaction=q.any_of(*trade_transactions), # Find legs for any of these transactions
-        active=True,                               # That is flagged as 'active'
-        Action=q.any_of(*server_config.OPEN_ACTIONS) # And is a short leg (optional, but good)
-      )[0] # Get the first (and hopefully only) one
+        active=True                               # That is flagged as 'active'
+      ))
+      current_short_leg = next((leg for leg in active_legs if leg['Action'] == server_config.SHORT_OPEN_ACTION))
+      current_long_leg =  next((leg for leg in active_legs if leg['Action'] == server_config.LONG_OPEN_ACTION))
 
       # 2. Get live underlying price
       underlying_symbol = trade['Underlying']
@@ -191,19 +195,22 @@ def get_open_trades_with_risk(environment: str=server_config.ENV_SANDBOX):
       option_price = option_quote.bid # Use bid price for a short option
 
       # 5. Calculate extrinsic value
-      strike_price = current_short_leg['Strike']
+      short_strike_price = current_short_leg['Strike']
 
       if current_short_leg['OptionType'] == server_config.OPTION_TYPE_PUT:
-        intrinsic_value = max(0, strike_price - underlying_price)
+        intrinsic_value = max(0, short_strike_price - underlying_price)
         extrinsic_value = option_price - intrinsic_value
       elif current_short_leg['OptionType'] == server_config.OPTION_TYPE_CALL: 
-        intrinsic_value = max(0, underlying_price - strike_price)
+        intrinsic_value = max(0, underlying_price - short_strike_price)
         extrinsic_value = option_price - intrinsic_value
       else:
         print("bad option type in get open trades with risk")
 
       # 6. Populate the DTO with the new data
       trade_dto['extrinsic_value'] = extrinsic_value
+      trade_dto['short_strike'] = short_strike_price
+      trade_dto['short_expiry'] = current_short_leg['Expiration']
+      trade_dto['long_strike'] = current_long_leg['Strike']
 
       # Our risk rule: ITM and extrinsic is less than $0.10
       if intrinsic_value > 0 and extrinsic_value < server_config.ASSIGNMENT_RISK_THRESHOLD:
