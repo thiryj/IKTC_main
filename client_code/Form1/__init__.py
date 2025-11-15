@@ -559,7 +559,7 @@ class Form1(Form1Template):
     # 4. Pre-select the existing trade
     # Note: We must pass the full 'trade' row object, not just an ID
     self.dropdown_manual_existing_trade.selected_value = trade
-  
+    self.dropdown_manual_existing_trade_change()
 
     """
         # 5. Manually trigger the 'change' events to populate the form

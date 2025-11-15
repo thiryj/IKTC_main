@@ -149,6 +149,8 @@ def get_open_trades_with_risk(environment: str=server_config.ENV_SANDBOX):
     Fetches all open trades, then enriches them with live
     pricing and assignment risk data from the Tradier API.
     """
+
+  #NOTE:  this only works for 2 leg spreads - need different logic for CSP or covered calls
   open_trades = app_tables.trades.search(Status='Open', Account=environment)
   print(f"Found {len(open_trades)} open trades for {environment}")
   enriched_trades_list = []
@@ -175,9 +177,17 @@ def get_open_trades_with_risk(environment: str=server_config.ENV_SANDBOX):
         Transaction=q.any_of(*trade_transactions), # Find legs for any of these transactions
         active=True                               # That is flagged as 'active'
       ))
-      current_short_leg = next((leg for leg in active_legs if leg['Action'] == server_config.SHORT_OPEN_ACTION))
-      current_long_leg =  next((leg for leg in active_legs if leg['Action'] == server_config.LONG_OPEN_ACTION))
-
+      current_short_leg = next((leg for leg in active_legs if leg['Action'] == server_config.SHORT_OPEN_ACTION), None)
+      current_long_leg =  next((leg for leg in active_legs if leg['Action'] == server_config.LONG_OPEN_ACTION), None)
+      if not current_short_leg or not current_long_leg:
+        print("missing a leg for the spread")
+        continue
+      #print(f"current_short_leg is: {current_short_leg}")
+      short_strike_price = current_short_leg['Strike']
+      trade_dto['short_strike'] = short_strike_price
+      trade_dto['short_expiry'] = current_short_leg['Expiration']
+      trade_dto['long_strike'] = current_long_leg['Strike']
+      
       # 2. Get live underlying price
       underlying_symbol = trade['Underlying']
       underlying_price = get_underlying_quote(environment, underlying_symbol)
@@ -193,9 +203,6 @@ def get_open_trades_with_risk(environment: str=server_config.ENV_SANDBOX):
       #print(f"calling get_quote on: {occ_symbol}")
       option_quote = server_helpers.get_quote(environment, occ_symbol)
       option_price = option_quote.bid # Use bid price for a short option
-
-      # 5. Calculate extrinsic value
-      short_strike_price = current_short_leg['Strike']
 
       if current_short_leg['OptionType'] == server_config.OPTION_TYPE_PUT:
         intrinsic_value = max(0, short_strike_price - underlying_price)
@@ -217,8 +224,9 @@ def get_open_trades_with_risk(environment: str=server_config.ENV_SANDBOX):
         trade_dto['is_at_risk'] = True
       
     except Exception as e:
-      print(f"Could not analyze risk for {trade['Underlying']}: {e}")
+      print(f"Could not analyze risk for {trade['Underlying']}: {repr(e)}")
       pass # This trade will be skipped
+
     print(f"dto is: {trade_dto}")  
     enriched_trades_list.append(trade_dto)
     # get live quotes, and do the risk calculation.
