@@ -19,6 +19,20 @@ import positions
 # To allow anvil.server.call() to call functions here, we mark
 #
 @anvil.server.callable
+def get_settings():
+  # Attempt to get the first row
+  settings_row = app_tables.settings.get()
+
+  # If table is empty, initialize it with your preferred defaults
+  if not settings_row:
+    settings_row = app_tables.settings.add_row(
+      default_symbol=server_config.DEFAULT_SYMBOL,
+      defualt_qty=1, 
+      use_max_qty=False, 
+      refresh_timer_on=True
+    )
+  return settings_row
+@anvil.server.callable
 def get_tradier_profile(environment: str):
   try:
     tradier_client, endpoint_url = server_helpers.get_tradier_client(environment)

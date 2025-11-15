@@ -30,5 +30,6 @@ ENB_PRODUCTION = 'PROD'
 
 # server globals
 ACTIVE_ENV = None
+DEFAULT_SYMBOL = 'IWM'
 
 

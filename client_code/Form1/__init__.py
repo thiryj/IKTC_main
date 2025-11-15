@@ -16,10 +16,13 @@ from .Form_ConfirmTrade import Form_ConfirmTrade # Import your custom form
 
 class Form1(Form1Template):
   def __init__(self, **properties):
+    self.my_settings = anvil.server.call('get_settings')
     # Set Form properties and Data Bindings.
     self.init_components(**properties)
 
     # Globals
+    
+    self.refresh_data_bindings()
     self.environment = config.ENV_SANDBOX
     self.trade_dto = None # the new combined var to hold 2 leg new spreads or 4 leg roll spreads
     self.trade_dto_list = []
@@ -55,6 +58,10 @@ class Form1(Form1Template):
 
     # Log into default environment as displayed in the dropdown
     self.dropdown_environment_change()
+
+  def textbox_default_symbol_change(self, **event_args):
+    # Optional: Force uppercase on symbol entry
+    self.item['default_symbol'] = self.textbox_symbol.text.upper()
     
   def dropdown_environment_change(self, **event_args):
     """This method is called when an item is selected"""
@@ -642,6 +649,14 @@ class Form1(Form1Template):
         #self.label_trade_results_price.text = f"Limit Price: ${order_details['price']:.2f}"
         print("Order is in a final state. Stopping timer.")
         # You would now refresh your main positions grid
+
+  def button_1_click(self, **event_args):
+    """This method is called when the button is clicked"""
+    self.card_settings.visible = True
+
+  def button_card_settings_cancel_click(self, **event_args):
+    """This method is called when the button is clicked"""
+    self.card_settings.visible = False
 
 
   
