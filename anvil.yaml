@@ -27,6 +27,11 @@ db_schema:
       type: bool
     server: full
     title: Legs
+  settings:
+    client: none
+    columns: []
+    server: full
+    title: Settings
   trades:
     client: none
     columns:
