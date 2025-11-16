@@ -594,6 +594,7 @@ class Form1(Form1Template):
         """
   
     # 6. Show the card
+    self.manual_entry_state = config.MANUAL_ENTRY_STATE_EDIT
     self.card_manual_entry.visible = True  
     self.button_save_manual_trade.enabled = True
 

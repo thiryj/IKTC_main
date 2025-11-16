@@ -375,7 +375,7 @@ def save_manual_trade(account, transaction_type, transaction_direction, trade_da
     # --- 1. Find or Create the Trade (Your existing logic) ---
     if existing_trade_row:
       new_trade = existing_trade_row
-      if transaction_direction == 'CLOSE':
+      if transaction_direction in ('CLOSE', 'EDIT'):
         existing_trade_row.update(Status='Closed', CloseDate=trade_date)
     elif underlying:
       status = 'Open' if 'OPEN' in transaction_direction else 'Closed'
@@ -447,7 +447,8 @@ def save_manual_trade(account, transaction_type, transaction_direction, trade_da
         active=is_active_flag # This will be False for "Close" actions
       )
     print("starting pl update")  
-    if transaction_type and 'Close:' in transaction_type:
+    #if transaction_type and 'Close:' in transaction_type:
+    if transaction_direction == 'EDIT':
       # Now that the closing transaction is saved, sum the P/L
       # Find all transactions for this trade
       all_transactions = app_tables.transactions.search(Trade=new_trade)
