@@ -485,7 +485,7 @@ components:
       type: Label
     - components:
       - name: repeatingpanel_trade_history
-        properties: {item_template: Form1.RowTemplate_Trade_History}
+        properties: {item_template: Form1.RowTemplate_TradeHistory}
         type: RepeatingPanel
       layout_properties: {grid_position: 'QXISEK,RPEFCD'}
       name: datagrid_trade_history

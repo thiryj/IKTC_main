@@ -12,7 +12,7 @@ class RowTemplate_OpenPositions(RowTemplate_OpenPositionsTemplate):
 
     # --- 1. Your existing code to set labels ---
     if self.item:
-      print(f"short_expiry is {self.item.get('short_expiry')}")
+      #print(f"short_expiry is {self.item.get('short_expiry')}")
       self.label_underlying.text = f"{self.item['Underlying']} {self.item.get('short_strike')}/{self.item.get('long_strike')}"
       self.label_strategy.text = self.item['Strategy']
       if self.item['OpenDate']:
