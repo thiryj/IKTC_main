@@ -189,13 +189,18 @@ components:
       properties: {item_template: Form1.Form_ManualLegEntry}
       type: RepeatingPanel
     - components:
+      - event_bindings: {change: checkbox_manual_trade_validate_change}
+        layout_properties: {col_xs: 6, row: JXAPXI, width_xs: 2}
+        name: checkbox_manual_trade_validate
+        properties: {text: Validate}
+        type: CheckBox
       - event_bindings: {click: button_save_manual_trade_click}
-        layout_properties: {col_xs: 8, row: HNAJBW, width_xs: 2}
+        layout_properties: {col_xs: 8, row: JXAPXI, width_xs: 2}
         name: button_save_manual_trade
         properties: {enabled: false, role: tonal-button, text: Save Trade}
         type: Button
       - event_bindings: {click: button_cancel_manual_trade_click}
-        layout_properties: {col_xs: 10, row: HNAJBW, width_xs: 2}
+        layout_properties: {col_xs: 10, row: JXAPXI, width_xs: 2}
         name: button_cancel_manual_trade
         properties: {text: Cancel}
         type: Button

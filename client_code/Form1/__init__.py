@@ -438,7 +438,6 @@ class Form1(Form1Template):
     # 3. Loop through each row in the repeating panel
     # .get_components() returns a list of the Form_ManualLegEntry instances
     for leg_row_form in self.repeatingpanel_manual_legs.get_components():
-  
       try:
         # 4. Read the data from the components in that row
         leg_data = {
@@ -458,19 +457,26 @@ class Form1(Form1Template):
       except Exception as e:
         alert(f"Error reading leg data: {e}. Please check your inputs.")
         return # Stop processing if there's an error
+        
+    # validation will only work if recording legs that haven't expired
+    # so make this an optional action
+    if self.checkbox_manual_trade_validate.checked:
+      try: # validate then save
+        validation_result = anvil.server.call(
+          'validate_manual_legs',
+          self.environment,
+          legs_data_list 
+        )
   
-    try: # validate then save
-      validation_result = anvil.server.call(
-        'validate_manual_legs',
-        self.environment,
-        legs_data_list 
-      )
-
-      # 2. Check the result
-      if validation_result is not True:
-        # Validation failed! Stop and warn the user.
+        # 2. Check the result
+        if validation_result is not True:
+          # Validation failed! Stop and warn the user.
+          alert(f"Validation Error: {validation_result}. Please correct and resave.")
+          return # Stop the save
+      except Exception as e:
         alert(f"Validation Error: {validation_result}. Please correct and resave.")
-        return # Stop the save
+        return # Stop processing if there's an error
+        
       response = anvil.server.call('save_manual_trade', 
                                    self.environment,
                                    selected_type, 
@@ -488,9 +494,6 @@ class Form1(Form1Template):
       # You'll need a function to refresh your grids
       self.refresh_open_positions_grid(refresh_risk=True) 
       self.reset_manual_trade_card()
-
-    except Exception as e:
-        alert(f"Failed to save trade: {e}")
 
   def refresh_open_positions_grid(self, refresh_risk: bool=True):
     print("Refreshing open positions with live risk data...") if refresh_risk else print("...Updating positions")
@@ -666,6 +669,10 @@ class Form1(Form1Template):
   def checkbox_refresh_timer_on_change(self, **event_args):
     """This method is called when this checkbox is checked or unchecked"""
     self.timer_risk_refresh.interval = config.REFRESH_TIMER_INTERVAL if self.my_settings.refresh_timer_on else 0
+
+  def checkbox_manual_trade_validate_change(self, **event_args):
+    """This method is called when this checkbox is checked or unchecked"""
+    pass
 
 
 
