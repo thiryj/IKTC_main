@@ -477,23 +477,24 @@ class Form1(Form1Template):
         alert(f"Validation Error: {validation_result}. Please correct and resave.")
         return # Stop processing if there's an error
         
-      response = anvil.server.call('save_manual_trade', 
-                                   self.environment,
-                                   selected_type, 
-                                   self.manual_entry_state,  # open or close. roll will need special handling
-                                   trade_date, 
-                                   net_price,
-                                   legs_data_list,
-                                   underlying,          # Pass the new underlying (or None)
-                                   existing_trade_row   # Pass the existing trade (or None)
-                        )
-      alert(response)
+    response = anvil.server.call('save_manual_trade', 
+                                  self.environment,
+                                  selected_type, 
+                                  self.manual_entry_state,  # open or close. roll will need special handling
+                                  trade_date, 
+                                  net_price,
+                                  legs_data_list,
+                                  underlying,          # Pass the new underlying (or None)
+                                  existing_trade_row   # Pass the existing trade (or None)
+                      )
+    alert(response)
 
-      # 5. Hide the card and refresh your open positions
-      self.card_manual_entry.visible = False
-      # You'll need a function to refresh your grids
-      self.refresh_open_positions_grid(refresh_risk=True) 
-      self.reset_manual_trade_card()
+    # 5. Hide the card and refresh your open positions
+    self.card_manual_entry.visible = False
+    # You'll need a function to refresh your grids
+    refresh_risk_bool = True if self.manual_entry_state in config.MANUAL_ENTRY_STATE_OPEN else False
+    self.refresh_open_positions_grid(refresh_risk=refresh_risk_bool) 
+    self.reset_manual_trade_card()
 
   def refresh_open_positions_grid(self, refresh_risk: bool=True):
     print("Refreshing open positions with live risk data...") if refresh_risk else print("...Updating positions")
