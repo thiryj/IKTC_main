@@ -426,7 +426,7 @@ class Form1(Form1Template):
         alert("Please enter an underlying symbol for a new trade.")
         return
       selected_type = self.dropdown_manual_transaction_type.selected_value
-    else:  #the mode is edit
+    else: #the mode is CLOSE or ROLL
       existing_trade_row = self.dropdown_manual_existing_trade.selected_value
       if not existing_trade_row:
         alert("Please select an existing trade.")
@@ -555,32 +555,25 @@ class Form1(Form1Template):
         
   def handle_manual_edit_request(self, trade: Row, action_type: str, **event_args):
     """
-      Called by a row's 'Close' button.
+      Called by a row's 'Edit (Record)' button.
       Opens the manual entry card and pre-fills it.
       """
     print(f"Handling manual entry request for: {action_type}")
   
     self.reset_manual_trade_card()
-    self.label_manual_entry_card.text = "Manual Entry: Edit (record) existing position"
+    self.label_manual_entry_card.text = "Manual Entry: Close (record) existing position"
     trade_list = anvil.server.call('get_open_trades_for_dropdown', self.environment)
     self.dropdown_manual_existing_trade.items = trade_list
     self.dropdown_manual_existing_trade.visible=True
-  
-    # 2. Pre-select the transaction type
-    # could be either roll (record) or close(record)
-      
+    self.checkbox_manual_entry_roll.visible=True
+        
     # 4. Pre-select the existing trade
     # Note: We must pass the full 'trade' row object, not just an ID
     self.dropdown_manual_existing_trade.selected_value = trade
     self.dropdown_manual_existing_trade_change()
 
     """
-        # 5. Manually trigger the 'change' events to populate the form
-    # This simulates the user clicking the dropdowns, which runs your
-    # existing logic to show/hide fields and pre-fill the legs.
-    self.dropdown_manual_transaction_type_change()
-    if action_type == 'Close: Diagonal':
-      self.dropdown_manual_existing_trade_change()
+
     elif action_type == 'Roll: Spread':
       # This is the new, smart logic for a roll
       try:
@@ -600,7 +593,7 @@ class Form1(Form1Template):
         """
   
     # 6. Show the card
-    self.manual_entry_state = config.MANUAL_ENTRY_STATE_EDIT
+    self.manual_entry_state = config.MANUAL_ENTRY_STATE_CLOSE
     self.card_manual_entry.visible = True  
     self.button_save_manual_trade.enabled = True
 
@@ -622,6 +615,8 @@ class Form1(Form1Template):
     self.dropdown_manual_existing_trade.visible = False
     self.textbox_manual_underlying.text = None
     self.textbox_manual_underlying.visible = False
+    self.checkbox_manual_entry_roll.checked=False
+    self.checkbox_manual_entry_roll.visible=False
     self.datepicker_manual_date.date = date.today() 
     self.repeatingpanel_manual_legs.items = []
     self.manual_entry_state = None
@@ -673,10 +668,10 @@ class Form1(Form1Template):
     """This method is called when this checkbox is checked or unchecked"""
     self.timer_risk_refresh.interval = config.REFRESH_TIMER_INTERVAL if self.my_settings.refresh_timer_on else 0
 
-  def checkbox_manual_trade_validate_change(self, **event_args):
+  def checkbox_manual_entry_roll_change(self, **event_args):
     """This method is called when this checkbox is checked or unchecked"""
-    pass
-
-
-
-  
+    # add two new blank rows to the manual entry card for user to fill in for the roll to legs
+    self.label_manual_entry_card.text = "Manual Entry: Roll (record) existing position" 
+    self.manual_entry_state = config.MANUAL_ENTRY_STATE_ROLL
+    self.datepicker_manual_date.max_date=date.today()
+    self.datepicker_manual_date.date=date.today()

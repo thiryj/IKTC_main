@@ -164,6 +164,11 @@ components:
           name: dropdown_manual_existing_trade
           properties: {include_placeholder: true, placeholder: Select Open Trade, visible: false}
           type: DropDown
+        - event_bindings: {change: checkbox_manual_entry_roll_change}
+          layout_properties: {}
+          name: checkbox_manual_entry_roll
+          properties: {text: 'Roll?', visible: false}
+          type: CheckBox
         layout_properties: {col_xs: 0, row: JOTRAX, width_xs: 7}
         name: flow_panel_9
         properties: {}
