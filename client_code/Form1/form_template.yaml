@@ -1,9 +1,9 @@
 components:
 - components:
   - components:
-    - event_bindings: {click: button_1_click}
+    - event_bindings: {click: button_card_settings_visible_click}
       layout_properties: {grid_position: 'KWJWTN,CESZRR'}
-      name: button_1
+      name: button_card_settings_visible
       properties: {role: tonal-button, text: Settings}
       type: Button
     layout_properties: {grid_position: 'JBMXBM,GOGKIJ'}
@@ -51,6 +51,7 @@ components:
         type: Label
       - data_bindings:
         - {code: 'self.my_settings[''default_qty'']', property: text, writeback: true}
+        event_bindings: {change: textbox_default_qty_change, pressed_enter: textbox_default_qty_pressed_enter}
         layout_properties: {col_xs: 2, row: BFEODG, width_xs: 2}
         name: textbox_default_qty
         properties: {placeholder: '1', text: 'self.item[''default_qty'']', type: number}
@@ -61,6 +62,7 @@ components:
         type: Label
       - data_bindings:
         - {code: 'self.my_settings[''use_max_qty'']', property: checked, writeback: true}
+        event_bindings: {change: checkbox_use_max_qty_change}
         layout_properties: {col_xs: 2, row: JWQWNJ, width_xs: 2}
         name: checkbox_use_max_qty
         properties: {text: ''}
@@ -71,6 +73,7 @@ components:
         type: Label
       - data_bindings:
         - {code: 'self.my_settings[''refresh_timer_on'']', property: checked, writeback: true}
+        event_bindings: {change: checkbox_refresh_timer_on_change}
         layout_properties: {col_xs: 2, row: HHHEZR, width_xs: 2}
         name: checkbox_refresh_timer_on
         properties: {checked: true, text: ''}

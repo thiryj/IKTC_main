@@ -32,6 +32,7 @@ def get_settings():
       refresh_timer_on=True
     )
   return settings_row
+  
 @anvil.server.callable
 def get_tradier_profile(environment: str):
   try:
