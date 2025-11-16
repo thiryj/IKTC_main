@@ -146,7 +146,7 @@ class Form1(Form1Template):
       
         # Short Leg
         short_leg = best_trade_dto['short_put']
-        self.label_leg1_action.text = "sell to open"
+        self.label_leg1_action.text = config.ACTION_SELL_TO_OPEN
         short_expiry = short_leg['expiration_date']
         short_dte = short_expiry - date.today()
         self.label_leg1_details.text = (
@@ -222,10 +222,10 @@ class Form1(Form1Template):
       # The 'to close' legs are the first two in the list
             
       # extract the legs from the list
-      closing_short = [p for p in current_roll_dto_list if p.get('action')=='Buy to Close'][0]
-      closing_long = [p for p in current_roll_dto_list if p.get('action')=='Sell to Close'][0]
-      opening_short = [p for p in current_roll_dto_list if p.get('action')=='Sell to Open'][0]
-      opening_long = [p for p in current_roll_dto_list if p.get('action')=='Buy to Open'][0]
+      closing_short = [p for p in current_roll_dto_list if p.get('action')==config.ACTION_BUY_TO_CLOSE][0]
+      closing_long = [p for p in current_roll_dto_list if p.get('action')==config.ACTION_SELL_TO_CLOSE][0]
+      opening_short = [p for p in current_roll_dto_list if p.get('action')==config.ACTION_SELL_TO_OPEN][0]
+      opening_long = [p for p in current_roll_dto_list if p.get('action')==config.ACTION_BUY_TO_OPEN][0]
         
       self.label_leg1_action.text = opening_short.get('action')
       self.label_leg1_details.text = (
@@ -404,10 +404,15 @@ class Form1(Form1Template):
     self.button_save_manual_trade.enabled=True
 
   def button_save_manual_trade_click(self, **event_args):
+    # determine state: open mode or edit mode
+    card_mode = self.manual_entry_state
+    
     # get common elements
     trade_date = self.datepicker_manual_date.date
     try:
       net_price = float(self.textbox_manual_credit_debit.text)
+      if card_mode == config.MANUAL_ENTRY_STATE_CLOSE and net_price > 0:
+        alert("closing a short postion is typically a (negative) debit")
     except (TypeError, ValueError):
       alert("Please enter a valid net credit/debit number (e.g., 1.50 or -0.25).")
       return
@@ -416,9 +421,6 @@ class Form1(Form1Template):
     existing_trade_row = None
     selected_type = None
     
-    # determine state: open mode or edit mode
-    card_mode = self.manual_entry_state
-
     # branch on state
     if card_mode == config.MANUAL_ENTRY_STATE_OPEN:
       underlying = self.textbox_manual_underlying.text
@@ -482,7 +484,7 @@ class Form1(Form1Template):
     response = anvil.server.call('save_manual_trade', 
                                   self.environment,
                                   selected_type, 
-                                  self.manual_entry_state,  # open or close. roll will need special handling
+                                  self.manual_entry_state,  # OPEN or CLOSE or ROLL
                                   trade_date, 
                                   net_price,
                                   legs_data_list,
@@ -526,10 +528,10 @@ class Form1(Form1Template):
       for leg in active_legs:
         # Determine the correct closing action
         closing_action = None
-        if leg['Action'] == 'Sell to Open':
-          closing_action = 'Buy to Close'
-        elif leg['Action'] == 'Buy to Open':
-          closing_action = 'Sell to Close'
+        if leg['Action'] == config.ACTION_SELL_TO_OPEN:
+          closing_action = config.ACTION_BUY_TO_CLOSE
+        elif leg['Action'] == config.ACTION_BUY_TO_OPEN:
+          closing_action = config.ACTION_SELL_TO_CLOSE
         else:
           # Fallback in case the action is unknown
           closing_action = 'UNKNOWN'
@@ -671,7 +673,26 @@ class Form1(Form1Template):
   def checkbox_manual_entry_roll_change(self, **event_args):
     """This method is called when this checkbox is checked or unchecked"""
     # add two new blank rows to the manual entry card for user to fill in for the roll to legs
-    self.label_manual_entry_card.text = "Manual Entry: Roll (record) existing position" 
-    self.manual_entry_state = config.MANUAL_ENTRY_STATE_ROLL
-    self.datepicker_manual_date.max_date=date.today()
-    self.datepicker_manual_date.date=date.today()
+    if self.checkbox_manual_entry_roll.checked:
+      self.label_manual_entry_card.text = "Manual Entry: Roll (record) existing position" 
+      self.manual_entry_state = config.MANUAL_ENTRY_STATE_ROLL
+      
+      # 1. Get the 2 closing legs that are already pre-filled
+      current_legs = list(self.repeatingpanel_manual_legs.items)
+      existing_quantity = 1 # Default
+      if current_legs and 'quantity' in current_legs[0]:
+        existing_quantity = current_legs[0]['quantity']
+      
+      # 2. Define the 2 new blank 'opening' legs
+      new_opening_legs = [
+        {'action': config.ACTION_SELL_TO_OPEN, 'type': config.OPTION_TYPE_PUT, 'quantity': existing_quantity},
+        {'action': config.ACTION_BUY_TO_OPEN,  'type': config.OPTION_TYPE_PUT, 'quantity': existing_quantity}
+      ]
+              
+      # 3. Combine the lists (2 closing + 2 opening)
+      self.repeatingpanel_manual_legs.items = current_legs + new_opening_legs
+    else:
+      self.label_manual_entry_card.text = "Manual Entry: Close (record) existing position" 
+      self.manual_entry_state = config.MANUAL_ENTRY_STATE_CLOSE
+      self.dropdown_manual_existing_trade_change()
+      

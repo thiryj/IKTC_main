@@ -15,6 +15,7 @@ from tradier_python import TradierAPI, Position
 import server_helpers
 import server_config
 import positions
+from ..client_code import config
 
 # To allow anvil.server.call() to call functions here, we mark
 #
@@ -367,7 +368,7 @@ def get_active_legs_for_trade(trade_row):
 # In ServerModule1.py
 
 @anvil.server.callable
-def save_manual_trade(account, transaction_type, transaction_direction, trade_date, net_price, legs_data, 
+def save_manual_trade(account, transaction_type, manual_entry_state, trade_date, net_price, legs_data, 
                       underlying=None, existing_trade_row=None):
 
   print(f"Server saving to account {account}: {transaction_type}")
@@ -377,10 +378,11 @@ def save_manual_trade(account, transaction_type, transaction_direction, trade_da
     # --- 1. Find or Create the Trade (Your existing logic) ---
     if existing_trade_row:
       new_trade = existing_trade_row
-      if transaction_direction in ('CLOSE', 'EDIT'):
+      if manual_entry_state == config.MANUAL_ENTRY_STATE_CLOSE:
         existing_trade_row.update(Status='Closed', CloseDate=trade_date)
     elif underlying:
-      status = 'Open' if 'OPEN' in transaction_direction else 'Closed'
+      if manual_entry_state == config.MANUAL_ENTRY_STATE_OPEN:
+        status = 'Open'
       new_trade = app_tables.trades.add_row(
         Underlying=underlying,
         Strategy=transaction_type,
@@ -450,7 +452,7 @@ def save_manual_trade(account, transaction_type, transaction_direction, trade_da
       )
     print("starting pl update")  
     #if transaction_type and 'Close:' in transaction_type:
-    if transaction_direction == 'EDIT':
+    if manual_entry_state == 'EDIT':
       # Now that the closing transaction is saved, sum the P/L
       # Find all transactions for this trade
       all_transactions = app_tables.transactions.search(Trade=new_trade)

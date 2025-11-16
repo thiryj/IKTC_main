@@ -1,7 +1,3 @@
-import anvil.server
-import anvil.tables as tables
-import anvil.tables.query as q
-from anvil.tables import app_tables
 # This is a module.
 # You can define variables and functions here, and use them from any form. For example, in a top-level form:
 #
@@ -22,6 +18,10 @@ OPTION_TYPE_CALL = 'CALL'
 TRADE_ACTION_OPEN = 'Open'
 TRADE_ACTION_ROLL = 'Roll'
 TRADE_ACTION_CLOSE = 'Close'
+ACTION_SELL_TO_OPEN = 'Sell to Open'
+ACTION_BUY_TO_OPEN = 'Buy to Open'
+ACTION_SELL_TO_CLOSE = 'Sell to Close'
+ACTION_BUY_TO_CLOSE = 'Buy to Close'
 NEW_TRADE_ACTIONS = {TRADE_ACTION_OPEN}
 CLOSE_TRADE_ACTIONS = {TRADE_ACTION_ROLL, TRADE_ACTION_CLOSE}
 POSITION_ACTIONS = [*NEW_TRADE_ACTIONS, *CLOSE_TRADE_ACTIONS]
