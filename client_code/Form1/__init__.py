@@ -81,6 +81,8 @@ class Form1(Form1Template):
     # Hide the open positions card and show the history card
     self.card_open_positions.visible = False
     self.card_trade_history.visible = True
+    self.repeatingpanel_trade_history.items = anvil.server.call('get_closed_trades', 
+                                                                self.dropdown_environment.selected_value)
   
     # Update the button appearance to show which tab is active
     self.button_tab_open_positions.role = 'outlined-button'

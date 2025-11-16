@@ -13,5 +13,6 @@ class RowTemplate_TradeHistory(RowTemplate_TradeHistoryTemplate):
 
     if self.item:
       #print(f"short_expiry is {self.item.get('short_expiry')}")
-      self.label_underlying.text = f"{self.item['Underlying']} {self.item.get('short_strike')}/{self.item.get('long_strike')}"
-      self.label_strategy.text = self.item['Strategy']
+      #self.label_underlying.text = f"{self.item['Underlying']} {self.item.get('short_strike')}/{self.item.get('long_strike')}"
+      #self.label_strategy.text = self.item['Strategy']
+      print("trade history __init__")

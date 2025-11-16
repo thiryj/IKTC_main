@@ -1,3 +1,5 @@
 components: []
-container: {type: DataRowPanel}
+container:
+  properties: {visible: true}
+  type: DataRowPanel
 is_package: true
