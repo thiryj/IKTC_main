@@ -159,7 +159,7 @@ def get_open_trades(environment: str=server_config.ENV_SANDBOX):
   return open_trades_list
 
 @anvil.server.callable
-def get_open_trades_with_risk(environment: str=server_config.ENV_SANDBOX):
+def get_open_trades_with_risk(environment: str=server_config.ENV_SANDBOX, refresh_risk: bool=True):
   """
     Fetches all open trades, then enriches them with live
     pricing and assignment risk data from the Tradier API.
@@ -203,45 +203,47 @@ def get_open_trades_with_risk(environment: str=server_config.ENV_SANDBOX):
       trade_dto['short_expiry'] = current_short_leg['Expiration']
       trade_dto['long_strike'] = current_long_leg['Strike']
       
-      # 2. Get live underlying price
-      underlying_symbol = trade['Underlying']
-      underlying_price = get_underlying_quote(environment, underlying_symbol)
+      if refresh_risk:
+        try:
+          # 2. Get live underlying price
+          underlying_symbol = trade['Underlying']
+          underlying_price = get_underlying_quote(environment, underlying_symbol)
+    
+          # 3. Build the OCC symbol for the short leg
+          occ_symbol = server_helpers.build_occ_symbol(
+            underlying=underlying_symbol,
+            expiration_date=current_short_leg['Expiration'],
+            option_type=current_short_leg['OptionType'],
+            strike=current_short_leg['Strike']
+          )
+          # 4. Get live option price
+          #print(f"calling get_quote on: {occ_symbol}")
+          option_quote = server_helpers.get_quote(environment, occ_symbol)
+          option_price = option_quote.bid # Use bid price for a short option
+    
+          if current_short_leg['OptionType'] == server_config.OPTION_TYPE_PUT:
+            intrinsic_value = max(0, short_strike_price - underlying_price)
+            extrinsic_value = option_price - intrinsic_value
+          elif current_short_leg['OptionType'] == server_config.OPTION_TYPE_CALL: 
+            intrinsic_value = max(0, underlying_price - short_strike_price)
+            extrinsic_value = option_price - intrinsic_value
+          else:
+            print("bad option type in get open trades with risk")
+    
+          # 6. Populate the DTO with the extrinsic
+          trade_dto['extrinsic_value'] = extrinsic_value
+    
+          # Our risk rule: ITM and extrinsic is less than $0.10
+          if intrinsic_value > 0 and extrinsic_value < server_config.ASSIGNMENT_RISK_THRESHOLD:
+            trade_dto['is_at_risk'] = True
+          
+        except Exception as e:
+          print(f"Could not analyze risk for {trade['Underlying']}: {repr(e)}")
+          pass # do not return risk field
 
-      # 3. Build the OCC symbol for the short leg
-      occ_symbol = server_helpers.build_occ_symbol(
-        underlying=underlying_symbol,
-        expiration_date=current_short_leg['Expiration'],
-        option_type=current_short_leg['OptionType'],
-        strike=current_short_leg['Strike']
-      )
-      # 4. Get live option price
-      #print(f"calling get_quote on: {occ_symbol}")
-      option_quote = server_helpers.get_quote(environment, occ_symbol)
-      option_price = option_quote.bid # Use bid price for a short option
-
-      if current_short_leg['OptionType'] == server_config.OPTION_TYPE_PUT:
-        intrinsic_value = max(0, short_strike_price - underlying_price)
-        extrinsic_value = option_price - intrinsic_value
-      elif current_short_leg['OptionType'] == server_config.OPTION_TYPE_CALL: 
-        intrinsic_value = max(0, underlying_price - short_strike_price)
-        extrinsic_value = option_price - intrinsic_value
-      else:
-        print("bad option type in get open trades with risk")
-
-      # 6. Populate the DTO with the new data
-      trade_dto['extrinsic_value'] = extrinsic_value
-      trade_dto['short_strike'] = short_strike_price
-      trade_dto['short_expiry'] = current_short_leg['Expiration']
-      trade_dto['long_strike'] = current_long_leg['Strike']
-
-      # Our risk rule: ITM and extrinsic is less than $0.10
-      if intrinsic_value > 0 and extrinsic_value < server_config.ASSIGNMENT_RISK_THRESHOLD:
-        trade_dto['is_at_risk'] = True
-      
     except Exception as e:
-      print(f"Could not analyze risk for {trade['Underlying']}: {repr(e)}")
+      print(f"Could not load legs for {trade['Underlying']}: {repr(e)}")
       pass # This trade will be skipped
-
     print(f"dto is: {trade_dto}")  
     enriched_trades_list.append(trade_dto)
     # get live quotes, and do the risk calculation.

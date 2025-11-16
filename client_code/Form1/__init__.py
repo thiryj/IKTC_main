@@ -66,7 +66,7 @@ class Form1(Form1Template):
   def dropdown_environment_change(self, **event_args):
     """This method is called when an item is selected"""
     self.environment= self.dropdown_environment.selected_value # save to form global
-    self.refresh_open_positions_grid()
+    self.refresh_open_positions_grid(refresh_risk=False)
     self.repeatingpanel_trade_history.items = anvil.server.call('get_closed_trades', self.environment)
     profile_details = anvil.server.call('get_tradier_profile', environment=self.environment)
     if profile_details:
@@ -486,20 +486,20 @@ class Form1(Form1Template):
       # 5. Hide the card and refresh your open positions
       self.card_manual_entry.visible = False
       # You'll need a function to refresh your grids
-      self.refresh_open_positions_grid() 
+      self.refresh_open_positions_grid(refresh_risk=True) 
       self.reset_manual_trade_card()
 
     except Exception as e:
         alert(f"Failed to save trade: {e}")
 
-  def refresh_open_positions_grid(self):
-    print("Refreshing open positions with live risk data...")
+  def refresh_open_positions_grid(self, refresh_risk: bool=True):
+    print("Refreshing open positions with live risk data...") if refresh_risk else print("...Updating positions")
           
     # Call the new "smart" function and pass the environment
-    open_trades_data = anvil.server.call('get_open_trades_with_risk', self.environment)
+    open_trades_data = anvil.server.call('get_open_trades_with_risk', self.environment, refresh_risk)
   
     self.repeatingpanel_open_positions.items = open_trades_data
-    print("...Risk data loaded.")
+    print("...Risk data loaded.") if refresh_risk else print("...Positions updated")
 
   def dropdown_manual_existing_trade_change(self, **event_args):
     """
@@ -604,7 +604,7 @@ class Form1(Form1Template):
       """
     self.card_manual_entry.visible = False
     self.reset_manual_trade_card()
-    self.refresh_open_positions_grid()
+    self.refresh_open_positions_grid(refresh_risk=False)
 
   def reset_manual_trade_card(self):
     """
@@ -622,11 +622,11 @@ class Form1(Form1Template):
 
   def button_refresh_open_positions_risk_click(self, **event_args):
     """This method is called when the button is clicked"""
-    self.refresh_open_positions_grid()
+    self.refresh_open_positions_grid(refresh_risk=True)
 
   def timer_risk_refresh_tick(self, **event_args):
     """This method is called Every [interval] seconds. Does not trigger if [interval] is 0."""
-    self.refresh_open_positions_grid()
+    self.refresh_open_positions_grid(refresh_risk=True)
 
   def checkbox_status_polling_change(self, **event_args):
     """This method is called when this checkbox is checked or unchecked"""

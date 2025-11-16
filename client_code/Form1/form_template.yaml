@@ -40,7 +40,7 @@ components:
         type: Label
       - data_bindings:
         - {code: 'self.my_settings[''default_symbol'']', property: text, writeback: true}
-        event_bindings: {pressed_enter: textbox_default_symbol_pressed_enter}
+        event_bindings: {}
         layout_properties: {col_xs: 2, row: FYHIGZ, width_xs: 2}
         name: textbox_default_symbol
         properties: {placeholder: Default Symbol}
@@ -51,7 +51,7 @@ components:
         type: Label
       - data_bindings:
         - {code: 'self.my_settings[''default_qty'']', property: text, writeback: true}
-        event_bindings: {change: textbox_default_qty_change, pressed_enter: textbox_default_qty_pressed_enter}
+        event_bindings: {}
         layout_properties: {col_xs: 2, row: BFEODG, width_xs: 2}
         name: textbox_default_qty
         properties: {placeholder: '1', text: 'self.item[''default_qty'']', type: number}
@@ -62,7 +62,7 @@ components:
         type: Label
       - data_bindings:
         - {code: 'self.my_settings[''use_max_qty'']', property: checked, writeback: true}
-        event_bindings: {change: checkbox_use_max_qty_change}
+        event_bindings: {}
         layout_properties: {col_xs: 2, row: JWQWNJ, width_xs: 2}
         name: checkbox_use_max_qty
         properties: {text: ''}
