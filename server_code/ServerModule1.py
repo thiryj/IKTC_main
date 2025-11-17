@@ -193,18 +193,28 @@ def get_open_trades_with_risk(environment: str=server_config.ENV_SANDBOX, refres
         Transaction=q.any_of(*trade_transactions), # Find legs for any of these transactions
         active=True                               # That is flagged as 'active'
       ))
-      if trade['Strategy'] == config.POSITION_TYPE_DIAGONAL:
+      #print(f"Active legs found: {active_legs}")
+      if trade['Strategy'] in (config.POSITION_TYPE_DIAGONAL, config.POSITION_TYPE_COVERED_CALL):
         current_short_leg = next((leg for leg in active_legs if leg['Action'] == server_config.SHORT_OPEN_ACTION), None)
-        current_long_leg =  next((leg for leg in active_legs if leg['Action'] == server_config.LONG_OPEN_ACTION), None)
-        if not current_short_leg or not current_long_leg:
-          print("missing a leg for the spread")
+        if trade['Strategy'] == config.POSITION_TYPE_DIAGONAL:
+          #print(f"trade strategy: {trade['Strategy']} is identified: as position type:{config.POSITION_TYPE_DIAGONAL}")
+          current_long_leg =  next((leg for leg in active_legs if leg['Action'] == server_config.LONG_OPEN_ACTION), None)
+          if not current_long_leg:
+            print("missing long leg of the spread")
+            continue
+          trade_dto['long_strike'] = current_long_leg['Strike']
+        else:
+          print(f"trade strategy: {trade['Strategy']} is identified: as position type:{config.POSITION_TYPE_COVERED_CALL}")
+        if not current_short_leg:
+          print("missing short leg for the spread or CSP")
           continue
         #print(f"current_short_leg is: {current_short_leg}")
         short_strike_price = current_short_leg['Strike']
         trade_dto['short_strike'] = short_strike_price
         trade_dto['short_expiry'] = current_short_leg['Expiration']
-        trade_dto['long_strike'] = current_long_leg['Strike']
-      
+      else:
+        print(f"trade strategy: {trade['Strategy']} is not identified: as position type: {config.POSITION_TYPE_DIAGONAL} or position type: {config.POSITION_TYPE_COVERED_CALL} ")
+        
       if refresh_risk:
         try:
           # 2. Get live underlying price
@@ -219,16 +229,18 @@ def get_open_trades_with_risk(environment: str=server_config.ENV_SANDBOX, refres
             strike=current_short_leg['Strike']
           )
           # 4. Get live option price
-          #print(f"calling get_quote on: {occ_symbol}")
+          # print(f"calling get_quote on: {occ_symbol}")
           option_quote = server_helpers.get_quote(environment, occ_symbol)
           option_price = option_quote.bid # Use bid price for a short option
     
           if current_short_leg['OptionType'] == server_config.OPTION_TYPE_PUT:
             intrinsic_value = max(0, short_strike_price - underlying_price)
             extrinsic_value = option_price - intrinsic_value
+            #print(f"in put: intrinsic: {intrinsic_value}, extrinsic: {extrinsic_value}")
           elif current_short_leg['OptionType'] == server_config.OPTION_TYPE_CALL: 
             intrinsic_value = max(0, underlying_price - short_strike_price)
             extrinsic_value = option_price - intrinsic_value
+            #print(f"in call: intrinsic: {intrinsic_value}, extrinsic: {extrinsic_value}")
           else:
             print("bad option type in get open trades with risk")
     
@@ -246,7 +258,7 @@ def get_open_trades_with_risk(environment: str=server_config.ENV_SANDBOX, refres
     except Exception as e:
       print(f"Could not load legs for {trade['Underlying']}: {repr(e)}")
       pass # This trade will be skipped
-    print(f"dto is: {trade_dto}")  
+    #print(f"dto is: {trade_dto}")  
     enriched_trades_list.append(trade_dto)
     # get live quotes, and do the risk calculation.
     # 3. Return the new list of DTOs
