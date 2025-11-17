@@ -15,7 +15,7 @@ from tradier_python import TradierAPI, Position
 import server_helpers
 import server_config
 import positions
-from ..client_code import config
+import config
 
 # To allow anvil.server.call() to call functions here, we mark
 #
