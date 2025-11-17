@@ -193,16 +193,17 @@ def get_open_trades_with_risk(environment: str=server_config.ENV_SANDBOX, refres
         Transaction=q.any_of(*trade_transactions), # Find legs for any of these transactions
         active=True                               # That is flagged as 'active'
       ))
-      current_short_leg = next((leg for leg in active_legs if leg['Action'] == server_config.SHORT_OPEN_ACTION), None)
-      current_long_leg =  next((leg for leg in active_legs if leg['Action'] == server_config.LONG_OPEN_ACTION), None)
-      if not current_short_leg or not current_long_leg:
-        print("missing a leg for the spread")
-        continue
-      #print(f"current_short_leg is: {current_short_leg}")
-      short_strike_price = current_short_leg['Strike']
-      trade_dto['short_strike'] = short_strike_price
-      trade_dto['short_expiry'] = current_short_leg['Expiration']
-      trade_dto['long_strike'] = current_long_leg['Strike']
+      if trade['Strategy'] == config.POSITION_TYPE_DIAGONAL:
+        current_short_leg = next((leg for leg in active_legs if leg['Action'] == server_config.SHORT_OPEN_ACTION), None)
+        current_long_leg =  next((leg for leg in active_legs if leg['Action'] == server_config.LONG_OPEN_ACTION), None)
+        if not current_short_leg or not current_long_leg:
+          print("missing a leg for the spread")
+          continue
+        #print(f"current_short_leg is: {current_short_leg}")
+        short_strike_price = current_short_leg['Strike']
+        trade_dto['short_strike'] = short_strike_price
+        trade_dto['short_expiry'] = current_short_leg['Expiration']
+        trade_dto['long_strike'] = current_long_leg['Strike']
       
       if refresh_risk:
         try:
