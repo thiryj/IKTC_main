@@ -404,7 +404,7 @@ class Form1(Form1Template):
     self.button_save_manual_trade.enabled=True
 
   def button_save_manual_trade_click(self, **event_args):
-    # determine state: open mode or edit mode
+    # determine state: OPEN, CLOSE, ROLL
     card_mode = self.manual_entry_state
     
     # get common elements
@@ -419,12 +419,12 @@ class Form1(Form1Template):
 
     # initialize local vars
     existing_trade_row = None
-    selected_type = None
+    selected_type = None   # Strategy:  Diagonal, Covered Call, CSP, Stock, Misc
     
     # branch on state
     if card_mode == config.MANUAL_ENTRY_STATE_OPEN:
-      underlying = self.textbox_manual_underlying.text
-      if not underlying:
+      underlying_symbol = self.textbox_manual_underlying.text
+      if not underlying_symbol:
         alert("Please enter an underlying symbol for a new trade.")
         return
       selected_type = self.dropdown_manual_transaction_type.selected_value
@@ -434,7 +434,7 @@ class Form1(Form1Template):
         alert("Please select an existing trade.")
         return
       trade_row_dict = dict(existing_trade_row)
-      underlying = trade_row_dict.get('Underlying')
+      underlying_symbol = trade_row_dict.get('Underlying')
       selected_type= trade_row_dict.get('Strategy')
     # 2. Create a list to hold the data from each leg row
     legs_data_list = []
@@ -450,7 +450,7 @@ class Form1(Form1Template):
           'type': leg_row_form.dropdown_manual_leg_type.selected_value,
           'strike': float(leg_row_form.textbox_manual_leg_strike.text),
           'expiration': leg_row_form.datepicker_manual_leg_expiration.date,
-          'underlying': underlying
+          'underlying': underlying_symbol
         }
         if not all(leg_data.values()):
           alert("Please fill out all fields for each leg.")
@@ -483,13 +483,13 @@ class Form1(Form1Template):
         
     response = anvil.server.call('save_manual_trade', 
                                   self.environment,
-                                  selected_type, 
-                                  self.manual_entry_state,  # OPEN or CLOSE or ROLL
+                                  selected_type, # Strategy: Diagonal, Covered Call
+                                  card_mode,  # OPEN or CLOSE or ROLL
                                   trade_date, 
                                   net_price,
                                   legs_data_list,
-                                  underlying,          # Pass the new underlying (or None)
-                                  existing_trade_row   # Pass the existing trade (or None)
+                                  underlying_symbol,          
+                                  existing_trade_row   # existing trade for Close/Roll (or None for Open)
                       )
     alert(response)
 
@@ -573,26 +573,6 @@ class Form1(Form1Template):
     # Note: We must pass the full 'trade' row object, not just an ID
     self.dropdown_manual_existing_trade.selected_value = trade
     self.dropdown_manual_existing_trade_change()
-
-    """
-
-    elif action_type == 'Roll: Spread':
-      # This is the new, smart logic for a roll
-      try:
-        # Call our new function to get all 4 legs and the credit
-        roll_package = anvil.server.call('get_roll_package_dto', self.environment, trade)
-
-        # Use the 4-leg DTO list to populate the repeating panel
-        self.repeatingpanel_manual_legs.items = roll_package['legs_to_populate']
-
-        # Pre-fill the net credit/debit box with the calculated value
-        total_credit = roll_package['total_roll_credit']
-        self.textbox_manual_credit_debit.text = f"{total_credit:.2f}"
-
-      except Exception as e:
-        alert(f"Error calculating roll: {e}")
-        self.repeatingpanel_manual_legs.items = [] # Clear the panel
-        """
   
     # 6. Show the card
     self.manual_entry_state = config.MANUAL_ENTRY_STATE_CLOSE

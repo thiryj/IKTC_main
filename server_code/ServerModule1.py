@@ -382,41 +382,47 @@ def get_active_legs_for_trade(trade_row):
 # In ServerModule1.py
 
 @anvil.server.callable
-def save_manual_trade(account, transaction_type, manual_entry_state, trade_date, net_price, legs_data, 
-                      underlying=None, existing_trade_row=None):
+def save_manual_trade(environment, 
+                      transaction_type, #Strategy: Diagonal, Covered Call
+                      manual_entry_state, # OPEN or CLOSE or ROLL 
+                      trade_date, 
+                      net_price, 
+                      legs_data_list,            # list of leg data entries.  may be 1 (CSP) or 2 (diag open/close) or 4 (roll)
+                      underlying_symbol,         # this will always be filled in
+                      existing_trade_row=None):  #CLOSE or ROLL: exising Trade row.  OPEN: None
 
-  print(f"Server saving to account {account}: {transaction_type}")
+  print(f"Server saving to environment {environment}: {transaction_type}")
   new_trade = None
 
   try:
     # --- 1. Find or Create the Trade (Your existing logic) ---
-    if existing_trade_row:
+    # update trade row Status for CLOSE/ROLL  
+    if manual_entry_state in (config.MANUAL_ENTRY_STATE_CLOSE, config.MANUAL_ENTRY_STATE_ROLL):
       new_trade = existing_trade_row
       if manual_entry_state == config.MANUAL_ENTRY_STATE_CLOSE:
-        existing_trade_row.update(Status='Closed', CloseDate=trade_date)
-    elif underlying:
-      if manual_entry_state == config.MANUAL_ENTRY_STATE_OPEN:
-        status = 'Open'
+        existing_trade_row.update(Status=server_config.TRADE_ROW_STATUS_CLOSED, CloseDate=trade_date)
+    # Create new trade row for OPEN
+    elif manual_entry_state == config.MANUAL_ENTRY_STATE_OPEN:
       new_trade = app_tables.trades.add_row(
-        Underlying=underlying,
-        Strategy=transaction_type,
-        Status=status,
+        Underlying=underlying_symbol,
+        Strategy=transaction_type,    # Strategy
+        Status=server_config.TRADE_ROW_STATUS_OPEN,
         OpenDate=trade_date,
-        Account=account
+        Account=environment
       )
     else:
-      raise ValueError("Must provide either an existing trade or a new underlying.")
+      raise ValueError("Manual Transaction Card State unknown")
 
       # --- 2. Create the Transaction (Your existing logic) ---
     new_transaction = app_tables.transactions.add_row(
       Trade=new_trade,
       TransactionDate=trade_date,
-      TransactionType=transaction_type,
+      TransactionType=transaction_type,  # Strategy: Diagonal, Coverd Call, CSP, Stock, Misc
       CreditDebit=net_price 
     )
 
     # --- 3. Loop through legs & UPDATE ACTIVE FLAGS ---
-    for leg in legs_data:
+    for leg in legs_data_list:
       action_string = leg['action']
       is_active_flag = action_string in server_config.OPEN_ACTIONS
 
@@ -466,6 +472,7 @@ def save_manual_trade(account, transaction_type, manual_entry_state, trade_date,
       )
     print("starting pl update")  
     #if transaction_type and 'Close:' in transaction_type:
+    #*************************UPDATE this*****************************************************************
     if manual_entry_state == 'EDIT':
       # Now that the closing transaction is saved, sum the P/L
       # Find all transactions for this trade
