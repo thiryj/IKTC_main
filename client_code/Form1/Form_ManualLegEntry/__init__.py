@@ -5,11 +5,19 @@ import anvil.tables as tables
 import anvil.tables.query as q
 from anvil.tables import app_tables
 
+from .. import config
+
 
 class Form_ManualLegEntry(Form_ManualLegEntryTemplate):
   def __init__(self, **properties):
     # Set Form properties and Data Bindings.
     self.init_components(**properties)
+
+    # set action drop down
+    self.dropdown_manual_leg_action.items = [config.ACTION_SELL_TO_OPEN,
+                                             config.ACTION_BUY_TO_OPEN,
+                                             config.ACTION_BUY_TO_CLOSE, 
+                                             config.ACTION_SELL_TO_CLOSE]
 
     # self.item will be the dictionary, e.g.,
     # {'action': 'Buy to Close', 'type': 'Put', 'strike': 247, ...}
