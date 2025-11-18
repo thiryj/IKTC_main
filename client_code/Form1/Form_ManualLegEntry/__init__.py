@@ -19,13 +19,16 @@ class Form_ManualLegEntry(Form_ManualLegEntryTemplate):
                                              config.ACTION_BUY_TO_CLOSE, 
                                              config.ACTION_SELL_TO_CLOSE]
 
+    # set option type dropdown
+    self.dropdown_manual_leg_option_type.items = [config.OPTION_TYPE_PUT, config.OPTION_TYPE_CALL]
+
     # self.item will be the dictionary, e.g.,
     # {'action': 'Buy to Close', 'type': 'Put', 'strike': 247, ...}
 
     if self.item:
       # Pre-fill all the component values from the item dictionary
       self.dropdown_manual_leg_action.selected_value = self.item.get('action')
-      self.dropdown_manual_leg_type.selected_value = self.item.get('type', 'Put')
+      self.dropdown_manual_leg_option_type.selected_value = self.item.get('type', 'Put')
       self.textbox_manual_leg_quantity.text = self.item.get('quantity')
       self.textbox_manual_leg_strike.text = self.item.get('strike')
       self.datepicker_manual_leg_expiration.date = self.item.get('expiration')

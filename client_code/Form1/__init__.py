@@ -399,8 +399,8 @@ class Form1(Form1Template):
     what type of manual transaction is being entered.
     """
     #manual_trade.manual_transaction_type_change(self, action=config.TRADE_ACTION_OPEN)
-    selected_type = self.dropdown_manual_transaction_type.selected_value
-    manual_trade.new_leg_builder(self, selected_type)
+    selected_strategy = self.dropdown_manual_transaction_type.selected_value
+    manual_trade.new_leg_builder(self, selected_strategy)
     self.button_save_manual_trade.enabled=True
 
   def button_save_manual_trade_click(self, **event_args):
@@ -419,7 +419,7 @@ class Form1(Form1Template):
 
     # initialize local vars
     existing_trade_row = None
-    selected_type = None   # Strategy:  Diagonal, Covered Call, CSP, Stock, Misc
+    selected_strategy = None   # Strategy:  Diagonal, Covered Call, CSP, Stock, Misc
     
     # branch on state
     if card_mode == config.MANUAL_ENTRY_STATE_OPEN:
@@ -427,7 +427,7 @@ class Form1(Form1Template):
       if not underlying_symbol:
         alert("Please enter an underlying symbol for a new trade.")
         return
-      selected_type = self.dropdown_manual_transaction_type.selected_value
+      selected_strategy = self.dropdown_manual_transaction_type.selected_value
     else: #the mode is CLOSE or ROLL
       existing_trade_row = self.dropdown_manual_existing_trade.selected_value
       if not existing_trade_row:
@@ -435,7 +435,7 @@ class Form1(Form1Template):
         return
       trade_row_dict = dict(existing_trade_row)
       underlying_symbol = trade_row_dict.get('Underlying')
-      selected_type= trade_row_dict.get('Strategy')
+      selected_strategy= trade_row_dict.get('Strategy')
     # 2. Create a list to hold the data from each leg row
     legs_data_list = []
   
@@ -447,10 +447,10 @@ class Form1(Form1Template):
         leg_data = {
           'action': leg_row_form.dropdown_manual_leg_action.selected_value,
           'quantity': int(leg_row_form.textbox_manual_leg_quantity.text),
-          'type': leg_row_form.dropdown_manual_leg_type.selected_value,
+          'option_type': leg_row_form.dropdown_manual_leg_option_type.selected_value,
           'strike': float(leg_row_form.textbox_manual_leg_strike.text),
           'expiration': leg_row_form.datepicker_manual_leg_expiration.date,
-          'underlying': underlying_symbol
+          'underlying_symbol': underlying_symbol
         }
         if not all(leg_data.values()):
           alert("Please fill out all fields for each leg.")
@@ -483,12 +483,11 @@ class Form1(Form1Template):
         
     response = anvil.server.call('save_manual_trade', 
                                   self.environment,
-                                  selected_type, # Strategy: Diagonal, Covered Call
+                                  selected_strategy, # Strategy: Diagonal, Covered Call
                                   card_mode,  # OPEN or CLOSE or ROLL
                                   trade_date, 
                                   net_price,
-                                  legs_data_list,
-                                  underlying_symbol,          
+                                  legs_data_list,                            
                                   existing_trade_row   # existing trade for Close/Roll (or None for Open)
                       )
     alert(response)

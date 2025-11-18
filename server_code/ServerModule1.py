@@ -378,31 +378,31 @@ def get_active_legs_for_trade(trade_row):
 # In ServerModule1.py
 
 @anvil.server.callable
-def save_manual_trade(environment, 
-                      transaction_type, #Strategy: Diagonal, Covered Call
-                      manual_entry_state, # OPEN or CLOSE or ROLL 
+def save_manual_trade(environment: str, 
+                      strategy: str, #Strategy: Diagonal, Covered Call
+                      manual_entry_state: str, # OPEN or CLOSE or ROLL 
                       trade_date, 
-                      net_price, 
-                      legs_data_list,            # list of leg data entries.  may be 1 (CSP) or 2 (diag open/close) or 4 (roll)
-                      underlying_symbol,         # this will always be filled in
+                      net_price: float, 
+                      legs_data_list,            # list of leg data entries.  may be 1 (CSP) or 2 (diag open/close) or 4 (roll)                    
                       existing_trade_row=None):  #CLOSE or ROLL: exising Trade row.  OPEN: None
 
-  print(f"Server saving to environment {environment}: {transaction_type}")
-  new_trade = None
+  print(f"Server saving to environment {environment}: {strategy}")
+  underlying_symbol = legs_data_list[0]['underlying_symbol']  # can use any leg as they should all be the same underlying
+  trade_row = None
   resulting_margin = 0
 
   try:
     # --- 1. Find or Create the Trade (Your existing logic) ---
     # update trade row Status for CLOSE/ROLL  
     if manual_entry_state in (config.MANUAL_ENTRY_STATE_CLOSE, config.MANUAL_ENTRY_STATE_ROLL):
-      new_trade = existing_trade_row
+      trade_row = existing_trade_row
       if manual_entry_state == config.MANUAL_ENTRY_STATE_CLOSE:
         existing_trade_row.update(Status=server_config.TRADE_ROW_STATUS_CLOSED, CloseDate=trade_date)      
     # Create new trade row for OPEN
     elif manual_entry_state == config.MANUAL_ENTRY_STATE_OPEN:
-      new_trade = app_tables.trades.add_row(
+      trade_row = app_tables.trades.add_row(
         Underlying=underlying_symbol,
-        Strategy=transaction_type,    # Strategy
+        Strategy=strategy,    # Strategy
         Status=server_config.TRADE_ROW_STATUS_OPEN,
         OpenDate=trade_date,
         Account=environment
@@ -412,32 +412,33 @@ def save_manual_trade(environment,
 
       # --- 2. Create the Transaction (Your existing logic) ---
     new_transaction = app_tables.transactions.add_row(
-      Trade=new_trade,
+      Trade=trade_row,
       TransactionDate=trade_date,
-      TransactionType=transaction_type,  # Strategy: Diagonal, Coverd Call, CSP, Stock, Misc
+      TransactionType=strategy,  # Strategy: Diagonal, Coverd Call, CSP, Stock, Misc
       CreditDebit=net_price 
     )
 
     # --- 3. Loop through legs & UPDATE ACTIVE FLAGS ---
     for leg in legs_data_list:
-      action_string = leg['action']
-      is_active_flag = action_string in server_config.OPEN_ACTIONS
+      action_string = leg['action']   # sell to open, etc
+      is_open_action_flag = action_string in config.OPEN_ACTIONS   # setf flag to Ture if an open leg action, False if a closing leg action
 
-      # --- THIS IS THE NEW LOGIC ---
-      if not is_active_flag:
+      # Handle close action legs, open legs fall through to the leg row adder below
+      if not is_open_action_flag:
         # This is a closing action (e.g., "Buy to Close").
         # We must find the corresponding 'active' leg and deactivate it.
 
-        # Determine the opposite 'open' action
+        # Starting with the closing legs, Determine the opposite 'open' action 
+        # wait:  aren't the legs to close passed in with the legs_data_list?
         open_action = None
-        if action_string == 'Buy to Close':
-          open_action = 'Sell to Open'
-        elif action_string == 'Sell to Close':
-          open_action = 'Buy to Open'
+        if action_string == config.ACTION_BUY_TO_CLOSE:
+          open_action  = config.ACTION_SELL_TO_OPEN
+        elif action_string == config.ACTION_SELL_TO_CLOSE:
+          open_action = config.ACTION_BUY_TO_OPEN 
 
         if open_action:
           # Find all transactions for this trade
-          trade_transactions = app_tables.transactions.search(Trade=new_trade)
+          trade_transactions = app_tables.transactions.search(Trade=trade_row)
 
           try:
             # Find the active leg that matches
@@ -458,22 +459,23 @@ def save_manual_trade(environment,
             # --- END OF NEW LOGIC ---
 
             # 4. Add the new leg row (for this transaction)
+      
       app_tables.legs.add_row(
         Transaction=new_transaction,
         Action=action_string,
         Quantity=leg['quantity'],
-        OptionType=leg['type'],
+        OptionType=leg['option_type'],
         Expiration=leg['expiration'],
         Strike=leg['strike'],
-        active=is_active_flag # This will be False for "Close" actions
+        active=is_open_action_flag # This will be False for "Close" actions
       )
     print("starting pl update")  
-    #if transaction_type and 'Close:' in transaction_type:
+    #if strategy and 'Close:' in strategy:
     #*************************UPDATE this*****************************************************************
     if manual_entry_state == 'EDIT':
       # Now that the closing transaction is saved, sum the P/L
       # Find all transactions for this trade
-      all_transactions = app_tables.transactions.search(Trade=new_trade)
+      all_transactions = app_tables.transactions.search(Trade=trade_row)
       print(f"all transactions: {all_transactions}")
       total_pl = 0
       
@@ -483,13 +485,13 @@ def save_manual_trade(environment,
           print(f"total PL: {total_pl}")
 
           # Update the parent trade row with the final numbers
-      new_trade.update(
+      trade_row.update(
         Status='Closed', 
         CloseDate=trade_date,
         TotalPL=total_pl
       )
     else:
-      print(f"transaction type is: {transaction_type}")
+      print(f"transaction type is: {strategy}")
     return "Trade saved successfully!"
 
   except Exception as e:
@@ -505,9 +507,9 @@ def validate_manual_legs(environment, legs_data_list):
   for leg in legs_data_list:
     # Build the OCC symbol just like your risk function does
     occ_symbol = server_helpers.build_occ_symbol(
-      underlying=leg['underlying'], # You'll need to pass this in
+      underlying=leg['underlying_symbol'], # You'll need to pass this in
       expiration_date=leg['expiration'],
-      option_type=leg['type'],
+      option_type=leg['option_type'],
       strike=leg['strike']
     )
 

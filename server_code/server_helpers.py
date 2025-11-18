@@ -217,7 +217,7 @@ def build_multileg_payload(
     - A list with 2 spreads is treated as a 'roll' [open, close].
     """
   legs = []
-  # --- Build the common payload keys ---
+  # --- Build the common payload keys --- don't change the key names, they are set by API
   payload = {
     'class': 'multileg',
     'symbol': underlying_symbol,
@@ -419,3 +419,13 @@ def build_leg_dto(spread_dto: Dict, option_index)->Dict:
     'quantity': None # filled in later
   }
   return leg_dto
+
+"""
+opening_leg_1 = {
+    'action': 'Sell to Open',
+    'type': new_short_leg_dto['option_type'],
+    'strike': new_short_leg_dto['strike'],
+    'expiration': new_short_leg_dto['expiration_date'],
+    'quantity': 1 # Assuming quantity 1
+  }
+  """

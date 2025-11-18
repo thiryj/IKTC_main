@@ -10,9 +10,9 @@ components:
     properties: {text: Qty, tooltip: Qty, type: number}
     type: TextBox
   - layout_properties: {col_xs: 4, row: YOSOIP, width_xs: 2}
-    name: dropdown_manual_leg_type
+    name: dropdown_manual_leg_option_type
     properties:
-      items: [PUT, CALL]
+      items: []
     type: DropDown
   - layout_properties: {col_xs: 6, row: YOSOIP, width_xs: 2}
     name: textbox_manual_leg_strike
