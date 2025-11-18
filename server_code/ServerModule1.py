@@ -39,7 +39,7 @@ def get_tradier_profile(environment: str):
   try:
     tradier_client, endpoint_url = server_helpers.get_tradier_client(environment)
     profile = tradier_client.get_profile()
-    print(f"profile is: {profile}")
+    print(f"profile account number: {profile.account[0].account_number}")
     if profile and profile.account:
       account_number = profile.account[0].account_number
       return {'account_number': account_number}
@@ -66,7 +66,7 @@ def get_underlying_quote(environment: str, symbol: str) ->float:
   underlying_quote = t.get_quotes([symbol, "bogus"], greeks=False)
   # note:  needed to send a fake symbol in because of a bug in the get_quotes endpoint
   underlying_price = underlying_quote[0].last
-  print(f"Underlying price: {underlying_price}")
+  #print(f"Underlying price: {underlying_price}")
   return underlying_price
 
 @anvil.server.callable
@@ -204,7 +204,8 @@ def get_open_trades_with_risk(environment: str=server_config.ENV_SANDBOX, refres
             continue
           trade_dto['long_strike'] = current_long_leg['Strike']
         else:
-          print(f"trade strategy: {trade['Strategy']} is identified: as position type:{config.POSITION_TYPE_COVERED_CALL}")
+          #print(f"trade strategy: {trade['Strategy']} is identified: as position type:{config.POSITION_TYPE_COVERED_CALL}")
+          pass
         if not current_short_leg:
           print("missing short leg for the spread or CSP")
           continue

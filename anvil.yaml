@@ -86,6 +86,9 @@ db_schema:
     - admin_ui: {order: 3, width: 200}
       name: CreditDebit
       type: number
+    - admin_ui: {order: 4, width: 200}
+      name: ResultingMargin
+      type: number
     server: full
     title: Transactions
 dependencies: []
