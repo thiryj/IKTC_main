@@ -9,13 +9,6 @@ MAX_DTE = 90
 LONG_STRIKE_DELTA_MAX = 25  # how much lower than short strike to search
 ASSIGNMENT_RISK_THRESHOLD = 0.1
 
-#FLAGS
-
-
-# not used 
-# ROLL = False
-# USER_CONFIRMATION = True
-
 #ENUMS and sets
 SHORT_OPEN_ACTION = 'Sell to Open'
 SHORT_CLOSE_ACTION = 'Buy to Close'

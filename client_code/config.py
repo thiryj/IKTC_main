@@ -12,16 +12,13 @@ ENV_PRODUCTION = 'PROD'
 
 # Default underlying symbol
 DEFAULT_SYMBOL = 'IWM'
+DEFAULT_MULTIPLIER = 100
 
 # Logic defaults
 DAYS_TO_NOT_OPEN = (4,)  # data shows don't open bullish positions on Friday because prices are statistically higher 
 
 # Flags
 TRADE_ONE = True
-
-# Not Used
-# PLACE_TRADE = True
-# USER_CONFIRMATION = True
 
 # Option types
 OPTION_TYPE_PUT = 'PUT'

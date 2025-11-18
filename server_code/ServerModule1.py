@@ -389,8 +389,8 @@ def save_manual_trade(environment: str,
   print(f"Server saving to environment {environment}: {strategy}")
   underlying_symbol = legs_data_list[0]['underlying_symbol']  # can use any leg as they should all be the same underlying
   trade_row = None
-  resulting_margin = 0
-
+  resulting_margin = 0.0
+  
   try:
     # --- 1. Find or Create the Trade (Your existing logic) ---
     # update trade row Status for CLOSE/ROLL  
@@ -410,12 +410,31 @@ def save_manual_trade(environment: str,
     else:
       raise ValueError("Manual Transaction Card State unknown")
 
-      # --- 2. Create the Transaction (Your existing logic) ---
+    # --- 2. Calculate Margin ---
+    # Logic: If we are OPENING or ROLLING, we need to find the NEW short and long legs 
+    # to calculate the new margin requirement.
+    if manual_entry_state != config.MANUAL_ENTRY_STATE_CLOSE:
+      try:
+        sell_to_open_dto_list = [leg for leg in legs_data_list if leg['action'] == config.ACTION_SELL_TO_OPEN]
+        buy_to_open_dto_list = [leg for leg in legs_data_list if leg['action'] == config.ACTION_BUY_TO_OPEN]
+        if sell_to_open_dto_list and buy_to_open_dto_list:
+          short_strike = sell_to_open_dto_list[0]['strike']
+          long_strike = buy_to_open_dto_list[0]['strike']
+          quantity = sell_to_open_dto_list[0]['quantity']
+          resulting_margin = abs(short_strike - long_strike) * quantity * config.DEFAULT_MULTIPLIER
+      except Exception as e:
+        resulting_margin = 0
+        print(f"failed to get margin for open action: {e}")
+    else:
+      resulting_margin = 0
+      
+      # --- Create the Transaction  ---
     new_transaction = app_tables.transactions.add_row(
       Trade=trade_row,
       TransactionDate=trade_date,
       TransactionType=strategy,  # Strategy: Diagonal, Coverd Call, CSP, Stock, Misc
-      CreditDebit=net_price 
+      CreditDebit=net_price,
+      ResultingMargin=resulting_margin
     )
 
     # --- 3. Loop through legs & UPDATE ACTIVE FLAGS ---
@@ -427,39 +446,34 @@ def save_manual_trade(environment: str,
       if not is_open_action_flag:
         # This is a closing action (e.g., "Buy to Close").
         # We must find the corresponding 'active' leg and deactivate it.
-
         # Starting with the closing legs, Determine the opposite 'open' action 
-        # wait:  aren't the legs to close passed in with the legs_data_list?
-        open_action = None
+        # wait:  aren't the original legs that are currently open passed in with the legs_data_list?  No, they are not, so we must deduce them from the new closing legs
+        old_leg_open_action = None
         if action_string == config.ACTION_BUY_TO_CLOSE:
-          open_action  = config.ACTION_SELL_TO_OPEN
+         old_leg_open_action  = config.ACTION_SELL_TO_OPEN
         elif action_string == config.ACTION_SELL_TO_CLOSE:
-          open_action = config.ACTION_BUY_TO_OPEN 
+         old_leg_open_action = config.ACTION_BUY_TO_OPEN 
 
-        if open_action:
-          # Find all transactions for this trade
+        if old_leg_open_action:
+          # Find all original existing transactions for this trade that need to be marked as active=False
           trade_transactions = app_tables.transactions.search(Trade=trade_row)
 
           try:
             # Find the active leg that matches
-            leg_to_close = app_tables.legs.search(
+            leg_to_deactivate = app_tables.legs.search(
               Transaction=q.any_of(*trade_transactions),
               active=True,
-              Action=open_action,
+              Action=old_leg_open_action,
               Strike=leg['strike'],
               Expiration=leg['expiration']
             )[0] # Find the first match
-
-            # Deactivate the original leg
-            leg_to_close.update(active=False)
+            # Finally - Deactivate the original leg and repeat through rest of legs_data_list
+            leg_to_deactivate.update(active=False)
           except Exception as e:
             print(f"Warning: Could not find matching active leg to close: {e}")
-            # This can happen if the data is out of sync, but we
-            # still want to record the closing transaction.
-            # --- END OF NEW LOGIC ---
 
-            # 4. Add the new leg row (for this transaction)
-      
+      # 4. Add the new leg row (for this transaction)    
+      # runs for all legs in legs_data_list
       app_tables.legs.add_row(
         Transaction=new_transaction,
         Action=action_string,
@@ -472,26 +486,34 @@ def save_manual_trade(environment: str,
     print("starting pl update")  
     #if strategy and 'Close:' in strategy:
     #*************************UPDATE this*****************************************************************
-    if manual_entry_state == 'EDIT':
+    if manual_entry_state == config.MANUAL_ENTRY_STATE_CLOSE:
       # Now that the closing transaction is saved, sum the P/L
       # Find all transactions for this trade
       all_transactions = app_tables.transactions.search(Trade=trade_row)
-      print(f"all transactions: {all_transactions}")
-      total_pl = 0
+      #print(f"all transactions: {all_transactions}")
+      total_pl_dollars = 0
       
       for t in all_transactions:
-        if t['CreditDebit'] is not None:
-          total_pl += t['CreditDebit']
-          print(f"total PL: {total_pl}")
+        price = t['CreditDebit']
+        if price is not None:
+          # find legs for this transaction
+          trans_legs = app_tables.legs.search(Transaction=t)
+          quantity =1 # default
+          if len(trans_legs) > 0:
+            quantity = trans_legs[0]['Quantity']
 
-          # Update the parent trade row with the final numbers
+          transaction_cash_value = price * quantity * config.DEFAULT_MULTIPLIER
+          
+          total_pl_dollars += transaction_cash_value
+          #print(f"total PL: {transaction_cash_value}")
+
+      # Update the parent trade row with the final numbers
       trade_row.update(
-        Status='Closed', 
+        Status=server_config.TRADE_ROW_STATUS_CLOSED, 
         CloseDate=trade_date,
-        TotalPL=total_pl
+        TotalPL=total_pl_dollars
       )
-    else:
-      print(f"transaction type is: {strategy}")
+
     return "Trade saved successfully!"
 
   except Exception as e:
