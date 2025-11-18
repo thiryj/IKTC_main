@@ -194,7 +194,7 @@ components:
       properties: {item_template: Form1.Form_ManualLegEntry}
       type: RepeatingPanel
     - components:
-      - event_bindings: {change: checkbox_manual_trade_validate_change}
+      - event_bindings: {}
         layout_properties: {col_xs: 6, row: JXAPXI, width_xs: 2}
         name: checkbox_manual_trade_validate
         properties: {text: Validate}

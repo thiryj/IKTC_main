@@ -10,6 +10,19 @@
 ENV_SANDBOX = 'SANDBOX'
 ENV_PRODUCTION = 'PROD'
 
+# Default underlying symbol
+DEFAULT_SYMBOL = 'IWM'
+
+# Logic defaults
+DAYS_TO_NOT_OPEN = (4,)  # data shows don't open bullish positions on Friday because prices are statistically higher 
+
+# Flags
+TRADE_ONE = True
+
+# Not Used
+# PLACE_TRADE = True
+# USER_CONFIRMATION = True
+
 # Option types
 OPTION_TYPE_PUT = 'PUT'
 OPTION_TYPE_CALL = 'CALL'
@@ -21,10 +34,14 @@ TRADE_ACTION_CLOSE = 'Close'
 NEW_TRADE_ACTIONS = {TRADE_ACTION_OPEN}
 CLOSE_TRADE_ACTIONS = {TRADE_ACTION_ROLL, TRADE_ACTION_CLOSE}
 POSITION_ACTIONS = [*NEW_TRADE_ACTIONS, *CLOSE_TRADE_ACTIONS]
+
+# Leg actions
 ACTION_SELL_TO_OPEN = 'Sell to Open'
 ACTION_BUY_TO_OPEN = 'Buy to Open'
 ACTION_SELL_TO_CLOSE = 'Sell to Close'
 ACTION_BUY_TO_CLOSE = 'Buy to Close'
+OPEN_ACTIONS = {ACTION_SELL_TO_OPEN, ACTION_BUY_TO_OPEN}
+CLOSE_ACTIONS = {ACTION_BUY_TO_CLOSE, ACTION_SELL_TO_CLOSE}
 
 # Position Types
 POSITION_TYPE_DIAGONAL = 'Diagonal'

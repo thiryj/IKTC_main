@@ -10,11 +10,11 @@ LONG_STRIKE_DELTA_MAX = 25  # how much lower than short strike to search
 ASSIGNMENT_RISK_THRESHOLD = 0.1
 
 #FLAGS
-PLACE_TRADE = True
-TRADE_ONE = True
-USER_CONFIRMATION = True
-DAYS_TO_NOT_OPEN = (4,)  # data shows don't open bullish positions on Friday because prices are statistically higher
-ROLL = False
+
+
+# not used 
+# ROLL = False
+# USER_CONFIRMATION = True
 
 #ENUMS and sets
 SHORT_OPEN_ACTION = 'Sell to Open'
@@ -30,8 +30,7 @@ ENB_PRODUCTION = 'PROD'
 TRADE_ROW_STATUS_OPEN = 'Open'
 TRADE_ROW_STATUS_CLOSED = 'Closed'
 
-# server globals
-ACTIVE_ENV = None
-DEFAULT_SYMBOL = 'IWM'
+# server globals - BAD IDEA - do not use server side globals.  server is stateless
+
 
 

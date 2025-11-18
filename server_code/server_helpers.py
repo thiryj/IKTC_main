@@ -17,6 +17,7 @@ from tradier_python.models import Quote
 
 # Private libs
 import server_config
+import config #client side / combined config
 import positions
 import ServerModule1
 
@@ -146,6 +147,7 @@ def get_valid_diagonal_put_spreads(short_strike: float,
   return valid_positions
   
 def submit_diagonal_spread_order(
+  environment: str,
   tradier_client: TradierAPI,
   endpoint_url: str,
   underlying_symbol: str,
@@ -176,7 +178,7 @@ def submit_diagonal_spread_order(
   #print(f"endpoint_url: {endpoint_url}")
   api_url = urljoin(endpoint_url, path)
 
-  payload = build_multileg_payload(underlying_symbol, quantity, trade_dto_list)
+  payload = build_multileg_payload(environment, underlying_symbol, quantity, trade_dto_list)
 
   # override price if limit_price sent in
   if limit_price is not None:
@@ -204,6 +206,7 @@ def submit_diagonal_spread_order(
     return None
 
 def build_multileg_payload(
+  environment: str,
   underlying_symbol: str, 
   quantity: int,
   trade_dto_list: List # list of nested dicts with {spread meta..., 'short_put', 'long_put'}
@@ -249,8 +252,8 @@ def build_multileg_payload(
 
     #print(f"build multi leg: credit to open: {credit_to_open}")
     # get fresh cost to close
-    short_position_to_close_quote = get_quote(server_config.ACTIVE_ENV, short_position_to_close_symbol)
-    long_position_to_close_quote =  get_quote(server_config.ACTIVE_ENV, long_position_to_close_symbol)
+    short_position_to_close_quote = get_quote(environment, short_position_to_close_symbol)
+    long_position_to_close_quote =  get_quote(environment, long_position_to_close_symbol)
     cost_to_close = short_position_to_close_quote.ask - long_position_to_close_quote.bid
     roll_value = credit_to_open - cost_to_close
     #print(f"build multi leg: roll credit: {roll_value}")
@@ -300,8 +303,8 @@ def build_occ_symbol(underlying, expiration_date, option_type, strike):
   exp_str = expiration_date.strftime('%y%m%d')
 
   # Format type to P or C
-  type_char = 'P' if option_type.upper() == server_config.OPTION_TYPE_PUT else 'C'
-
+  type_char = 'P' if option_type.upper() == config.OPTION_TYPE_PUT else 'C'
+  
   # Format strike to 8-digit string, (e.g., 247 -> '00247000')
   # This assumes strike is a number. We multiply by 1000 and pad with zeros.
   strike_int = int(strike * 1000)

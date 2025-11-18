@@ -27,7 +27,7 @@ def get_settings():
   # If table is empty, initialize it with your preferred defaults
   if not settings_row:
     settings_row = app_tables.settings.add_row(
-      default_symbol=server_config.DEFAULT_SYMBOL,
+      default_symbol=config.DEFAULT_SYMBOL,
       defualt_qty=1, 
       use_max_qty=False, 
       refresh_timer_on=True
@@ -98,9 +98,9 @@ def get_open_trades_for_dropdown(environment: str=server_config.ENV_SANDBOX):
       # 3. Find the short and long strikes from the active legs
       # (This assumes a simple 2-leg spread for the display)
       for leg in active_legs:
-        if leg['Action'] in server_config.OPEN_ACTIONS: # e.g., 'Sell to Open'
+        if leg['Action'] in config.OPEN_ACTIONS: # e.g., 'Sell to Open'
           short_strike = leg['Strike']
-        elif leg['Action'] in server_config.OPEN_ACTIONS: # e.g., 'Buy to Open'
+        elif leg['Action'] in config.OPEN_ACTIONS: # e.g., 'Buy to Open'
           # This logic assumes the first 'Open' is short, the next is long
           # A more robust way is to check the action text precisely
           if leg['Strike'] != short_strike:
@@ -278,10 +278,7 @@ def submit_order(environment: str='SANDBOX',
                            preview: bool=True,
                            limit_price: float=None
                            )->Dict:
-  
-  # save the environment to server global
-  server_config.ACTIVE_ENV = environment
-  
+    
   # verify symbol and positions are present
   if underlying_symbol is None or trade_dto_list is None:
     print("no symbol or position in submit_preview_order")
@@ -290,7 +287,8 @@ def submit_order(environment: str='SANDBOX',
 
   #print(f"submit order: trade_dto_list: {trade_dto_list}")
   # submit order
-  trade_response = server_helpers.submit_diagonal_spread_order(t, 
+  trade_response = server_helpers.submit_diagonal_spread_order(environment,
+                                                               t, 
                                                               endpoint_url, 
                                                               underlying_symbol, 
                                                               quantity, 
@@ -306,10 +304,8 @@ def get_quantity(best_position: positions.DiagonalPutSpread)->int:
   # calculate quantity based on fixed allocation.  
   #TODO: generalize this to lookup available capital t.get_account_balance().cash.cash_available
   quantity = math.floor(server_config.ALLOCATION / best_position.margin) if best_position.margin > 0 else 0
-  quantity = 1 if server_config.TRADE_ONE else quantity
+  quantity = 1 if config.TRADE_ONE else quantity
   return quantity
-
-  # In your ServerModule1.py
 
 @anvil.server.callable
 def get_order_status(environment: str, order_id: int):
@@ -393,6 +389,7 @@ def save_manual_trade(environment,
 
   print(f"Server saving to environment {environment}: {transaction_type}")
   new_trade = None
+  resulting_margin = 0
 
   try:
     # --- 1. Find or Create the Trade (Your existing logic) ---
@@ -400,7 +397,7 @@ def save_manual_trade(environment,
     if manual_entry_state in (config.MANUAL_ENTRY_STATE_CLOSE, config.MANUAL_ENTRY_STATE_ROLL):
       new_trade = existing_trade_row
       if manual_entry_state == config.MANUAL_ENTRY_STATE_CLOSE:
-        existing_trade_row.update(Status=server_config.TRADE_ROW_STATUS_CLOSED, CloseDate=trade_date)
+        existing_trade_row.update(Status=server_config.TRADE_ROW_STATUS_CLOSED, CloseDate=trade_date)      
     # Create new trade row for OPEN
     elif manual_entry_state == config.MANUAL_ENTRY_STATE_OPEN:
       new_trade = app_tables.trades.add_row(
