@@ -45,6 +45,16 @@ components:
         name: textbox_default_symbol
         properties: {placeholder: Default Symbol}
         type: TextBox
+      - layout_properties: {col_xs: 4, row: FYHIGZ, width_xs: 2}
+        name: label_16
+        properties: {text: Roll Margin Expansion Limit}
+        type: Label
+      - data_bindings:
+        - {code: 'self.my_settings[''margin_expansion_limit'']', property: text, writeback: true}
+        layout_properties: {col_xs: 6, row: FYHIGZ, width_xs: 2}
+        name: textbox_settings_roll_margin_exp_limit
+        properties: {text: 'self.my_settings[''margin_expansion_limit'']', type: number}
+        type: TextBox
       - layout_properties: {col_xs: 0, row: BFEODG, width_xs: 2}
         name: label_13
         properties: {text: Default Qty}

@@ -42,6 +42,9 @@ db_schema:
     - admin_ui: {order: 3, width: 200}
       name: refresh_timer_on
       type: bool
+    - admin_ui: {order: 4, width: 200}
+      name: margin_expansion_limit
+      type: number
     server: full
     title: Settings
   trades:
