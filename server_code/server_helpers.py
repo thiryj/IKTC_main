@@ -397,7 +397,7 @@ def find_new_diagonal_trade(environment: str='SANDBOX',
       default=None
     )
   if not best_position:
-    print("No good roll to position identified")
+    print("No good position identified")
     return 1
 
   print('To Open')
