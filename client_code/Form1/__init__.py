@@ -665,17 +665,23 @@ class Form1(Form1Template):
       self.label_manual_entry_card.text = "Manual Entry: Roll (record) existing position" 
       self.manual_entry_state = config.MANUAL_ENTRY_STATE_ROLL
       
-      # 1. Get the 2 closing legs that are already pre-filled
+      # 1. Get the closing leg(s) that are already pre-filled
       current_legs = list(self.repeatingpanel_manual_legs.items)
-      existing_quantity = 1 # Default
-      if current_legs and 'quantity' in current_legs[0]:
-        existing_quantity = current_legs[0]['quantity']
       
-      # 2. Define the 2 new blank 'opening' legs
+      # 2. Define the new blank 'opening' leg(s)
+      new_opening_legs = []
+      for closing_leg in current_legs:
+        new_leg = closing_leg.copy()
+        # Converts BTC to STO, and STC (the only other valid closing action) to BTO
+        new_leg['action'] = config.ACTION_SELL_TO_OPEN if closing_leg['action'] == config.ACTION_BUY_TO_CLOSE else config.ACTION_BUY_TO_OPEN
+        new_leg['quantity'] = closing_leg['quantity']
+        new_opening_legs.append(new_leg)
+      """
       new_opening_legs = [
         {'action': config.ACTION_SELL_TO_OPEN, 'type': config.OPTION_TYPE_PUT, 'quantity': existing_quantity},
         {'action': config.ACTION_BUY_TO_OPEN,  'type': config.OPTION_TYPE_PUT, 'quantity': existing_quantity}
       ]
+      """
               
       # 3. Combine the lists (2 closing + 2 opening)
       self.repeatingpanel_manual_legs.items = current_legs + new_opening_legs
