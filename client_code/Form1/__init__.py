@@ -170,7 +170,7 @@ class Form1(Form1Template):
         net_premium = best_trade_dto['net_premium']
         self.textbox_net_credit.text = f"{net_premium:.2f}"
         self.label_spread_credit_debit.text = "credit" if net_premium >=0 else "debit"
-        self.label_margin.text = f"Margin:{best_trade_dto['margin']:.2f}"
+        self.label_margin.text = f"Margin: {best_trade_dto['margin']:.2f}"
         rom_calc = best_trade_dto['ROM_rate'] * best_trade_dto['short_put']['contract_size']
         self.label_rrom.text = f"{rom_calc:.2%}"
 
@@ -206,11 +206,14 @@ class Form1(Form1Template):
       # 'total_roll_credit' is a float 
       # 'new_spread_dto' is the full dict with meta and legs
       #current_spread_width = closing_short
-      if self.my_settings['margin_expansion_limit']:
-        margin_expansion_limit = self.my_settings['margin_expansion_limit']
-      else:
-        margin_expansion_limit = None
-      roll_package = anvil.server.call('get_roll_package_dto', self.environment, trade, margin_expansion_limit)
+      # get margin setting
+      
+      print(f" margin expansion limit setting: {self.my_settings.margin_expansion_limit}")
+      roll_package = anvil.server.call('get_roll_package_dto', 
+                                       self.environment, 
+                                       trade, 
+                                       self.my_settings.margin_expansion_limit
+                                      )
   
       if not roll_package:
         alert("Could not find a suitable roll for this position.")

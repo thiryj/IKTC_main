@@ -601,7 +601,6 @@ def get_roll_package_dto(environment: str,
 
     # --- 2. Calculate Closing Cost & Build Closing Leg Dicts ---
   current_spread = positions.DiagonalPutSpread(short_leg_quote, long_leg_quote)
-  current_spread_reference_margin = server_helpers.calculate_reference_margin(trade_row, short_leg_db['Strike'], long_leg_db['Strike'])
   closing_spread_dto = current_spread.get_dto()
   total_close_cost = current_spread.calculate_cost_to_close()
 
@@ -624,9 +623,16 @@ def get_roll_package_dto(environment: str,
 
   # --- 3.  Find NEW Legs ---
   # call find_new_diagonal_trade with the closing legs as the third arg
-  # calculate max roll to margin
-  max_roll_to_margin = current_spread_reference_margin + margin_expansion_limit
-  new_spread_object = server_helpers.find_new_diagonal_trade(environment, trade_row['Underlying'], current_spread, max_roll_to_margin)
+  # calculate max roll to margin in dollars
+  current_spread_reference_margin = server_helpers.calculate_reference_margin(trade_row, short_leg_db['Strike'], long_leg_db['Strike'])
+  max_roll_to_margin = current_spread_reference_margin + margin_expansion_limit * short_leg_db['Quantity'] * config.DEFAULT_MULTIPLIER
+
+  # convert roll to margin into roll to spread width
+  max_roll_to_spread = math.ceil(max_roll_to_margin / (short_leg_db['Quantity'] * config.DEFAULT_MULTIPLIER))
+  print(f" max_roll_to_margin: {max_roll_to_margin}, max roll to spread: {max_roll_to_spread}")
+  
+  new_spread_object = server_helpers.find_new_diagonal_trade(environment, trade_row['Underlying'], current_spread, max_roll_to_spread)
+  
   #print(f"new spread is: {new_spread}")
 
   # --- 4. Calculate Opening Credit & Build Opening Leg Dicts (FIXED) ---

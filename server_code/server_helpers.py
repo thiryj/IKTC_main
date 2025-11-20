@@ -99,9 +99,9 @@ def get_valid_diagonal_put_spreads(short_strike: float,
                                    symbol: str,
                                    max_days_out: int = 10,
                                    short_expiry: date = None,
-                                   max_spread_width: float = server_config.LONG_STRIKE_DELTA_MAX
+                                   max_spread_width: int = server_config.LONG_STRIKE_DELTA_MAX
                                   )->List[positions.DiagonalPutSpread]:
-  print(f"get_valid: short strike:{short_strike}, symbol: {symbol}, short expiry: {short_expiry}, max_spread_width: {max_spread_width}")
+  print(f"get_valid: short strike:{short_strike}, symbol: {symbol}, short expiry: {short_expiry}, max_spread_margin: {max_spread_width}")
   # get list of valid expirations
   expirations = get_near_term_expirations(tradier_client=tradier_client, symbol=symbol, max_days_out=max_days_out)
   # if roll, exclude all expirations equal to or before existing short expiry.  if not roll, then short_expiry = today
@@ -127,7 +127,7 @@ def get_valid_diagonal_put_spreads(short_strike: float,
         continue
 
       # for a valid expiration pair, iterate through long put strikes
-      for k in range(1, max_spread_width):
+      for k in range(1, max_spread_width + 1):
 
         # build the position 
         short_puts = [
@@ -330,7 +330,7 @@ def get_net_roll_rom_per_day(pos: positions.DiagonalPutSpread, cost_to_close: fl
 def find_new_diagonal_trade(environment: str='SANDBOX', 
                             underlying_symbol: str=None,
                             position_to_roll: positions.DiagonalPutSpread=None,
-                            max_roll_to_margin: float = server_config.LONG_STRIKE_DELTA_MAX
+                            max_roll_to_spread: int = server_config.LONG_STRIKE_DELTA_MAX
                            )->positions.DiagonalPutSpread:
   """
   Connect to Tradier,
@@ -367,11 +367,11 @@ def find_new_diagonal_trade(environment: str='SANDBOX',
   # get list of valid positions
   print("calling get_valid_diagonal_put_spreads")
   valid_positions = get_valid_diagonal_put_spreads(short_strike=short_strike, 
-                                                                  tradier_client=t, 
-                                                                  symbol=underlying_symbol, 
-                                                                  max_days_out=server_config.MAX_DTE,
-                                                                  short_expiry=short_expiry,
-                                                                  max_spread_width = max_roll_to_margin
+                                                  tradier_client=t, 
+                                                  symbol=underlying_symbol, 
+                                                  max_days_out=server_config.MAX_DTE,
+                                                  short_expiry=short_expiry,
+                                                  max_spread_width = max_roll_to_spread
                                                   )
   number_positions = len(valid_positions)
   print(f"Number of valid positions: {len(valid_positions)}")
