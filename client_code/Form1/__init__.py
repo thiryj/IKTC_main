@@ -13,6 +13,7 @@ from datetime import date
 from .. import config, client_helpers
 from . import manual_trade
 from .Form_ConfirmTrade import Form_ConfirmTrade # Import your custom form
+from .Form_ManualLegEntry import Form_ManualLegEntry
 
 class Form1(Form1Template):
   def __init__(self, **properties):
@@ -689,4 +690,11 @@ class Form1(Form1Template):
       self.label_manual_entry_card.text = "Manual Entry: Close (record) existing position" 
       self.manual_entry_state = config.MANUAL_ENTRY_STATE_CLOSE
       self.dropdown_manual_existing_trade_change()
+
+  def button_prefill_manual_entry_click(self, **event_args):
+    """
+    Reads the data from the Trade Ticket card and pre-fills the Manual Entry card.
+    """
+    
+    self.card_manual_entry.visible = True
       
