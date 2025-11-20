@@ -160,7 +160,8 @@ def get_open_trades(environment: str=server_config.ENV_SANDBOX):
   return open_trades_list
 
 @anvil.server.callable
-def get_open_trades_with_risk(environment: str=server_config.ENV_SANDBOX, refresh_risk: bool=True):
+def get_open_trades_with_risk(environment: str=server_config.ENV_SANDBOX, 
+                              refresh_risk: bool=True)->Dict:
   """
     Fetches all open trades, then enriches them with live
     pricing and assignment risk data from the Tradier API.

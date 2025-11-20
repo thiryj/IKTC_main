@@ -8,8 +8,10 @@ import anvil.server
 # Public libs
 import requests
 import math
+import logging
+import sys
 from urllib.parse import urljoin
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Any, TYPE_CHECKING
 from datetime import date, datetime
 from pydantic_core import ValidationError
 from tradier_python import TradierAPI
@@ -109,43 +111,67 @@ def get_valid_diagonal_put_spreads(short_strike: float,
   exp_count = len(expirations)
   valid_positions = []
   #print(f"expirations: {expirations}")
-  for i in range(3):
+  
+  for i in range(5): #this is the short expiry outer loop.  5 means don't look at short strikes further than 5 expiries out from today
     short_put_expiration = expirations[i]
+    #short_put_chain = tradier_client.get_option_chains(symbol=symbol, expiration=short_put_expiration.strftime('%Y-%m-%d'), greeks=False)
+    short_put_chain = fetch_option_chain_direct(
+                                                tradier_client=tradier_client,
+                                                symbol=symbol,
+                                                expiration=short_put_expiration
+    )
+    if not short_put_chain:
+      continue
+    # Filter for the matching *dictionary* for the short put
+    short_puts_data = [
+      opt_data for opt_data in short_put_chain
+      if opt_data['option_type'] == 'put'
+      and opt_data['strike'] == short_strike
+    ]
+    if not short_puts_data:
+      continue
+    #print(f"short_puts_data[0]: {short_puts_data[0]}")
+    try:
+      short_put_obj = Quote(**short_puts_data[0])
+    except (TypeError, KeyError, ValidationError) as e:
+      print(f"Bad data for short leg {symbol} date {short_put_expiration}: {e}")
+      continue
+      
     for j in range(i+1, exp_count):
       long_put_expiration = expirations[j]
-
-      # grab the chains for this valid pair of short put + long put
-      try:
-        short_put_chain = tradier_client.get_option_chains(symbol=symbol, expiration=short_put_expiration.strftime('%Y-%m-%d'), greeks=False)
-      except ValidationError as e:
-        print(f"get short option chain: {e}")
+      #long_put_chain = tradier_client.get_option_chains(symbol=symbol, expiration=long_put_expiration.strftime('%Y-%m-%d'), greeks=False)
+      long_put_chain = fetch_option_chain_direct(
+                                                tradier_client=tradier_client,
+                                                symbol=symbol,
+                                                expiration=long_put_expiration
+      )
+      if not long_put_chain:
         continue
-      try:
-        long_put_chain = tradier_client.get_option_chains(symbol=symbol, expiration=long_put_expiration.strftime('%Y-%m-%d'), greeks=False)
-      except ValidationError as e:
-        print(f"get long option chain: {e}")
-        continue
-
       # for a valid expiration pair, iterate through long put strikes
       for k in range(1, max_spread_width + 1):
 
-        # build the position 
-        short_puts = [
-          opt for opt in short_put_chain
-          if opt.option_type == 'put'
-          and opt.strike == short_strike
+        # build the long position 
+        long_puts_data = [
+          opt_data for opt_data in long_put_chain
+          if opt_data['option_type'] == 'put'
+          and opt_data['strike'] == short_strike - k
         ]
-        if not short_puts:
+        if not long_puts_data:
           continue
-        long_puts = [
-          opt for opt in long_put_chain
-          if opt.option_type == 'put'
-          and opt.strike == short_strike - k
-        ]
-        if not long_puts:
+          
+        # Now, convert the first matching dictionary for each
+          # back into the 'Option' objects that your
+          # 'positions.DiagonalPutSpread' constructor expects.
+        try:
+          # Pass the data dictionary to the 'option' argument
+          long_put_obj = Quote(**long_puts_data[0])
+          new_position = positions.DiagonalPutSpread(short_put_obj, long_put_obj)
+          valid_positions.append(new_position)
+
+        except (TypeError, KeyError, ValidationError) as e:
+          # Added ValidationError to the catch
+          print(f"Could not create position {symbol} @ {short_strike}/{short_strike-k}. Error: {e}")
           continue
-        new_position = positions.DiagonalPutSpread(short_puts[0], long_puts[0])
-        valid_positions.append(new_position)
   return valid_positions
   
 def submit_diagonal_spread_order(
@@ -377,7 +403,7 @@ def find_new_diagonal_trade(environment: str='SANDBOX',
   print(f"Number of valid positions: {len(valid_positions)}")
   if number_positions == 0:
     print("Halting script - no positions")
-    return "no positions"
+    return None
 
   if roll:
     # positions must have a larger credit to open than the existing spread cost to close    
@@ -478,3 +504,99 @@ def calculate_reference_margin(trade_row,
 
   # 5. Safety check: Margin cannot be less than zero
   return max(0, reference_margin)
+
+def fetch_option_chain_direct(
+  tradier_client: "TradierAPI",
+  symbol: str,
+  expiration: date,
+  greeks: bool = False
+) -> List[Dict[str, Any]]:
+  """
+    Fetches an option chain directly from the Tradier API and parses it resiliently.
+    
+    This bypasses the tradier_python library's default parser, allowing 
+    the function to return all *valid* options from a chain, even if 
+    some individual options contain bad data (e.g., null bids or asks).
+    """
+  endpoint = '/v1/markets/options/chains'
+  params = {
+    'symbol': symbol,
+    'expiration': expiration.strftime('%Y-%m-%d'),
+    'greeks': greeks
+  }
+
+  good_options_data: List[Dict[str, Any]] = []
+
+  try:
+    # 1. Make the direct API call.
+    # This now correctly assumes .get() returns a dict.
+    data = tradier_client.get(endpoint, params=params)
+
+    # 2. Check for API-level errors in the returned dictionary
+    if not isinstance(data, dict):
+      print(f"Tradier API call for {symbol} {expiration} returned non-dict: {type(data)}")
+      return []
+
+      # Check for common error key formats
+    if 'errors' in data or 'error' in data:
+      api_error = data.get('errors', data.get('error', 'Unknown API error'))
+      print(f"Tradier API returned an error for {symbol} {expiration}: {api_error}")
+      return []  # Return empty list on API error
+
+      # 3. Safely access the list of options
+      # Tradier's structure is {'options': {'option': [...]}}
+    options_list = data.get('options', {}).get('option', [])
+
+    # 4. Handle edge case: Tradier returns a dict if only one option exists
+    if options_list and not isinstance(options_list, list):
+      options_list = [options_list]
+
+    if not options_list:
+      # Check if API returned 'null' for the options key
+      if data.get('options') == 'null' or data.get('options') is None:
+        print(f"No options found for {symbol} on {expiration} (API returned null)")
+      else:
+        print(f"No options found for {symbol} on {expiration}")
+      return []
+
+      # 5. Resiliently parse each option in the list
+    for option_data in options_list:
+      try:
+        # --- This is the key validation block ---
+        bid = option_data.get('bid')
+        if bid is None or float(bid) <= 0:
+          #print(f"Skipping option (bad bid): {option_data.get('description', 'N/A')}")
+          continue 
+
+        ask = option_data.get('ask')
+        if ask is None or float(ask) <= 0:
+          #print(f"Skipping option (bad ask): {option_data.get('description', 'N/A')}")
+          continue
+
+        strike = option_data.get('strike')
+        if strike is None:
+          print(f"Skipping option (no strike): {option_data.get('description', 'N/A')}")
+          continue
+
+          # --- If it passes, add it to our list ---
+
+          # We also re-cast the values to ensure they are floats
+          # for consistent use downstream.
+        option_data['bid'] = float(bid)
+        option_data['ask'] = float(ask)
+        option_data['strike'] = float(strike)
+
+        good_options_data.append(option_data)
+
+      except (TypeError, ValueError, KeyError) as e:
+        # Catches float(None), float("bad_string"), or a missing key
+        print(f"Failed to parse one option for {symbol} {expiration}. Error: {e}. Data: {option_data}. Skipping.")
+        continue # Skip this bad option
+
+    return good_options_data
+
+  except Exception as e:
+    # Catch any other unexpected error (e.g., network, a different .get() failure)
+    # This is where your original error was caught.
+    print(f"An unexpected error occurred during API call for {symbol} {expiration}: {e}")
+    return []  # Return empty list on failure

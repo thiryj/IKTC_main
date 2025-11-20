@@ -133,7 +133,7 @@ class Form1(Form1Template):
       if best_trade_dict:
         best_trade_dto = best_trade_dict['new_spread_dto']
       else:
-        alert("No Valide open trade")
+        alert("No Valid open trade")
         return
       if best_trade_dto:
         print(f"best put diag DTO is: {best_trade_dto}")
@@ -173,6 +173,8 @@ class Form1(Form1Template):
         self.label_margin.text = f"Margin: {best_trade_dto['margin']:.2f}"
         rom_calc = best_trade_dto['ROM_rate'] * best_trade_dto['short_put']['contract_size']
         self.label_rrom.text = f"{rom_calc:.2%}"
+        self.label_quote_status.text = "Best trade identified"
+        self.common_trade_ticket()
 
       else:
         # Handle the case where the server didn't find a trade
@@ -181,10 +183,9 @@ class Form1(Form1Template):
     except Exception as e:
       self.label_quote_status.text = f"Error: {e}"
       self.label_quote_status.foreground = "error"
-      
-    self.label_quote_status.text = "Best trade identified"
-    self.common_trade_ticket()
-
+      alert(f"Error finding new trade: {e}")
+      self.card_trade_entry.visible = True  
+          
   def handle_roll_trade_request(self, trade, **event_args):
     """
     Called by a row's 'Roll' button.
@@ -261,7 +262,8 @@ class Form1(Form1Template):
   
     except Exception as e:
       alert(f"Error calculating roll: {e}")
-      self.card_trade_entry.visible = False
+      #self.card_trade_entry.visible = False
+      self.card_trade_entry.visible = True  
 
   def common_trade_ticket(self):
     """
@@ -508,13 +510,12 @@ class Form1(Form1Template):
     self.reset_manual_trade_card()
 
   def refresh_open_positions_grid(self, refresh_risk: bool=True):
-    print("Refreshing open positions with live risk data...") if refresh_risk else print("...Updating positions")
-          
+    #print("Refreshing open positions with live risk data...") if refresh_risk else print("...Updating positions")     
     # Call the new "smart" function and pass the environment
     open_trades_data = anvil.server.call('get_open_trades_with_risk', self.environment, refresh_risk)
   
     self.repeatingpanel_open_positions.items = open_trades_data
-    print("...Risk data loaded.") if refresh_risk else print("...Positions updated")
+    print(f"...Risk data loaded for {len(open_trades_data)} positions") if refresh_risk else print(f"...{len(open_trades_data)} Positions updated")
 
   def dropdown_manual_existing_trade_change(self, **event_args):
     """
