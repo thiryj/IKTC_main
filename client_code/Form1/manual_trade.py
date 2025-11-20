@@ -15,21 +15,21 @@ from .. import config
 #    Module1.say_hello()
 #
 
-def new_leg_builder(form_instance, selected_type: str):
+def new_leg_builder(form_instance, selected_type: str, quantity: int=1):
   print("new leg builder ")
 
   if selected_type == config.POSITION_TYPE_DIAGONAL:
     leg_definitions = [
-      {'action': 'Sell to Open', 'type': config.OPTION_TYPE_PUT},
-      {'action': 'Buy to Open', 'type': config.OPTION_TYPE_PUT}
+      {'action': 'Sell to Open', 'type': config.OPTION_TYPE_PUT, 'quantity': quantity},
+      {'action': 'Buy to Open', 'type': config.OPTION_TYPE_PUT, 'quantity': quantity}
     ]
   elif selected_type == config.POSITION_TYPE_CSP:
     leg_definitions = [
-      {'action': 'Sell to Open', 'type': config.OPTION_TYPE_PUT}
+      {'action': 'Sell to Open', 'type': config.OPTION_TYPE_PUT, 'quantity': quantity}
     ]
   elif selected_type == config.POSITION_TYPE_COVERED_CALL:
     leg_definitions = [
-      {'action': 'Sell to Open', 'type': config.OPTION_TYPE_CALL}
+      {'action': 'Sell to Open', 'type': config.OPTION_TYPE_CALL, 'quantity': quantity}
     ]
   elif selected_type == config.POSITION_TYPE_STOCK:
     alert("stock not yet implemented - use manual db entry")
@@ -39,22 +39,22 @@ def new_leg_builder(form_instance, selected_type: str):
     ]
   elif selected_type == 'Roll: Diagonal':
     leg_definitions = [
-      {'action': 'Buy to Close', 'type': 'Put'},
-      {'action': 'Sell to Close', 'type': 'Put'},
-      {'action': 'Sell to Open', 'type': 'Put'},
-      {'action': 'Buy to Open', 'type': 'Put'}
+      {'action': 'Buy to Close', 'type': 'Put', 'quantity': quantity},
+      {'action': 'Sell to Close', 'type': 'Put', 'quantity': quantity},
+      {'action': 'Sell to Open', 'type': 'Put', 'quantity': quantity},
+      {'action': 'Buy to Open', 'type': 'Put', 'quantity': quantity}
     ]
 
   elif selected_type == 'Close: Diagonal':
     leg_definitions = [
-      {'action': 'Buy to Close', 'type': 'Put'},
-      {'action': 'Sell to Close', 'type': 'Put'}
+      {'action': 'Buy to Close', 'type': 'Put', 'quantity': quantity},
+      {'action': 'Sell to Close', 'type': 'Put', 'quantity': quantity}
     ]
 
   elif selected_type == 'Roll: Leg':
     leg_definitions = [
-      {'action': 'Buy to Close', 'type': 'Put'},
-      {'action': 'Sell to Open', 'type': 'Put'}
+      {'action': 'Buy to Close', 'type': 'Put', 'quantity': quantity},
+      {'action': 'Sell to Open', 'type': 'Put', 'quantity': quantity}
     ]
   if leg_definitions:
     form_instance.repeatingpanel_manual_legs.items = leg_definitions

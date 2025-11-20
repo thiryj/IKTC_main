@@ -411,7 +411,7 @@ class Form1(Form1Template):
     """
     #manual_trade.manual_transaction_type_change(self, action=config.TRADE_ACTION_OPEN)
     selected_strategy = self.dropdown_manual_transaction_type.selected_value
-    manual_trade.new_leg_builder(self, selected_strategy)
+    manual_trade.new_leg_builder(self, selected_strategy, self.my_settings.default_qty)
     self.button_save_manual_trade.enabled=True
 
   def button_save_manual_trade_click(self, **event_args):
@@ -505,7 +505,6 @@ class Form1(Form1Template):
 
     # 5. Hide the card and refresh your open positions
     self.card_manual_entry.visible = False
-    # You'll need a function to refresh your grids
     refresh_risk_bool = True if self.manual_entry_state in config.MANUAL_ENTRY_STATE_OPEN else False
     self.refresh_open_positions_grid(refresh_risk=refresh_risk_bool) 
     self.reset_manual_trade_card()
@@ -604,7 +603,7 @@ class Form1(Form1Template):
     self.dropdown_manual_transaction_type.visible = False
     self.dropdown_manual_existing_trade.selected_value = None
     self.dropdown_manual_existing_trade.visible = False
-    self.textbox_manual_underlying.text = None
+    self.textbox_manual_underlying.text = self.my_settings.default_symbol
     self.textbox_manual_underlying.visible = False
     self.checkbox_manual_entry_roll.checked=False
     self.checkbox_manual_entry_roll.visible=False
