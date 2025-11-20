@@ -26,7 +26,6 @@ class Form1(Form1Template):
     self.init_components(**properties)
 
     # Globals
-    
     self.refresh_data_bindings()
     self.environment = config.ENV_SANDBOX
     self.trade_dto = None # the new combined var to hold 2 leg new spreads or 4 leg roll spreads
@@ -50,6 +49,7 @@ class Form1(Form1Template):
       'x-roll-trade-requested', self.handle_roll_trade_request
     )
     # Populate misc components
+    self.dropdown_strategy_picker.items = [config.POSITION_TYPE_DIAGONAL, config.POSITION_TYPE_CSP]
     # Trade history grid
     self.repeatingpanel_trade_history.items = anvil.server.call('get_closed_trades', 
                                                                self.dropdown_environment.selected_value)
@@ -111,22 +111,20 @@ class Form1(Form1Template):
     if underlying_price is None:
       alert("unable to get underlying price")
     self.label_underlying_price.text = f"{underlying_price:.2f}"
-    self.label_trade_ticket_title.text = f"{self.label_trade_ticket_title.text} \
-                                          - Open {self.dropdown_strategy_picker.selected_value}"
-
+    self.label_trade_ticket_title.text = f"{self.label_trade_ticket_title.text} - Open {self.dropdown_strategy_picker.selected_value}"
     
     # get type of trade from strategy drop down
     trade_strategy = self.dropdown_strategy_picker.selected_value
     try:
         
-      if trade_strategy == 'diagonal put spread':
+      if trade_strategy == config.POSITION_TYPE_DIAGONAL:
         self.label_quote_status.text = "Getting best trade..."
         print("calling get_new_open_trade_dto")
         # best_trade_dto is really a dict with 'new_spread_dto' as the payload
         best_trade_dict = anvil.server.call('get_new_open_trade_dto',
                                            self.dropdown_environment.selected_value,
                                            symbol)
-      elif trade_strategy == 'cash secured put':
+      elif trade_strategy == config.POSITION_TYPE_CSP:
         alert("strategy not implemented")
 
       # Check if the server call was successful
@@ -173,7 +171,7 @@ class Form1(Form1Template):
         self.label_spread_credit_debit.text = "credit" if net_premium >=0 else "debit"
         self.label_margin.text = f"Margin: {best_trade_dto['margin']:.2f}"
         rom_calc = best_trade_dto['ROM_rate'] * best_trade_dto['short_put']['contract_size']
-        self.label_rrom.text = f"{rom_calc:.2%}"
+        self.label_rrom.text = f"{rom_calc:.1%}"
         self.label_quote_status.text = "Best trade identified"
         self.common_trade_ticket()
 
@@ -278,8 +276,17 @@ class Form1(Form1Template):
     #self.button_place_trade.enabled = False
 
   def button_preview_trade_click(self, **event_args):
-    """Fired when the 'Preview Trade' button is clicked."""    
-    self.preview_data = self.common_trade_button(preview=True)
+    """Fired when the 'Preview Trade' button is clicked."""   
+    override_price_text = None
+    if self.textbox_overide_price.text:
+      override_price_text = self.textbox_overide_price.text
+      try:
+        limit_price = float(override_price_text)    
+      except ValueError:        
+        alert("Please enter a valid number for the override price.")
+        return
+    limit_price = override_price_text if override_price_text else self.textbox_net_credit.text
+    self.preview_data = self.common_trade_button(preview=True, limit_price=limit_price)
 
     if self.preview_data and self.preview_data.get('order', {}).get('status') == 'ok':
       order_details = self.preview_data['order']
@@ -685,12 +692,6 @@ class Form1(Form1Template):
         new_leg['action'] = config.ACTION_SELL_TO_OPEN if closing_leg['action'] == config.ACTION_BUY_TO_CLOSE else config.ACTION_BUY_TO_OPEN
         new_leg['quantity'] = closing_leg['quantity']
         new_opening_legs.append(new_leg)
-      """
-      new_opening_legs = [
-        {'action': config.ACTION_SELL_TO_OPEN, 'type': config.OPTION_TYPE_PUT, 'quantity': existing_quantity},
-        {'action': config.ACTION_BUY_TO_OPEN,  'type': config.OPTION_TYPE_PUT, 'quantity': existing_quantity}
-      ]
-      """
               
       # 3. Combine the lists (2 closing + 2 opening)
       self.repeatingpanel_manual_legs.items = current_legs + new_opening_legs
@@ -699,10 +700,36 @@ class Form1(Form1Template):
       self.manual_entry_state = config.MANUAL_ENTRY_STATE_CLOSE
       self.dropdown_manual_existing_trade_change()
 
-  def button_prefill_manual_entry_click(self, **event_args):
+  def button_manual_entry_prefill_click(self, **event_args):
     """
     Reads the data from the Trade Ticket card and pre-fills the Manual Entry card.
     """
-    
+    if not self.trade_dto_list:
+      print("no trade data to load into manual entry card")
+      return
+
+    # flatten the nested dto into legs
+    leg_definitions = client_helpers._flatten_trade_dto(self, 
+                                                        self.trade_dto_list, 
+                                                        self.textbox_trade_entry_quantity.text
+                                                       )
+    print(f"leg defs are: {leg_definitions}")
+    # 2. Extract price and symbol from the UI
+    trade_type = self.dropdown_strategy_picker.selected_value
+
+    # Use the value that was actually submitted/previewed
+    underlying = self.textbox_symbol.text 
+
+    # 3. Populate the Manual Entry Card
+    self.reset_card_manual_trade()
+    self.dropdown_manual_transaction_type.selected_value = trade_type
+    self.dropdown_manual_transaction_type.visible = True
+    self.repeatingpanel_manual_legs.items = leg_definitions
+
+    # Fill remaining fields 
+    self.textbox_manual_credit_debit.text = self.textbox_overide_price.text if self.textbox_overide_price.text else self.textbox_net_credit.text
+    self.textbox_manual_underlying.text = underlying
+    self.textbox_manual_underlying.visible = True
+    self.button_save_manual_trade.enabled = True
     self.card_manual_entry.visible = True
       

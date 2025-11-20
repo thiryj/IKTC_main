@@ -127,7 +127,7 @@ components:
         - layout_properties: {}
           name: dropdown_strategy_picker
           properties:
-            items: [diagonal put spread, cash secured put]
+            items: []
             visible: true
           type: DropDown
         - event_bindings: {click: button_find_new_trade_click}
@@ -412,9 +412,9 @@ components:
         name: label_trade_results_price
         properties: {}
         type: Label
-      - event_bindings: {click: button_prefill_manual_entry_click}
+      - event_bindings: {click: button_manual_entry_prefill_click}
         layout_properties: {}
-        name: button_prefill_manual_entry
+        name: button_manual_entry_prefill
         properties: {role: tonal-button, text: Manual Entry}
         type: Button
       layout_properties: {grid_position: 'RKOLVN,KUPYOF'}
