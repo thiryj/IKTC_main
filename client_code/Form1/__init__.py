@@ -353,7 +353,7 @@ class Form1(Form1Template):
 
   def common_trade_button(self, preview: str=True, limit_price: float=None):
     """code common to both preview and trade button clicks"""
-    quantity = int(self.textbox_quantity.text)
+    quantity = int(self.textbox_trade_entry_quantity.text)
     
     print(f"calling submit order with preview: {preview}")        
     trade_dict = anvil.server.call('submit_order',
@@ -396,7 +396,7 @@ class Form1(Form1Template):
 
   def button_open_record_click(self, **event_args):
     """This method is called when the button is clicked"""
-    self.reset_manual_trade_card()
+    self.reset_card_manual_trade()
     self.card_manual_entry.visible = True
     self.label_manual_entry_card.text = "Manual Entry: Open (record) new position" 
     self.manual_entry_state = config.MANUAL_ENTRY_STATE_OPEN
@@ -507,7 +507,7 @@ class Form1(Form1Template):
     self.card_manual_entry.visible = False
     refresh_risk_bool = True if self.manual_entry_state in config.MANUAL_ENTRY_STATE_OPEN else False
     self.refresh_open_positions_grid(refresh_risk=refresh_risk_bool) 
-    self.reset_manual_trade_card()
+    self.reset_card_manual_trade()
 
   def refresh_open_positions_grid(self, refresh_risk: bool=True):
     #print("Refreshing open positions with live risk data...") if refresh_risk else print("...Updating positions")     
@@ -570,7 +570,7 @@ class Form1(Form1Template):
       """
     print(f"Handling manual entry request for: {action_type}")
   
-    self.reset_manual_trade_card()
+    self.reset_card_manual_trade()
     self.label_manual_entry_card.text = "Manual Entry: Close (record) existing position"
     trade_list = anvil.server.call('get_open_trades_for_dropdown', self.environment)
     self.dropdown_manual_existing_trade.items = trade_list
@@ -592,10 +592,10 @@ class Form1(Form1Template):
       Called when the 'Cancel' button on the manual entry card is clicked.
       """
     self.card_manual_entry.visible = False
-    self.reset_manual_trade_card()
+    self.reset_card_manual_trade()
     self.refresh_open_positions_grid(refresh_risk=False)
 
-  def reset_manual_trade_card(self):
+  def reset_card_manual_trade(self):
     """
       Resets all input components on the manual entry card to a default state.
       """
@@ -604,12 +604,21 @@ class Form1(Form1Template):
     self.dropdown_manual_existing_trade.selected_value = None
     self.dropdown_manual_existing_trade.visible = False
     self.textbox_manual_underlying.text = self.my_settings.default_symbol
+    self.textbox_manual_credit_debit.text = None
     self.textbox_manual_underlying.visible = False
     self.checkbox_manual_entry_roll.checked=False
     self.checkbox_manual_entry_roll.visible=False
     self.datepicker_manual_date.date = date.today() 
     self.repeatingpanel_manual_legs.items = []
     self.manual_entry_state = None
+
+  def reset_card_trade_entry(self):
+    """
+      Resets all input components on the manual entry card to a default state.
+    """
+    self.label_trade_ticket_title.text = 'Trade Ticket'
+    self.textbox_trade_entry_quantity.text = None
+    self.textbox_overide_price.text = None
 
   def button_refresh_open_positions_risk_click(self, **event_args):
     """This method is called when the button is clicked"""

@@ -363,7 +363,7 @@ components:
         properties: {text: Quantity}
         type: Label
       - layout_properties: {width: 133}
-        name: textbox_quantity
+        name: textbox_trade_entry_quantity
         properties: {placeholder: '1', text: '1', tooltip: Quantity, type: number}
         type: TextBox
       - event_bindings: {click: button_preview_trade_click}
