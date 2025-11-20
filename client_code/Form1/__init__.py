@@ -389,7 +389,7 @@ class Form1(Form1Template):
       
   def button_cancel_trade_ticket_click(self, **event_args):
     """This method is called when the button is clicked"""
-    alert("need to code the clear trade entry logic")
+    self.reset_card_trade_entry()
     self.card_trade_entry.visible=False
 
 ### Manual Entry Card 
@@ -617,7 +617,7 @@ class Form1(Form1Template):
       Resets all input components on the manual entry card to a default state.
     """
     self.label_trade_ticket_title.text = 'Trade Ticket'
-    self.textbox_trade_entry_quantity.text = None
+    self.textbox_trade_entry_quantity.text = self.my_settings.default_qty
     self.textbox_overide_price.text = None
 
   def button_refresh_open_positions_risk_click(self, **event_args):
