@@ -205,7 +205,12 @@ class Form1(Form1Template):
       # 'legs_to_populate' is a list of 4 leg dtos
       # 'total_roll_credit' is a float 
       # 'new_spread_dto' is the full dict with meta and legs
-      roll_package = anvil.server.call('get_roll_package_dto', self.environment, trade)
+      #current_spread_width = closing_short
+      if self.my_settings['margin_expansion_limit']:
+        margin_expansion_limit = self.my_settings['margin_expansion_limit']
+      else:
+        margin_expansion_limit = None
+      roll_package = anvil.server.call('get_roll_package_dto', self.environment, trade, margin_expansion_limit)
   
       if not roll_package:
         alert("Could not find a suitable roll for this position.")

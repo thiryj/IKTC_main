@@ -98,8 +98,10 @@ def get_valid_diagonal_put_spreads(short_strike: float,
                                    tradier_client: TradierAPI,
                                    symbol: str,
                                    max_days_out: int = 10,
-                                   short_expiry: date = None)->List[positions.DiagonalPutSpread]:
-  #print(f"get_valid: short strike:{short_strike}, symbol: {symbol}, short expiry: {short_expiry}")
+                                   short_expiry: date = None,
+                                   max_spread_width: float = server_config.LONG_STRIKE_DELTA_MAX
+                                  )->List[positions.DiagonalPutSpread]:
+  print(f"get_valid: short strike:{short_strike}, symbol: {symbol}, short expiry: {short_expiry}, max_spread_width: {max_spread_width}")
   # get list of valid expirations
   expirations = get_near_term_expirations(tradier_client=tradier_client, symbol=symbol, max_days_out=max_days_out)
   # if roll, exclude all expirations equal to or before existing short expiry.  if not roll, then short_expiry = today
@@ -124,8 +126,8 @@ def get_valid_diagonal_put_spreads(short_strike: float,
         print(f"get long option chain: {e}")
         continue
 
-        # for a valid expiration pair, iterate through long put strikes
-      for k in range(1, server_config.LONG_STRIKE_DELTA_MAX):
+      # for a valid expiration pair, iterate through long put strikes
+      for k in range(1, max_spread_width):
 
         # build the position 
         short_puts = [
@@ -327,7 +329,9 @@ def get_net_roll_rom_per_day(pos: positions.DiagonalPutSpread, cost_to_close: fl
 
 def find_new_diagonal_trade(environment: str='SANDBOX', 
                             underlying_symbol: str=None,
-                            position_to_roll: positions.DiagonalPutSpread=None)->positions.DiagonalPutSpread:
+                            position_to_roll: positions.DiagonalPutSpread=None,
+                            max_roll_to_margin: float = server_config.LONG_STRIKE_DELTA_MAX
+                           )->positions.DiagonalPutSpread:
   """
   Connect to Tradier,
   find an optimal new short put diagonal, and return a position object.
@@ -366,7 +370,9 @@ def find_new_diagonal_trade(environment: str='SANDBOX',
                                                                   tradier_client=t, 
                                                                   symbol=underlying_symbol, 
                                                                   max_days_out=server_config.MAX_DTE,
-                                                                  short_expiry=short_expiry)
+                                                                  short_expiry=short_expiry,
+                                                                  max_spread_width = max_roll_to_margin
+                                                  )
   number_positions = len(valid_positions)
   print(f"Number of valid positions: {len(valid_positions)}")
   if number_positions == 0:
@@ -429,3 +435,46 @@ opening_leg_1 = {
     'quantity': 1 # Assuming quantity 1
   }
   """
+# In server_helpers.py
+# Make sure app_tables is available (from anvil.tables import app_tables)
+
+def calculate_reference_margin(trade_row, 
+                               current_short_strike: float, 
+                               current_long_strike: float
+                              ) -> float:
+  """
+    Calculates the true margin requirement of the current open spread by
+    subtracting cumulative collected credits from the maximum loss.
+
+    Args:
+        trade_row: The Trades table Row object being analyzed.
+        current_short_strike (float): The strike of the currently active short leg.
+        current_long_strike (float): The strike of the currently active long leg.
+
+    Returns:
+        float: The calculated margin requirement (the capital at risk).
+    """
+
+  # 1. Get all transactions linked to this trade.
+  # This includes the Open transaction and all prior Roll transactions.
+  all_transactions = app_tables.transactions.search(Trade=trade_row)
+
+  # 2. Calculate the Cumulative Net Credit/Debit
+  # This is the total cash buffer you have received.
+  cumulative_credit = sum(
+    t['CreditDebit'] 
+    for t in all_transactions 
+    if t['CreditDebit'] is not None
+  )
+
+  # 3. Calculate the Max Loss of the CURRENT spread
+  # Max Loss = Spread Width * Multiplier (100)
+  spread_width = abs(current_short_strike - current_long_strike)
+  initial_max_loss = spread_width * 100
+
+  # 4. Calculate the Reference Margin (what the broker holds)
+  # This is the capital at risk.
+  reference_margin = initial_max_loss - cumulative_credit
+
+  # 5. Safety check: Margin cannot be less than zero
+  return max(0, reference_margin)
