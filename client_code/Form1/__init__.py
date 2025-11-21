@@ -32,6 +32,7 @@ class Form1(Form1Template):
     self.trade_dto_list = []
     # {spread meta, 'short_put':{}, 'long_put':{}}
     self.manual_entry_state = None    # open or edit
+    self.trade_ticket_state = None
     self.preview_data = None # dict that is returned by Preview Trade button
     self.pending_order_id = None 
 
@@ -112,6 +113,7 @@ class Form1(Form1Template):
       alert("unable to get underlying price")
     self.label_underlying_price.text = f"{underlying_price:.2f}"
     self.label_trade_ticket_title.text = f"{self.label_trade_ticket_title.text} - Open {self.dropdown_strategy_picker.selected_value}"
+    self.trade_ticket_state = config.TRADE_TICKET_STATE_OPEN
     
     # get type of trade from strategy drop down
     trade_strategy = self.dropdown_strategy_picker.selected_value
@@ -257,6 +259,7 @@ class Form1(Form1Template):
       # 5. Show the card, ready for the user to preview/submit
   
       self.label_quote_status.text = "Roll package loaded. Ready for preview."
+      self.trade_ticket_state = config.TRADE_TICKET_STATE_ROLL
       self.common_trade_ticket()
   
     except Exception as e:
@@ -625,7 +628,9 @@ class Form1(Form1Template):
     """
     self.label_trade_ticket_title.text = 'Trade Ticket'
     self.textbox_trade_entry_quantity.text = self.my_settings.default_qty
+    self.label_margin.text = None
     self.textbox_overide_price.text = None
+    self.trade_ticket_state = None
 
   def button_refresh_open_positions_risk_click(self, **event_args):
     """This method is called when the button is clicked"""
@@ -722,6 +727,8 @@ class Form1(Form1Template):
 
     # 3. Populate the Manual Entry Card
     self.reset_card_manual_trade()
+    # determin manual entry state of open or close or roll
+    self.manual_entry_state = config.MANUAL_ENTRY_STATE_OPEN if self.trade_ticket_state==config.TRADE_TICKET_STATE_OPEN else config.MANUAL_ENTRY_STATE_ROLL
     self.dropdown_manual_transaction_type.selected_value = trade_type
     self.dropdown_manual_transaction_type.visible = True
     self.repeatingpanel_manual_legs.items = leg_definitions

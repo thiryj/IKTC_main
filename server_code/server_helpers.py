@@ -135,8 +135,10 @@ def get_valid_diagonal_put_spreads(short_strike: float,
     except (TypeError, KeyError, ValidationError) as e:
       print(f"Bad data for short leg {symbol} date {short_put_expiration}: {e}")
       continue
-      
-    for j in range(i+1, exp_count):
+
+    long_dte_offset = 0 # 0 to allow verticals.  1 or more to force diagonals
+    # use for j in range(i, i+1) if I want to enforce only verticals
+    for j in range(i+long_dte_offset, exp_count):
       long_put_expiration = expirations[j]
       #long_put_chain = tradier_client.get_option_chains(symbol=symbol, expiration=long_put_expiration.strftime('%Y-%m-%d'), greeks=False)
       long_put_chain = fetch_option_chain_direct(
