@@ -632,7 +632,10 @@ def get_roll_package_dto(environment: str,
   max_roll_to_spread = math.ceil(max_roll_to_margin / (short_leg_db['Quantity'] * config.DEFAULT_MULTIPLIER))
   print(f" max_roll_to_margin: {max_roll_to_margin}, max roll to spread: {max_roll_to_spread}")
   
-  new_spread_object = server_helpers.find_new_diagonal_trade(environment, trade_row['Underlying'], current_spread, max_roll_to_spread)
+  new_spread_object = server_helpers.find_new_diagonal_trade(environment, 
+                                                             trade_row['Underlying'], 
+                                                             current_spread, 
+                                                             max_roll_to_spread)
   
   #print(f"new spread is: {new_spread}")
 
@@ -690,10 +693,9 @@ def get_new_open_trade_dto(environment: str, symbol: str) -> Dict:
 
   # 1. Call your main engine (which is now a helper)
   # we get back a position object
-  best_position_object = server_helpers.find_new_diagonal_trade(
-    environment=environment,
-    underlying_symbol=symbol,
-    position_to_roll=None  # We pass None to trigger 'open' logic
+  best_position_object = server_helpers.find_new_diagonal_trade(environment=environment,
+                                                                underlying_symbol=symbol,
+                                                                position_to_roll=None  # We pass None to trigger 'open' logic
   )
 
   # 2. Check the result

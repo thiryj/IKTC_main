@@ -115,8 +115,7 @@ def get_valid_diagonal_put_spreads(short_strike: float,
   for i in range(5): #this is the short expiry outer loop.  5 means don't look at short strikes further than 5 expiries out from today
     short_put_expiration = expirations[i]
     #short_put_chain = tradier_client.get_option_chains(symbol=symbol, expiration=short_put_expiration.strftime('%Y-%m-%d'), greeks=False)
-    short_put_chain = fetch_option_chain_direct(
-                                                tradier_client=tradier_client,
+    short_put_chain = fetch_option_chain_direct(tradier_client=tradier_client,
                                                 symbol=symbol,
                                                 expiration=short_put_expiration
     )
