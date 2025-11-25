@@ -138,7 +138,8 @@ def get_valid_diagonal_put_spreads(short_strike: float,
 
     long_dte_offset = 0 # 0 to allow verticals.  1 or more to force diagonals
     # use for j in range(i, i+1) if I want to enforce only verticals
-    for j in range(i+long_dte_offset, exp_count):
+    end_range = i+1 if config.VERTICAL_SPREADS_ONLY else exp_count     # counting j up to exp_count considers diagonals
+    for j in range(i+long_dte_offset, end_range):
       long_put_expiration = expirations[j]
       #long_put_chain = tradier_client.get_option_chains(symbol=symbol, expiration=long_put_expiration.strftime('%Y-%m-%d'), greeks=False)
       long_put_chain = fetch_option_chain_direct(

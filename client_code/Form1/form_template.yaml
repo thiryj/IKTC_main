@@ -66,6 +66,16 @@ components:
         name: textbox_default_qty
         properties: {placeholder: '1', text: 'self.item[''default_qty'']', type: number}
         type: TextBox
+      - layout_properties: {col_xs: 4, row: BFEODG, width_xs: 2}
+        name: label_17
+        properties: {text: Verticals Only}
+        type: Label
+      - data_bindings:
+        - {code: 'self.my_settings[''allow_diagonals'']', property: checked, writeback: true}
+        layout_properties: {col_xs: 6, row: BFEODG, width_xs: 2}
+        name: checkbox_settings_allow_diagonals
+        properties: {text: ''}
+        type: CheckBox
       - layout_properties: {col_xs: 0, row: JWQWNJ, width_xs: 2}
         name: label_14
         properties: {text: Use Max Qty}

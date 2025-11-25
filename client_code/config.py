@@ -16,9 +16,11 @@ DEFAULT_MULTIPLIER = 100
 
 # Logic defaults
 DAYS_TO_NOT_OPEN = (4,)  # data shows don't open bullish positions on Friday because prices are statistically higher 
+VERTICAL_SPREADS_ONLY = False
 
 # Flags
 TRADE_ONE = True
+VERTICAL_SPREADS_ONLY = False
 
 # Option types
 OPTION_TYPE_PUT = 'PUT'

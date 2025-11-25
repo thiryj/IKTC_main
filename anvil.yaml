@@ -45,6 +45,9 @@ db_schema:
     - admin_ui: {order: 4, width: 200}
       name: margin_expansion_limit
       type: number
+    - admin_ui: {order: 5, width: 200}
+      name: allow_diagonals
+      type: bool
     server: full
     title: Settings
   trades:

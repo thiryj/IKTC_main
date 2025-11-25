@@ -17,9 +17,12 @@ from .Form_ManualLegEntry import Form_ManualLegEntry
 
 class Form1(Form1Template):
   def __init__(self, **properties):
+    # populate settings components first
+        
     # get the settings row (one row of data) and pass it to helper class
-    # this trick allows dot notation
     row = anvil.server.call('get_settings')
+    
+    # this trick allows dot notation
     self.my_settings = client_helpers.LiveSettings(row)
     
     # Set Form properties and Data Bindings.
