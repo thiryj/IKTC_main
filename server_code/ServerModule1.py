@@ -7,7 +7,7 @@ from anvil.tables import app_tables, Row
 # public lib sectoin
 import math
 from typing import Dict, Tuple, List
-import datetime
+import datetime as dt
 import json
 from tradier_python import TradierAPI, Position
 
@@ -60,12 +60,14 @@ def get_account_nickname(account_number_to_check):
   return nicknames.get(account_number_to_check, "account nickname not found")
 
 @anvil.server.callable
-def get_underlying_quote(environment: str, symbol: str) ->float:
+def get_underlying_price(environment: str, symbol: str) ->float:
   # get underlying price and thus short strike
   t, endpoint_url = server_helpers.get_tradier_client(environment)
-  underlying_quote = t.get_quotes([symbol, "bogus"], greeks=False)
-  # note:  needed to send a fake symbol in because of a bug in the get_quotes endpoint
-  underlying_price = underlying_quote[0].last
+  start_date = dt.date.today()
+  end_date = start_date + dt.timedelta(days=1)
+  underlying_time_sales_data = t.get_time_and_sales(symbol,config.TRADIER_INTERVAL_1MIN, start_date, end_date)
+  print(f"underlying_time_sales_data is: {underlying_time_sales_data}")
+  underlying_price = underlying_time_sales_data[-1].price
   #print(f"Underlying price: {underlying_price}")
   return underlying_price
 
@@ -221,7 +223,7 @@ def get_open_trades_with_risk(environment: str=server_config.ENV_SANDBOX,
         try:
           # 2. Get live underlying price
           underlying_symbol = trade['Underlying']
-          underlying_price = get_underlying_quote(environment, underlying_symbol)
+          underlying_price = get_underlying_price(environment, underlying_symbol)
     
           # 3. Build the OCC symbol for the short leg
           occ_symbol = server_helpers.build_occ_symbol(

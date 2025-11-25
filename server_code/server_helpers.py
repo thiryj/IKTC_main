@@ -12,7 +12,7 @@ import logging
 import sys
 from urllib.parse import urljoin
 from typing import Dict, List, Tuple, Any, TYPE_CHECKING
-from datetime import date, datetime
+import datetime as dt
 from pydantic_core import ValidationError
 from tradier_python import TradierAPI
 from tradier_python.models import Quote
@@ -68,7 +68,7 @@ def get_quote(environment: str, symbol: str) ->str:
 def get_near_term_expirations(tradier_client: TradierAPI, 
                               symbol: str, 
                               max_days_out: int = 10
-                             ) -> List[date]:
+                             ) -> List[dt.date]:
   """
     Fetches all option expiration dates for a symbol and filters for near-term dates.
 
@@ -79,14 +79,14 @@ def get_near_term_expirations(tradier_client: TradierAPI,
                                       to include. Defaults to 30.
 
     Returns:
-        List[date]: A list of datetime.date objects representing the valid,
+        List[dt.date]: A list of datetime.date objects representing the valid,
                     near-term expiration dates.
     """
   # 1. Fetch all valid expiration dates from the API
   all_expirations = tradier_client.get_option_expirations(symbol=symbol, include_all_roots=True)
 
   # 2. Get today's date for comparison
-  today = date.today()
+  today = dt.date.today()
 
   # 3. Use a list comprehension to filter for dates within the desired window
   near_term_expirations = [
@@ -100,7 +100,7 @@ def get_valid_diagonal_put_spreads(short_strike: float,
                                    tradier_client: TradierAPI,
                                    symbol: str,
                                    max_days_out: int = 10,
-                                   short_expiry: date = None,
+                                   short_expiry: dt.date = None,
                                    max_spread_width: int = server_config.LONG_STRIKE_DELTA_MAX
                                   )->List[positions.DiagonalPutSpread]:
   print(f"get_valid: short strike:{short_strike}, symbol: {symbol}, short expiry: {short_expiry}, max_spread_margin: {max_spread_width}")
@@ -311,7 +311,7 @@ def get_strike(symbol:str) -> float:
   strike_price = int(symbol[-8:]) / 1000
   return strike_price
 
-def get_expiration_date(symbol: str) -> date | None:
+def get_expiration_date(symbol: str) -> dt.date | None:
   """
     Extracts the expiration date from an OCC option symbol and returns it as a date object.
     """
@@ -319,7 +319,7 @@ def get_expiration_date(symbol: str) -> date | None:
     # The date is always the 6 characters before the last 9 characters (type + strike)
     date_str = symbol[-15:-9]
     # '%y%m%d' tells strptime to parse a 2-digit year, month, and day
-    return datetime.strptime(date_str, '%y%m%d').date()
+    return dt.datetime.strptime(date_str, '%y%m%d').date()
   except (ValueError, IndexError):
     # Handles cases where the symbol is malformed or too short
     return None
@@ -343,7 +343,7 @@ def build_occ_symbol(underlying, expiration_date, option_type, strike):
   # Combine all parts
   return f"{underlying}{exp_str}{type_char}{strike_str}"
 
-def get_net_roll_rom_per_day(pos: positions.DiagonalPutSpread, cost_to_close: float, today: date)-> float:
+def get_net_roll_rom_per_day(pos: positions.DiagonalPutSpread, cost_to_close: float, today: dt.date)-> float:
   dte = (pos.short_put.expiration_date - today).days
 
   # Check for DTE and valid margin
@@ -376,7 +376,7 @@ def find_new_diagonal_trade(environment: str='SANDBOX',
 
   if roll is None: # use simple open logic
     print("simple open")
-    underlying_price = ServerModule1.get_underlying_quote(environment, underlying_symbol)
+    underlying_price = ServerModule1.get_underlying_price(environment, underlying_symbol)
     short_strike = math.ceil(underlying_price)
     short_expiry = None
   else:     # use roll logic
@@ -417,7 +417,7 @@ def find_new_diagonal_trade(environment: str='SANDBOX',
                       ]
 
     # find best put diag based on highest return on margin per day of trade
-    today = date.today()
+    today = dt.date.today()
     sorted_positions = sorted(
       valid_positions,
       key=lambda pos: get_net_roll_rom_per_day(pos, cost_to_close, today),
@@ -510,7 +510,7 @@ def calculate_reference_margin(trade_row,
 def fetch_option_chain_direct(
   tradier_client: "TradierAPI",
   symbol: str,
-  expiration: date,
+  expiration: dt.date,
   greeks: bool = False
 ) -> List[Dict[str, Any]]:
   """

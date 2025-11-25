@@ -7,7 +7,7 @@ import anvil.tables.query as q
 from anvil.tables import app_tables, Row
 
 # Public libs
-from datetime import date
+import datetime as dt
 
 # Private libs
 from .. import config, client_helpers
@@ -111,7 +111,7 @@ class Form1(Form1Template):
       return
     self.label_symbol.text = symbol
     self.label_quote_status.text = "Getting underlying price..."
-    underlying_price = anvil.server.call('get_underlying_quote', self.environment, symbol) 
+    underlying_price = anvil.server.call('get_underlying_price', self.environment, symbol) 
     if underlying_price is None:
       alert("unable to get underlying price")
     self.label_underlying_price.text = f"{underlying_price:.2f}"
@@ -152,7 +152,7 @@ class Form1(Form1Template):
         short_leg = best_trade_dto['short_put']
         self.label_leg1_action.text = config.ACTION_SELL_TO_OPEN
         short_expiry = short_leg['expiration_date']
-        short_dte = short_expiry - date.today()
+        short_dte = short_expiry - dt.date.today()
         self.label_leg1_details.text = (
           f"Symbol: {short_leg['symbol']}, "
           f"Strike: {short_leg['strike']}, "
@@ -164,7 +164,7 @@ class Form1(Form1Template):
         long_leg = best_trade_dto['long_put']
         self.label_leg2_action.text = "buy to open"
         long_expiry = long_leg['expiration_date']
-        long_dte = long_expiry - date.today()
+        long_dte = long_expiry - dt.date.today()
         self.label_leg2_details.text = (
           f"Symbol: {long_leg['symbol']}, "
           f"Strike: {long_leg['strike']}, "
@@ -200,7 +200,7 @@ class Form1(Form1Template):
     print(f"Handling roll request for trade: {trade['Underlying']} {trade['Strategy']}")
     try:      
       self.label_symbol.text = trade['Underlying']  
-      underlying_price = anvil.server.call('get_underlying_quote', self.environment, self.label_symbol.text) 
+      underlying_price = anvil.server.call('get_underlying_price', self.environment, self.label_symbol.text) 
       if underlying_price is None:
         alert("unable to get underlying price")
   
@@ -413,8 +413,8 @@ class Form1(Form1Template):
     self.card_manual_entry.visible = True
     self.label_manual_entry_card.text = "Manual Entry: Open (record) new position" 
     self.manual_entry_state = config.MANUAL_ENTRY_STATE_OPEN
-    self.datepicker_manual_date.max_date=date.today()
-    self.datepicker_manual_date.date=date.today()
+    self.datepicker_manual_date.max_date=dt.date.today()
+    self.datepicker_manual_date.date=dt.date.today()
     self.dropdown_manual_transaction_type.visible=True
     self.textbox_manual_underlying.visible = True
 
@@ -621,7 +621,7 @@ class Form1(Form1Template):
     self.textbox_manual_underlying.visible = False
     self.checkbox_manual_entry_roll.checked=False
     self.checkbox_manual_entry_roll.visible=False
-    self.datepicker_manual_date.date = date.today() 
+    self.datepicker_manual_date.date = dt.date.today() 
     self.repeatingpanel_manual_legs.items = []
     self.manual_entry_state = None
 
