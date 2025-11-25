@@ -602,3 +602,56 @@ def fetch_option_chain_direct(
     # This is where your original error was caught.
     print(f"An unexpected error occurred during API call for {symbol} {expiration}: {e}")
     return []  # Return empty list on failure
+
+def get_underlying_price_direct(tradier_client: "TradierAPI",
+                                symbol: str) ->float:
+  """
+    Bypasses the tradier_python model validation to get the 'last' price 
+    for both securities and indices.
+  """
+  
+  endpoint = '/v1/markets/quotes'
+  
+  # Define parameters (note: 'greeks' and 'include_all_roots' must be strings for the API)
+  params = {
+    'symbols': symbol, 
+    'greeks': 'false'
+  }
+
+  try:
+    # 1. Use the client's session to make the authenticated request
+    data = tradier_client.get(endpoint, params=params)
+    if not isinstance(data, dict):
+      print(f"API call for {symbol} returned non-dictionary: {type(data)}")
+      return 0.0
+    #print(f"data: {data}")
+    if 'errors' in data or 'error' in data:
+      api_error = data.get('errors', data.get('error', 'Unknown API error'))
+      print(f"Tradier API returned an error for {symbol}: {api_error}")
+      return 0.0
+
+    # 3. Safely access the quote (quotes -> quote -> [0])
+    # Use .get() with default values to prevent KeyErrors if the structure is missing
+    quote = data.get('quotes', {}).get('quote', [])
+    #print(f"quote: {quote}")
+    if not quote:
+      print(f"No quote data returned for {symbol}.")
+      return 0.0
+
+    # 4. Extract price: Use 'last' (Stock) or fallback to 'close' (Index)
+    underlying_price = quote.get('last')
+    if underlying_price is None:
+      underlying_price = quote.get('close') # Index prices are usually in 'close'
+
+    if underlying_price is None:
+      raise ValueError(f"Price not available in API response for {symbol}")
+
+    return float(underlying_price)
+
+  except requests.exceptions.RequestException as e:
+    print(f"Network error fetching quote for {symbol}: {e}")
+    return 0.0
+  except Exception as e:
+    # Catch errors from missing keys or failed float conversion
+    print(f"Critical parsing error for {symbol}: {e}")
+    return 0.0
