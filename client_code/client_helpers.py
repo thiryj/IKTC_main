@@ -43,24 +43,26 @@ def _flatten_trade_dto(self, nested_dto: str, quantity:int=1)->list:
     """
   if not nested_dto or not isinstance(nested_dto, list) or not nested_dto[0]:
     return []
-
-  spread_to_open_dto = nested_dto[0]
-  short_leg_to_open_dto = spread_to_open_dto['short_put']
-  long_leg_to_open_dto = spread_to_open_dto['long_put']
   
-  # 1. Define the opening legs (the only two legs that exist in the DTO)
+  # 1. Define the legs of the first spread (the only two legs that exist in the DTO)
   first_legs_list = [
-    {'action': config.ACTION_SELL_TO_OPEN, 
-     'type': short_leg_to_open_dto['option_type'], 
-     'strike': short_leg_to_open_dto['strike'], 
-     'expiration': short_leg_to_open_dto['expiration_date'], 
+    {'type': nested_dto[0]['short_put']['option_type'], 
+     'strike': nested_dto[0]['short_put']['strike'], 
+     'expiration': nested_dto[0]['short_put']['expiration_date'], 
      'quantity': quantity},
-    {'action': config.ACTION_BUY_TO_OPEN, 
-     'type': long_leg_to_open_dto['option_type'], 
-     'strike': long_leg_to_open_dto['strike'], 
-     'expiration': long_leg_to_open_dto['expiration_date'], 
+    {'type': nested_dto[0]['long_put']['option_type'], 
+     'strike': nested_dto[0]['long_put']['strike'], 
+     'expiration': nested_dto[0]['long_put']['expiration_date'], 
      'quantity': quantity}
   ]
+  
+  if nested_dto[0]['spread_action'] == config.TRADE_ACTION_OPEN:
+    first_legs_list[0]['action'] = config.ACTION_SELL_TO_OPEN
+    first_legs_list[1]['action'] = config.ACTION_BUY_TO_OPEN
+  elif nested_dto[0]['spread_action'] == config.TRADE_ACTION_CLOSE:
+    first_legs_list[0]['action'] = config.ACTION_BUY_TO_CLOSE
+    first_legs_list[1]['action'] = config.ACTION_SELL_TO_CLOSE
+    
   if len(nested_dto) == 2:  #its a roll, so do the closing legs
     spread_to_close_dto = nested_dto[1] 
     short_leg_to_close_dto = spread_to_close_dto['short_put']

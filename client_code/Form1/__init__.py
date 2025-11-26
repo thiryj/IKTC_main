@@ -331,7 +331,6 @@ class Form1(Form1Template):
     self.card_trade_entry.visible = True   
     # auto run preview trade:  why wait?
     self.button_preview_trade_click()
-    #self.button_place_trade.enabled = False
 
   def button_preview_trade_click(self, **event_args):
     """Fired when the 'Preview Trade' button is clicked."""   
