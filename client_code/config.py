@@ -83,6 +83,7 @@ trade row in open positions
 
 self.trade_dto: Dict
 {meta, leg1, leg2 ,(leg3), (leg4)}
+meta: 'spread_action': [TRADE_ACTION_OPEN, TRADE_ACTION_CLOSE], 'net_premium': 0.41, 'margin': 59.00000000000001, 'ROM': 0.00694915254237288, 'short_put_DTE': 1, 'ROM_rate': 0.00694915254237288
 
 roll_dto_list list of Dicts
 [

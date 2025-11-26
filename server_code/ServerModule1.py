@@ -760,6 +760,9 @@ def get_new_open_trade_dto(environment: str, symbol: str) -> Dict:
 
   # 3. Convert the object to the spread DTO
   best_position_object_dto = best_position_object.get_dto()
+  
+  # mark as a spread open action
+  best_position_object_dto['spread_action'] = config.TRADE_ACTION_OPEN
     
   return {
     'legs_to_populate': None,
@@ -821,6 +824,9 @@ def get_close_trade_dto(environment: str, trade_row: Row) -> Dict:
 
     # Calculate Debit (Cost to Close)
     close_dto['cost_to_close'] = current_spread.calculate_cost_to_close()
+
+    # mark as a spread closing action
+    close_dto['spread_action'] = config.TRADE_ACTION_CLOSE
 
     return close_dto
   except Exception as e:

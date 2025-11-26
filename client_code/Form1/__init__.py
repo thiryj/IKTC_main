@@ -228,7 +228,7 @@ class Form1(Form1Template):
       self.label_leg2_details.text = f"{long_leg['strike']} {long_leg['option_type']} Exp: {long_leg['expiration_date']}"
 
       # 4. Set Price (Debit)
-      debit_cost = close_dto['cost_to_close']
+      debit_cost = close_dto['cost_to_close']  
       self.textbox_net_credit.text = f"{debit_cost:.2f}"
       self.label_spread_credit_debit.text = "debit"
 
