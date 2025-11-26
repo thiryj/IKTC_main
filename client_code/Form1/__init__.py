@@ -481,14 +481,11 @@ class Form1(Form1Template):
     self.button_save_manual_trade.enabled=True
 
   def button_save_manual_trade_click(self, **event_args):
-    # determine state: OPEN, CLOSE, ROLL
-    card_mode = self.manual_entry_state
-    
     # get common elements
     trade_date = self.datepicker_manual_date.date
     try:
       net_price = float(self.textbox_manual_credit_debit.text)
-      if card_mode == config.MANUAL_ENTRY_STATE_CLOSE and net_price > 0:
+      if self.manual_entry_state == config.MANUAL_ENTRY_STATE_CLOSE and net_price > 0:
         alert("closing a short postion is typically a (negative) debit")
     except (TypeError, ValueError):
       alert("Please enter a valid net credit/debit number (e.g., 1.50 or -0.25).")
@@ -499,7 +496,7 @@ class Form1(Form1Template):
     selected_strategy = None   # Strategy:  Diagonal, Covered Call, CSP, Stock, Misc
     
     # branch on state
-    if card_mode == config.MANUAL_ENTRY_STATE_OPEN:
+    if self.manual_entry_state == config.MANUAL_ENTRY_STATE_OPEN:
       underlying_symbol = self.textbox_manual_underlying.text
       if not underlying_symbol:
         alert("Please enter an underlying symbol for a new trade.")
@@ -561,7 +558,7 @@ class Form1(Form1Template):
     response = anvil.server.call('save_manual_trade', 
                                   self.environment,
                                   selected_strategy, # Strategy: Diagonal, Covered Call
-                                  card_mode,  # OPEN or CLOSE or ROLL
+                                  self.manual_entry_state,  # OPEN or CLOSE or ROLL
                                   trade_date, 
                                   net_price,
                                   legs_data_list,                            
@@ -785,7 +782,13 @@ class Form1(Form1Template):
     # 3. Populate the Manual Entry Card
     self.reset_card_manual_trade()
     # determin manual entry state of open or close or roll
-    self.manual_entry_state = config.MANUAL_ENTRY_STATE_OPEN if self.trade_ticket_state==config.TRADE_TICKET_STATE_OPEN else config.MANUAL_ENTRY_STATE_ROLL
+    if self.trade_ticket_state==config.TRADE_TICKET_STATE_OPEN:
+      self.manual_entry_state = config.MANUAL_ENTRY_STATE_OPEN 
+    elif self.trade_ticket_state==config.TRADE_ACTION_CLOSE:
+      self.manual_entry_state = config.MANUAL_ENTRY_STATE_CLOSE
+    else:
+      self.manual_entry_state = config.MANUAL_ENTRY_STATE_ROLL
+      
     self.dropdown_manual_transaction_type.selected_value = trade_type
     self.dropdown_manual_transaction_type.visible = True
     self.repeatingpanel_manual_legs.items = leg_definitions
