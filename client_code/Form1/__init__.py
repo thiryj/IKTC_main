@@ -528,7 +528,7 @@ class Form1(Form1Template):
     open_trades_data = anvil.server.call('get_open_trades_with_risk', self.environment, refresh_risk)
   
     self.repeatingpanel_open_positions.items = open_trades_data
-    print(f"...Risk data loaded for {len(open_trades_data)} positions") if refresh_risk else print(f"...{len(open_trades_data)} Positions updated")
+    print(f"...RROC/Risk data loaded for {len(open_trades_data)} positions") if refresh_risk else print(f"...{len(open_trades_data)} Positions updated")
 
   def dropdown_manual_existing_trade_change(self, **event_args):
     """

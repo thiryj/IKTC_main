@@ -165,7 +165,7 @@ def get_open_trades_with_risk(environment: str=server_config.ENV_SANDBOX,
                               refresh_risk: bool=True)->Dict:
   """
     Fetches all open trades, then enriches them with live
-    pricing and assignment risk data from the Tradier API.
+    pricing and assignment risk data from the Tradier API and RROC.
     """
 
   #NOTE:  this only works for 2 leg spreads - need different logic for CSP or covered calls
@@ -185,26 +185,34 @@ def get_open_trades_with_risk(environment: str=server_config.ENV_SANDBOX,
       'is_at_risk': False,       # Placeholder
       'short_strike': None,
       'long_strike': None,
-      'short_expiry': None
+      'short_expiry': None,
+      'rroc': "N/A"
     }
     
     try:
       # 1. Find the active short leg (your existing query)
-      trade_transactions = app_tables.transactions.search(Trade=trade)
+      trade_transactions = list(app_tables.transactions.search(Trade=trade))
       active_legs = list(app_tables.legs.search(
         Transaction=q.any_of(*trade_transactions), # Find legs for any of these transactions
         active=True                               # That is flagged as 'active'
       ))
+
+      current_short_leg = None
+      current_long_leg = None
+      
       #print(f"Active legs found: {active_legs}")
       if trade['Strategy'] in (config.POSITION_TYPE_DIAGONAL, config.POSITION_TYPE_COVERED_CALL):
         current_short_leg = next((leg for leg in active_legs if leg['Action'] == server_config.SHORT_OPEN_ACTION), None)
+        
         if trade['Strategy'] == config.POSITION_TYPE_DIAGONAL:
           #print(f"trade strategy: {trade['Strategy']} is identified: as position type:{config.POSITION_TYPE_DIAGONAL}")
           current_long_leg =  next((leg for leg in active_legs if leg['Action'] == server_config.LONG_OPEN_ACTION), None)
-          if not current_long_leg:
+          if current_long_leg:
+            trade_dto['long_strike'] = current_long_leg['Strike']
+          else:
             print("missing long leg of the spread")
             continue
-          trade_dto['long_strike'] = current_long_leg['Strike']
+          
         else:
           #print(f"trade strategy: {trade['Strategy']} is identified: as position type:{config.POSITION_TYPE_COVERED_CALL}")
           pass
@@ -213,41 +221,84 @@ def get_open_trades_with_risk(environment: str=server_config.ENV_SANDBOX,
           continue
         #print(f"current_short_leg is: {current_short_leg}")
         short_strike_price = current_short_leg['Strike']
-        trade_dto['short_strike'] = short_strike_price
+        trade_dto['short_strike'] = current_short_leg['Strike']
         trade_dto['short_expiry'] = current_short_leg['Expiration']
       else:
         print(f"trade strategy: {trade['Strategy']} is not identified: as position type: {config.POSITION_TYPE_DIAGONAL} or position type: {config.POSITION_TYPE_COVERED_CALL} ")
         
-      if refresh_risk:
+      if refresh_risk and current_short_leg:
         try:
-          # 2. Get live underlying price
+          # A. Get Margin from latest transaction
+          # Sort transactions by date to get the most recent margin entry
+          sorted_trans = sorted(trade_transactions, key=lambda x: x['TransactionDate'])
+          latest_margin = sorted_trans[-1]['ResultingMargin'] if sorted_trans else 0
+
+          # B. Get Days in Trade
+          days_in_trade = (dt.date.today() - trade['OpenDate']).days
+          days_in_trade = 1 if days_in_trade < 1 else days_in_trade
+          
+          # Get live underlying price
           underlying_symbol = trade['Underlying']
           underlying_price = get_underlying_price(environment, underlying_symbol)
     
-          # 3. Build the OCC symbol for the short leg
-          occ_symbol = server_helpers.build_occ_symbol(
+          # Short leg quote
+          short_occ = server_helpers.build_occ_symbol(
             underlying=underlying_symbol,
             expiration_date=current_short_leg['Expiration'],
             option_type=current_short_leg['OptionType'],
             strike=current_short_leg['Strike']
           )
-          # 4. Get live option price
           # print(f"calling get_quote on: {occ_symbol}")
-          option_quote = server_helpers.get_quote(environment, occ_symbol)
-          option_price = option_quote.bid # Use bid price for a short option
-    
+          short_quote = server_helpers.get_quote(environment, short_occ)
+
+          # Long Leg Quote (if exists)
+          long_quote = None
+          if current_long_leg:
+            long_occ = server_helpers.build_occ_symbol(
+              underlying=trade['Underlying'],
+              expiration_date=current_long_leg['Expiration'],
+              option_type=current_long_leg['OptionType'],
+              strike=current_long_leg['Strike']
+            )
+            long_quote = server_helpers.get_quote(environment, long_occ)
+
+          # D. Calculate Current P/L
+          # Sum collected credit (per share)
+          total_credit_per_share = sum(t['CreditDebit'] for t in trade_transactions if t['CreditDebit'] is not None)
+
+          # Calculate Cost to Close (per share)
+          # Short: Buy to close (Ask) | Long: Sell to close (Bid)
+          short_ask = short_quote.ask if short_quote else 0
+          long_bid = long_quote.bid if long_quote else 0
+
+          # Cost to close is Debit (buying back short) - Credits (selling long)
+          cost_to_close_per_share = short_ask - long_bid
+
+          # Net P/L Dollar Amount
+          # (Total Credit - Cost to Close) * Quantity * 100
+          quantity = current_short_leg['Quantity']
+          current_pl_dollars = (total_credit_per_share - cost_to_close_per_share) * quantity * config.DEFAULT_MULTIPLIER
+
+          # E. Final RROC Calculation
+          # Avoid division by zero
+          if latest_margin > 0:
+            daily_rroc = (current_pl_dollars / latest_margin) / days_in_trade
+            trade_dto['rroc'] = f"{daily_rroc:.2%}" # Format as percentage
+          else:
+            trade_dto['rroc'] = "0.00%"
+
+          # do the assignment risk part
+          option_price = short_quote.bid # Use bid for risk calc
+          intrinsic_value = 0
           if current_short_leg['OptionType'] == server_config.OPTION_TYPE_PUT:
             intrinsic_value = max(0, short_strike_price - underlying_price)
-            extrinsic_value = option_price - intrinsic_value
             #print(f"in put: intrinsic: {intrinsic_value}, extrinsic: {extrinsic_value}")
           elif current_short_leg['OptionType'] == server_config.OPTION_TYPE_CALL: 
             intrinsic_value = max(0, underlying_price - short_strike_price)
-            extrinsic_value = option_price - intrinsic_value
             #print(f"in call: intrinsic: {intrinsic_value}, extrinsic: {extrinsic_value}")
           else:
             print("bad option type in get open trades with risk")
-    
-          # 6. Populate the DTO with the extrinsic
+          extrinsic_value = option_price - intrinsic_value
           trade_dto['extrinsic_value'] = extrinsic_value
     
           # Our risk rule: ITM and extrinsic is less than $0.10
@@ -255,7 +306,7 @@ def get_open_trades_with_risk(environment: str=server_config.ENV_SANDBOX,
             trade_dto['is_at_risk'] = True
           
         except Exception as e:
-          print(f"Could not analyze risk for {trade['Underlying']}: {repr(e)}")
+          print(f"Error calculating RROC/Risk for {trade['Underlying']}: {repr(e)}")
           pass # do not return risk field
 
     except Exception as e:
@@ -513,7 +564,7 @@ def save_manual_trade(environment: str,
       trade_row.update(
         Status=server_config.TRADE_ROW_STATUS_CLOSED, 
         CloseDate=trade_date,
-        TotalPL=total_pl_dollars
+        TotalPL=round(total_pl_dollars)
       )
 
     return "Trade saved successfully!"

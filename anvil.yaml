@@ -53,25 +53,25 @@ db_schema:
   trades:
     client: none
     columns:
-    - admin_ui: {order: 0, width: 200}
+    - admin_ui: {order: 0, width: 108}
       name: Underlying
       type: string
-    - admin_ui: {order: 1, width: 200}
+    - admin_ui: {order: 1, width: 113}
       name: Strategy
       type: string
-    - admin_ui: {order: 2, width: 200}
+    - admin_ui: {order: 2, width: 107}
       name: Status
       type: string
-    - admin_ui: {order: 3, width: 200}
+    - admin_ui: {order: 3, width: 121}
       name: OpenDate
       type: date
-    - admin_ui: {order: 4, width: 200}
+    - admin_ui: {order: 4, width: 116}
       name: CloseDate
       type: date
-    - admin_ui: {order: 5, width: 200}
+    - admin_ui: {order: 5, width: 119}
       name: TotalPL
       type: number
-    - admin_ui: {order: 6, width: 200}
+    - admin_ui: {order: -1, width: 125}
       name: Account
       type: string
     server: full

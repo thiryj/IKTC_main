@@ -21,7 +21,6 @@ class RowTemplate_OpenPositions(RowTemplate_OpenPositionsTemplate):
         self.label_open_date.text = f"{self.item['OpenDate']:%d-%b} / {se_str}"
 
     # --- 2. NEW RISK INDICATOR LOGIC ---
-    if self.item:
       extrinsic_val = self.item.get('extrinsic_value')
       is_at_risk = self.item.get('is_at_risk', False) # Default to False
 
@@ -42,6 +41,10 @@ class RowTemplate_OpenPositions(RowTemplate_OpenPositionsTemplate):
         # Reset to default colors
         self.label_assignment_risk.foreground = None
         self.button_roll_live.background = None
+
+      # RROC portion
+      self.label_open_rroc.text = self.item.get('rroc')
+    
 
   def button_edit_click(self, **event_args):
     """

@@ -477,6 +477,10 @@ components:
         name: label_9
         properties: {bold: true, text: Assign Risk}
         type: Label
+      - layout_properties: {grid_position: 'YYPOQI,MBSPHG'}
+        name: label_18
+        properties: {bold: true, text: RROC}
+        type: Label
       - layout_properties: {grid_position: 'YYPOQI,UJUKCC'}
         name: label_10
         properties: {}
