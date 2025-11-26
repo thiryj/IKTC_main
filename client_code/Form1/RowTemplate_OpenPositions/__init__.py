@@ -43,8 +43,11 @@ class RowTemplate_OpenPositions(RowTemplate_OpenPositionsTemplate):
         self.button_roll_live.background = None
 
       # RROC portion
-      self.label_open_rroc.text = self.item.get('rroc')
-    
+      rroc = self.item.get('rroc')
+      self.label_open_rroc.text = rroc
+      if self.item.get('is_harvestable'):
+        self.label_open_rroc.foreground = 'green'
+        self.button_open_position_close.foreground = 'green'
 
   def button_edit_click(self, **event_args):
     """
@@ -74,4 +77,11 @@ class RowTemplate_OpenPositions(RowTemplate_OpenPositionsTemplate):
     self.parent.raise_event('x-roll-trade-requested',
                             trade=trade_to_roll,
                             action_type='Roll: Spread')
+
+  def button_open_position_close_click(self, **event_args):
+    """This method is called when the button is clicked"""
+    trade_to_close = self.item['trade_row']
+    self.parent.raise_event('x-close-trade-requested',
+                            trade=trade_to_close,
+                            action_type='Close')
           

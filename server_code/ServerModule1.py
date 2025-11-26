@@ -186,7 +186,8 @@ def get_open_trades_with_risk(environment: str=server_config.ENV_SANDBOX,
       'short_strike': None,
       'long_strike': None,
       'short_expiry': None,
-      'rroc': "N/A"
+      'rroc': "N/A",
+      'is_harvestable': False
     }
     
     try:
@@ -281,9 +282,11 @@ def get_open_trades_with_risk(environment: str=server_config.ENV_SANDBOX,
 
           # E. Final RROC Calculation
           # Avoid division by zero
-          if latest_margin > 0:
+          if latest_margin and latest_margin > 0:
             daily_rroc = (current_pl_dollars / latest_margin) / days_in_trade
             trade_dto['rroc'] = f"{daily_rroc:.2%}" # Format as percentage
+            # flag if ready to harvest
+            trade_dto['is_harvestable'] = True if daily_rroc >= config.DEFAULT_RROC_HARVEST_TARGET else False
           else:
             trade_dto['rroc'] = "0.00%"
 
@@ -763,3 +766,63 @@ def get_new_open_trade_dto(environment: str, symbol: str) -> Dict:
     'total_roll_credit': None,
     'new_spread_dto': best_position_object_dto
   }
+
+@anvil.server.callable
+def delete_trade(trade_row):
+  """
+  Deletes a trade row and all associated transactions and legs.
+  """
+  if not trade_row:
+    raise ValueError("No trade provided to delete")
+
+  print(f"Deleting trade {trade_row.get_id()} and associated records...")
+
+  try:
+    # 1. Find all transactions for this trade
+    transactions = app_tables.transactions.search(Trade=trade_row)
+
+    # 2. For each transaction, delete its legs, then the transaction itself
+    for t in transactions:
+      # Delete legs associated with this transaction
+      # Iterate and delete manually
+      legs = app_tables.legs.search(Transaction=t)
+      for leg in legs:
+        leg.delete()
+      # Delete the transaction
+      t.delete()
+
+    # 3. Finally, delete the trade row
+    trade_row.delete()
+    return "Trade deleted successfully."
+
+  except Exception as e:
+    print(f"Error deleting trade: {e}")
+    raise e
+    
+@anvil.server.callable
+def get_close_trade_dto(environment: str, trade_row: Row) -> Dict:
+  """Calculates the closing trade package for an active position."""
+  try:
+    # 1. Get Active Legs from DB
+    trade_transactions = app_tables.transactions.search(Trade=trade_row)
+    short_leg_db = app_tables.legs.search(Transaction=q.any_of(*trade_transactions), active=True, Action='Sell to Open')[0]
+    long_leg_db = app_tables.legs.search(Transaction=q.any_of(*trade_transactions), active=True, Action='Buy to Open')[0]
+
+    # 2. Build OCC Symbols & Get Live Quotes
+    short_occ = server_helpers.build_occ_symbol(trade_row['Underlying'], short_leg_db['Expiration'], short_leg_db['OptionType'], short_leg_db['Strike'])
+    long_occ = server_helpers.build_occ_symbol(trade_row['Underlying'], long_leg_db['Expiration'], long_leg_db['OptionType'], long_leg_db['Strike'])
+
+    short_quote = server_helpers.get_quote(environment, short_occ)
+    long_quote = server_helpers.get_quote(environment, long_occ)
+
+    # 3. Build DTO (Position Object)
+    current_spread = positions.DiagonalPutSpread(short_quote, long_quote)
+    close_dto = current_spread.get_dto()
+
+    # Calculate Debit (Cost to Close)
+    close_dto['cost_to_close'] = current_spread.calculate_cost_to_close()
+
+    return close_dto
+  except Exception as e:
+    print(f"Error getting close package: {e}")
+    return None

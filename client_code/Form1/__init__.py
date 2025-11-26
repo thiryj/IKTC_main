@@ -39,11 +39,11 @@ class Form1(Form1Template):
     self.preview_data = None # dict that is returned by Preview Trade button
     self.pending_order_id = None 
 
-    # Timers
+    # **************Timers
     self.timer_order_status.interval = 0 # disabled for now
     self.timer_risk_refresh.interval = config.REFRESH_TIMER_INTERVAL if self.my_settings.refresh_timer_on else 0
 
-    # Events
+    # ***************Events
     # Open Positions edit event broadcast
     self.repeatingpanel_open_positions.set_event_handler(
       'x-manual-edit-requested', self.handle_manual_edit_request
@@ -52,6 +52,12 @@ class Form1(Form1Template):
     self.repeatingpanel_open_positions.set_event_handler(
       'x-roll-trade-requested', self.handle_roll_trade_request
     )
+
+    # Open Positions close live event broadcast
+    self.repeatingpanel_open_positions.set_event_handler(
+      'x-close-trade-requested', self.handle_close_trade_request
+    )
+        
     # Populate misc components
     self.dropdown_strategy_picker.items = [config.POSITION_TYPE_DIAGONAL, config.POSITION_TYPE_CSP]
     # Trade history grid
@@ -189,7 +195,53 @@ class Form1(Form1Template):
       self.label_quote_status.foreground = "error"
       alert(f"Error finding new trade: {e}")
       self.card_trade_entry.visible = True  
-          
+      
+  def handle_close_trade_request(self, trade, **event_args):
+    """Called by the 'Close' button in Open Positions row."""
+    print(f"Handling close request for: {trade['Underlying']}")
+    try:
+      self.label_symbol.text = trade['Underlying']
+      self.label_quote_status.text = "Calculating closing cost..."
+      self.label_trade_ticket_title.text = f"{self.label_trade_ticket_title.text} - Close {self.dropdown_strategy_picker.selected_value}"
+
+      # 1. Fetch Close Package
+      close_dto = anvil.server.call('get_close_trade_dto', self.environment, trade)
+
+      if not close_dto:
+        alert("Could not calculate closing trade details.")
+        return
+
+      # 2. Store Data & Set State
+      self.trade_dto = close_dto
+      self.trade_dto_list = [close_dto]
+      self.trade_ticket_state = config.TRADE_TICKET_STATE_CLOSE
+
+      # 3. Populate Ticket UI (Closing Logic)
+      # Leg 1: Buy to Close the Short
+      short_leg = close_dto['short_put']
+      self.label_leg1_action.text = config.ACTION_BUY_TO_CLOSE
+      self.label_leg1_details.text = f"{short_leg['strike']} {short_leg['option_type']} Exp: {short_leg['expiration_date']}"
+
+      # Leg 2: Sell to Close the Long
+      long_leg = close_dto['long_put']
+      self.label_leg2_action.text = config.ACTION_SELL_TO_CLOSE
+      self.label_leg2_details.text = f"{long_leg['strike']} {long_leg['option_type']} Exp: {long_leg['expiration_date']}"
+
+      # 4. Set Price (Debit)
+      debit_cost = close_dto['cost_to_close']
+      self.textbox_net_credit.text = f"{debit_cost:.2f}"
+      self.label_spread_credit_debit.text = "debit"
+
+      self.label_rrom.text = "ROM: N/A"
+      self.label_quote_status.text = "Closing trade loaded."
+
+      # 5. Open Ticket
+      self.common_trade_ticket()
+
+    except Exception as e:
+      alert(f"Error preparing close trade: {e}")
+      self.card_trade_entry.visible = True
+    
   def handle_roll_trade_request(self, trade, **event_args):
     """
     Called by a row's 'Roll' button.
@@ -417,6 +469,7 @@ class Form1(Form1Template):
     self.datepicker_manual_date.date=dt.date.today()
     self.dropdown_manual_transaction_type.visible=True
     self.textbox_manual_underlying.visible = True
+    self.button_manual_delete_trade.visible = False
 
   def dropdown_manual_transaction_type_change(self, **event_args):
     """Shows the correct number of leg entry rows based on
@@ -570,11 +623,12 @@ class Form1(Form1Template):
         # 5. Populate the repeating panel
       self.repeatingpanel_manual_legs.items = leg_definitions
       self.repeatingpanel_manual_legs.visible = True
-  
+      self.button_manual_delete_trade.visible = True
     else:
       # No trade selected, clear the panel
       self.repeatingpanel_manual_legs.items = []
       self.repeatingpanel_manual_legs.visible = False
+      self.button_manual_delete_trade.visible = False
         
   def handle_manual_edit_request(self, trade: Row, action_type: str, **event_args):
     """
@@ -742,4 +796,27 @@ class Form1(Form1Template):
     self.textbox_manual_underlying.visible = True
     self.button_save_manual_trade.enabled = True
     self.card_manual_entry.visible = True
-      
+
+  def button_manual_delete_trade_click(self, **event_args):
+    """This method is called when the Delete Trade button is clicked"""
+    # 1. Get the current trade from the dropdown
+    trade_to_delete = self.dropdown_manual_existing_trade.selected_value
+  
+    if not trade_to_delete:
+      return
+  
+      # 2. Confirm with the user
+    if confirm(f"Are you sure you want to PERMANENTLY DELETE the trade for {trade_to_delete['Underlying']} and all its history?"):
+      try:
+        # 3. Call the server
+        result = anvil.server.call('delete_trade', trade_to_delete)
+        alert(result)
+  
+        # 4. Cleanup UI
+        self.reset_card_manual_trade()
+        self.card_manual_entry.visible = False
+        self.refresh_open_positions_grid(refresh_risk=False)
+  
+      except Exception as e:
+        alert(f"Error deleting trade: {e}")
+        

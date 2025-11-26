@@ -18,8 +18,9 @@ TRADIER_INTERVAL_5MIN = '5min'
 TRADIER_INTERVAL_15MIN = '15min'
 
 # Default underlying symbol
-DEFAULT_SYMBOL = 'IWM'
+DEFAULT_SYMBOL = 'RUT'
 DEFAULT_MULTIPLIER = 100
+DEFAULT_RROC_HARVEST_TARGET = 0.02
 
 # Logic defaults
 DAYS_TO_NOT_OPEN = (4,)  # data shows don't open bullish positions on Friday because prices are statistically higher 

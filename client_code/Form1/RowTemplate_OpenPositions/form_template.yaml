@@ -15,23 +15,28 @@ components:
     name: label_strategy
     properties: {}
     type: Label
+  - layout_properties: {grid_position: 'TSQKQU,OHLHXQ'}
+    name: label_open_rroc
+    properties: {}
+    type: Label
+  - event_bindings: {click: button_open_position_close_click}
+    layout_properties: {grid_position: 'TSQKQU,IABULK'}
+    name: button_open_position_close
+    properties: {role: tonal-button, text: Close}
+    type: Button
   - layout_properties: {grid_position: 'TSQKQU,TASZCL'}
     name: label_assignment_risk
     properties: {visible: false}
     type: Label
-  - layout_properties: {grid_position: 'TSQKQU,VIYWTF'}
-    name: label_open_rroc
-    properties: {}
-    type: Label
   - event_bindings: {click: button_roll_live_click}
     layout_properties: {grid_position: 'TSQKQU,KXSMEM'}
     name: button_roll_live
-    properties: {background: '', role: tonal-button, text: Roll (Live)}
+    properties: {background: '', role: tonal-button, text: Roll}
     type: Button
   - event_bindings: {click: button_edit_click}
     layout_properties: {grid_position: 'TSQKQU,XFSYUO'}
     name: button_edit
-    properties: {role: tonal-button, text: Edit (Record)}
+    properties: {role: tonal-button, text: Edit}
     type: Button
   layout_properties: {grid_position: 'CJJPQD,YGRRAB'}
   name: column_panel_1
