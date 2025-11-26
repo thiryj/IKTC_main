@@ -38,6 +38,7 @@ class Form1(Form1Template):
     self.trade_ticket_state = None
     self.preview_data = None # dict that is returned by Preview Trade button
     self.pending_order_id = None 
+    self.active_trade_row = None
 
     # **************Timers
     self.timer_order_status.interval = 0 # disabled for now
@@ -111,6 +112,7 @@ class Form1(Form1Template):
 
   def button_find_new_trade_click(self, **event_args):
     """This method is called when the button is clicked"""
+    self.active_trade_row = None  # Clear it for new trades
     symbol = self.textbox_symbol.text
     if symbol is None:
       alert("must select symbol")
@@ -198,6 +200,7 @@ class Form1(Form1Template):
       
   def handle_close_trade_request(self, trade, **event_args):
     """Called by the 'Close' button in Open Positions row."""
+    self.active_trade_row = trade # Store it
     print(f"Handling close request for: {trade['Underlying']}")
     try:
       self.label_symbol.text = trade['Underlying']
@@ -249,6 +252,7 @@ class Form1(Form1Template):
     Calls the server to get a full 4-leg roll package
     and pre-fills the trade ticket card.
     """
+    self.active_trade_row = trade # Store it
     print(f"Handling roll request for trade: {trade['Underlying']} {trade['Strategy']}")
     try:      
       self.label_symbol.text = trade['Underlying']  
@@ -772,33 +776,48 @@ class Form1(Form1Template):
                                                         self.textbox_trade_entry_quantity.text
                                                        )
     print(f"leg defs are: {leg_definitions}")
-    # 2. Extract price and symbol from the UI
-    trade_type = self.dropdown_strategy_picker.selected_value
-
+    
     # Use the value that was actually submitted/previewed
     underlying = self.textbox_symbol.text 
 
     # 3. Populate the Manual Entry Card
     self.reset_card_manual_trade()
     # determin manual entry state of open or close or roll
-    if self.trade_ticket_state==config.TRADE_TICKET_STATE_OPEN:
-      self.manual_entry_state = config.MANUAL_ENTRY_STATE_OPEN 
-    elif self.trade_ticket_state==config.TRADE_ACTION_CLOSE:
-      self.manual_entry_state = config.MANUAL_ENTRY_STATE_CLOSE
-    else:
-      self.manual_entry_state = config.MANUAL_ENTRY_STATE_ROLL
-      
-    self.dropdown_manual_transaction_type.selected_value = trade_type
-    self.dropdown_manual_transaction_type.visible = True
-    self.repeatingpanel_manual_legs.items = leg_definitions
+    self.manual_entry_state = self.trade_ticket_state
 
-    # Fill remaining fields 
+    # 3. Handle Existing Trade (Close/Roll) vs New (Open)
+    credit_debit_sign = 1
+    if self.manual_entry_state in [config.MANUAL_ENTRY_STATE_ROLL, config.MANUAL_ENTRY_STATE_CLOSE]:
+      if self.active_trade_row:
+        # Fetch list so the dropdown works visually
+        self.dropdown_manual_existing_trade.items = anvil.server.call('get_open_trades_for_dropdown', self.environment)
+        self.dropdown_manual_existing_trade.selected_value = self.active_trade_row
+        self.dropdown_manual_existing_trade.visible = True
+
+        if self.manual_entry_state == config.MANUAL_ENTRY_STATE_ROLL:
+          self.checkbox_manual_entry_roll.visible = True
+          self.checkbox_manual_entry_roll.checked = True
+        else:  #its a close whichis always a debit, so negative when saved in my DB.
+          credit_debit_sign = -1
+    else:
+      # Open Logic
+      self.dropdown_manual_transaction_type.selected_value = self.dropdown_strategy_picker.selected_value
+      self.dropdown_manual_transaction_type.visible = True
+
+    # 4. Fill Common Fields
+    self.repeatingpanel_manual_legs.items = leg_definitions
     self.textbox_manual_credit_debit.text = self.textbox_overide_price.text if self.textbox_overide_price.text else self.textbox_net_credit.text
+    try:
+      self.textbox_manual_credit_debit.text = float(self.textbox_manual_credit_debit.text) * credit_debit_sign
+    except (TypeError, ValueError):
+      self.textbox_manual_credit_debit.text = None
     self.textbox_manual_underlying.text = underlying
     self.textbox_manual_underlying.visible = True
+
+    # 5. Show Card
     self.button_save_manual_trade.enabled = True
     self.card_manual_entry.visible = True
-
+          
   def button_manual_delete_trade_click(self, **event_args):
     """This method is called when the Delete Trade button is clicked"""
     # 1. Get the current trade from the dropdown

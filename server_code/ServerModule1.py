@@ -658,6 +658,7 @@ def get_roll_package_dto(environment: str,
     # --- 2. Calculate Closing Cost & Build Closing Leg Dicts ---
   current_spread = positions.DiagonalPutSpread(short_leg_quote, long_leg_quote)
   closing_spread_dto = current_spread.get_dto()
+  closing_spread_dto['spread_action'] = config.TRADE_ACTION_CLOSE
   total_close_cost = current_spread.calculate_cost_to_close()
 
   # Build standardized dicts for the closing legs
@@ -702,6 +703,7 @@ def get_roll_package_dto(environment: str,
   new_spread_dto = new_spread_object.get_dto()
   new_short_leg_dto = new_spread_dto['short_put']
   new_long_leg_dto = new_spread_dto['long_put']
+  new_spread_dto['spread_action'] = config.TRADE_ACTION_OPEN
   
   # Build standardized dicts for the opening legs
   opening_leg_1 = {

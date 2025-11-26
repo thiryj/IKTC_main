@@ -17,7 +17,9 @@ components:
     type: Label
   - layout_properties: {grid_position: 'TSQKQU,OHLHXQ'}
     name: label_open_rroc
-    properties: {}
+    properties:
+      spacing:
+        padding: [null, null, null, null]
     type: Label
   - event_bindings: {click: button_open_position_close_click}
     layout_properties: {grid_position: 'TSQKQU,IABULK'}

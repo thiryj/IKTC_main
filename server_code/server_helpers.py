@@ -255,10 +255,8 @@ def build_multileg_payload(
   }
 
   print(f"trade_dto_list is: {trade_dto_list}")
-  
-  if len(trade_dto_list) == 1:  # this is an open or close
-    position_original_dto = trade_dto_list[0]
-    
+  position_original_dto = trade_dto_list[0]
+  if len(trade_dto_list) == 1:  # this is an open or close    
     # determine if it is a spread open or spread close order
     if position_original_dto['spread_action'] == config.TRADE_ACTION_OPEN:
       legs.append({'symbol': position_original_dto.get('short_put',{}).get('symbol'), 'side': 'sell_to_open'})
