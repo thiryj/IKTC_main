@@ -110,7 +110,7 @@ def get_valid_diagonal_put_spreads(short_strike: float,
   expirations = expirations if short_expiry is None else [expiry for expiry in expirations if expiry > short_expiry]
   exp_count = len(expirations)
   valid_positions = []
-  #print(f"expirations: {expirations}")
+  print(f"expirations: {expirations}")
   
   for i in range(5): #this is the short expiry outer loop.  5 means don't look at short strikes further than 5 expiries out from today
     short_put_expiration = expirations[i]
@@ -129,7 +129,7 @@ def get_valid_diagonal_put_spreads(short_strike: float,
     ]
     if not short_puts_data:
       continue
-    #print(f"short_puts_data[0]: {short_puts_data[0]}")
+    print(f"short_puts_data[0]: {short_puts_data[0]}")
     try:
       short_put_obj = Quote(**short_puts_data[0])
     except (TypeError, KeyError, ValidationError) as e:
