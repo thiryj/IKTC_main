@@ -358,7 +358,7 @@ def get_closed_trades(environment: str=server_config.ENV_SANDBOX):
     enriched_trades.append(trade_dict)
   
   # 3. Sort & Return
-  enriched_trades.sort(key=lambda x: x['CloseDate'] or dt.date.min, reverse=True)
+  enriched_trades.sort(key=lambda x: x['OpenDate'] or dt.date.min, reverse=True)
   
   return {
     'trades': enriched_trades,
