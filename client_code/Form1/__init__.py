@@ -64,7 +64,7 @@ class Form1(Form1Template):
     # Trade history grid
     #self.repeatingpanel_trade_history.items = anvil.server.call('get_closed_trades', 
     #                                                           self.dropdown_environment.selected_value)
-    self.repeatingpanel_trade_history.items = self.load_trade_history()
+    self.load_trade_history()
     
     # Manual Trade Entry Card (records trade history into db)
     self.dropdown_manual_transaction_type.items = config.POSITION_TYPES
@@ -81,7 +81,7 @@ class Form1(Form1Template):
     self.environment= self.dropdown_environment.selected_value # save to form global
     self.refresh_open_positions_grid(refresh_risk=False)
     #self.repeatingpanel_trade_history.items = anvil.server.call('get_closed_trades', self.environment)
-    self.repeatingpanel_trade_history.items = self.load_trade_history()
+    self.load_trade_history()
     profile_details = anvil.server.call('get_tradier_profile', environment=self.environment)
     if profile_details:
       account_number = profile_details['account_number']
@@ -97,7 +97,7 @@ class Form1(Form1Template):
     self.card_trade_history.visible = True
     #self.repeatingpanel_trade_history.items = anvil.server.call('get_closed_trades', 
     #                                                            self.dropdown_environment.selected_value)
-    self.repeatingpanel_trade_history.items = self.load_trade_history()
+    self.load_trade_history()
   
     # Update the button appearance to show which tab is active
     self.button_tab_open_positions.role = 'outlined-button'
