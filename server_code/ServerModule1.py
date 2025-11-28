@@ -320,11 +320,51 @@ def get_open_trades_with_risk(environment: str=server_config.ENV_SANDBOX,
     # get live quotes, and do the risk calculation.
     # 3. Return the new list of DTOs
   return enriched_trades_list
-  
+'''
 @anvil.server.callable
 def get_closed_trades(environment: str=server_config.ENV_SANDBOX):
   """Fetches all trades with a status of 'Closed'."""
   return app_tables.trades.search(Status='Closed', Account=environment)
+'''
+
+@anvil.server.callable
+def get_closed_trades(environment: str=server_config.ENV_SANDBOX):
+  closed_trades = app_tables.trades.search(Status='Closed', Account=environment)
+  enriched_trades = []
+  total_pl_sum = 0.0
+  rroc_sum = 0.0
+  rroc_count = 0
+
+  for trade in closed_trades:
+    trade_dict = dict(trade)
+    
+    # 1. Calc Stats (Days, Margin)
+    days = max(1, (trade['CloseDate'] - trade['OpenDate']).days) if trade['CloseDate'] and trade['OpenDate'] else 1
+    trans = app_tables.transactions.search(Trade=trade)
+    max_margin = max([t['ResultingMargin'] for t in trans if t['ResultingMargin'] is not None], default=0)
+    
+    # 2. Calc P/L & RROC
+    pl = trade['TotalPL'] or 0.0
+    total_pl_sum += pl
+    
+    if max_margin > 0:
+      daily_rroc = (pl / max_margin) / days
+      trade_dict['rroc'] = f"{daily_rroc:.2%}"
+      rroc_sum += daily_rroc
+      rroc_count += 1
+    else:
+      trade_dict['rroc'] = "0.00%"
+      
+    enriched_trades.append(trade_dict)
+  
+  # 3. Sort & Return
+  enriched_trades.sort(key=lambda x: x['CloseDate'] or dt.date.min, reverse=True)
+  
+  return {
+    'trades': enriched_trades,
+    'total_pl': total_pl_sum,
+    'avg_rroc': (rroc_sum / rroc_count) if rroc_count else 0.0
+  }
 
 @anvil.server.callable
 def submit_order(environment: str='SANDBOX', 

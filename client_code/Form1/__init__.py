@@ -62,8 +62,9 @@ class Form1(Form1Template):
     # Populate misc components
     self.dropdown_strategy_picker.items = [config.POSITION_TYPE_DIAGONAL, config.POSITION_TYPE_CSP]
     # Trade history grid
-    self.repeatingpanel_trade_history.items = anvil.server.call('get_closed_trades', 
-                                                               self.dropdown_environment.selected_value)
+    #self.repeatingpanel_trade_history.items = anvil.server.call('get_closed_trades', 
+    #                                                           self.dropdown_environment.selected_value)
+    self.repeatingpanel_trade_history.items = self.load_trade_history()
     
     # Manual Trade Entry Card (records trade history into db)
     self.dropdown_manual_transaction_type.items = config.POSITION_TYPES
@@ -79,7 +80,8 @@ class Form1(Form1Template):
     """This method is called when an item is selected"""
     self.environment= self.dropdown_environment.selected_value # save to form global
     self.refresh_open_positions_grid(refresh_risk=False)
-    self.repeatingpanel_trade_history.items = anvil.server.call('get_closed_trades', self.environment)
+    #self.repeatingpanel_trade_history.items = anvil.server.call('get_closed_trades', self.environment)
+    self.repeatingpanel_trade_history.items = self.load_trade_history()
     profile_details = anvil.server.call('get_tradier_profile', environment=self.environment)
     if profile_details:
       account_number = profile_details['account_number']
@@ -93,8 +95,9 @@ class Form1(Form1Template):
     # Hide the open positions card and show the history card
     self.card_open_positions.visible = False
     self.card_trade_history.visible = True
-    self.repeatingpanel_trade_history.items = anvil.server.call('get_closed_trades', 
-                                                                self.dropdown_environment.selected_value)
+    #self.repeatingpanel_trade_history.items = anvil.server.call('get_closed_trades', 
+    #                                                            self.dropdown_environment.selected_value)
+    self.repeatingpanel_trade_history.items = self.load_trade_history()
   
     # Update the button appearance to show which tab is active
     self.button_tab_open_positions.role = 'outlined-button'
@@ -840,4 +843,9 @@ class Form1(Form1Template):
   
       except Exception as e:
         alert(f"Error deleting trade: {e}")
-        
+
+  def load_trade_history(self):
+    data = anvil.server.call('get_closed_trades', self.environment)
+    self.repeatingpanel_trade_history.items = data['trades']
+    self.label_agg_pl.text = f"Total P/L: ${data['total_pl']:.2f}"
+    self.label_agg_rroc.text = f"Avg Daily RROC: {data['avg_rroc']:.2%}"
