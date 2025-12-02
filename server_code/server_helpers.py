@@ -634,7 +634,9 @@ def get_underlying_price_direct(tradier_client: "TradierAPI",
 
     # 3. Safely access the quote (quotes -> quote -> [0])
     # Use .get() with default values to prevent KeyErrors if the structure is missing
-    quote = data.get('quotes', {}).get('quote', [])
+    quotes = data.get('quotes', {})
+    print(f"quotes: {quotes}")
+    quote = quotes.get('quote', [])
     print(f"quote: {quote}")
     if not quote:
       print(f"No quote data returned for {symbol}.")
