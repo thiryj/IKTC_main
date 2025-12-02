@@ -56,6 +56,9 @@ def new_leg_builder(form_instance, selected_type: str, quantity: int=1):
       {'action': 'Buy to Close', 'type': 'Put', 'quantity': quantity},
       {'action': 'Sell to Open', 'type': 'Put', 'quantity': quantity}
     ]
+  else:  #no valid choice selected
+    
+    return
   if leg_definitions:
     form_instance.repeatingpanel_manual_legs.items = leg_definitions
     form_instance.repeatingpanel_manual_legs.visible = True

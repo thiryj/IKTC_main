@@ -132,7 +132,7 @@ components:
       - components:
         - layout_properties: {}
           name: textbox_symbol
-          properties: {text: IWM, visible: true}
+          properties: {text: '', visible: true}
           type: TextBox
         - layout_properties: {}
           name: dropdown_strategy_picker

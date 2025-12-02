@@ -33,8 +33,6 @@ class LiveSettings:
   def __setitem__(self, key, value):
     self._row[key] = value
 
-# In Form1 code
-
 def _flatten_trade_dto(self, nested_dto: str, quantity:int=1)->list:
   """
     Takes a single nested DiagonalPutSpread DTO (the list with 1 item for open and 2 items for roll)
@@ -83,3 +81,54 @@ def _flatten_trade_dto(self, nested_dto: str, quantity:int=1)->list:
     return second_legs_list + first_legs_list
   # Not a roll - return the first spread open
   return first_legs_list
+
+def handle_manual_qty_change(form_instance, **event_args):
+  """
+  Handles the custom event from a row.
+  If a Short leg quantity is changed, update the corresponding Long leg.
+  """
+  row_sender = event_args.get('row_item')
+  if not row_sender:
+    return
+
+  try:
+    new_qty = int(row_sender.textbox_manual_leg_quantity.text)
+  except (ValueError, TypeError):
+    return
+
+  source_action = row_sender.dropdown_manual_leg_action.selected_value
+
+  # Define the mapping
+  target_action = None
+  if source_action == config.ACTION_SELL_TO_OPEN:
+    target_action = config.ACTION_BUY_TO_OPEN
+  elif source_action == config.ACTION_BUY_TO_CLOSE:
+    target_action = config.ACTION_SELL_TO_CLOSE
+
+  # Apply to siblings
+  if target_action:
+    # We access the repeating panel via the passed form_instance
+    for row in form_instance.repeatingpanel_manual_legs.get_components():
+      if row is not row_sender:
+        if row.dropdown_manual_leg_action.selected_value == target_action:
+          row.textbox_manual_leg_quantity.text = new_qty
+
+def handle_manual_date_change(form_instance, **event_args):
+  """Syncs expiration dates between Short and Long legs."""
+  row_sender = event_args.get('row_item')
+  if not row_sender: return
+
+  new_date = row_sender.datepicker_manual_leg_expiration.date
+  source_action = row_sender.dropdown_manual_leg_action.selected_value
+
+  target_action = None
+  if source_action == config.ACTION_SELL_TO_OPEN:
+    target_action = config.ACTION_BUY_TO_OPEN
+  elif source_action == config.ACTION_BUY_TO_CLOSE:
+    target_action = config.ACTION_SELL_TO_CLOSE
+
+  if target_action:
+    for row in form_instance.repeatingpanel_manual_legs.get_components():
+      if row is not row_sender:
+        if row.dropdown_manual_leg_action.selected_value == target_action:
+          row.datepicker_manual_leg_expiration.date = new_date

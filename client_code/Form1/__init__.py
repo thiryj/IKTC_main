@@ -58,9 +58,19 @@ class Form1(Form1Template):
     self.repeatingpanel_open_positions.set_event_handler(
       'x-close-trade-requested', self.handle_close_trade_request
     )
-        
+
+    # Manual Entry card quantity changed event broadcast
+    self.repeatingpanel_manual_legs.set_event_handler(
+      'x-manual-qty-change', self.on_manual_qty_change
+    )
+    # Manual Entry card date changed event broadcast
+    self.repeatingpanel_manual_legs.set_event_handler(
+      'x-manual-date-change', self.on_manual_date_change
+    )
+          
     # Populate misc components
     self.dropdown_strategy_picker.items = [config.POSITION_TYPE_DIAGONAL, config.POSITION_TYPE_CSP]
+    self.textbox_symbol.text = self.my_settings.default_symbol
     # Trade history grid
     #self.repeatingpanel_trade_history.items = anvil.server.call('get_closed_trades', 
     #                                                           self.dropdown_environment.selected_value)
@@ -75,6 +85,15 @@ class Form1(Form1Template):
 
     # Log into default environment as displayed in the dropdown
     self.dropdown_environment_change()
+
+  # --- EVENT HANDLER WRAPPER METHODS ---
+  def on_manual_qty_change(self, **event_args):
+    """Delegates to client_helpers, passing 'self'"""
+    client_helpers.handle_manual_qty_change(self, **event_args)
+
+  def on_manual_date_change(self, **event_args):
+    """Delegates to client_helpers, passing 'self'"""
+    client_helpers.handle_manual_date_change(self, **event_args)
     
   def dropdown_environment_change(self, **event_args):
     """This method is called when an item is selected"""
@@ -473,6 +492,8 @@ class Form1(Form1Template):
     self.manual_entry_state = config.MANUAL_ENTRY_STATE_OPEN
     self.datepicker_manual_date.max_date=dt.date.today()
     self.datepicker_manual_date.date=dt.date.today()
+    self.dropdown_manual_transaction_type.selected_value=config.MANUAL_ENTRY_DEFAULT_POSITION_TYPE
+    self.dropdown_manual_transaction_type_change()
     self.dropdown_manual_transaction_type.visible=True
     self.textbox_manual_underlying.visible = True
     self.button_manual_delete_trade.visible = False
@@ -483,8 +504,13 @@ class Form1(Form1Template):
     """
     #manual_trade.manual_transaction_type_change(self, action=config.TRADE_ACTION_OPEN)
     selected_strategy = self.dropdown_manual_transaction_type.selected_value
-    manual_trade.new_leg_builder(self, selected_strategy, self.my_settings.default_qty)
-    self.button_save_manual_trade.enabled=True
+    if selected_strategy in config.POSITION_TYPES:
+      manual_trade.new_leg_builder(self, selected_strategy, self.my_settings.default_qty)
+      self.button_save_manual_trade.enabled=True
+    else:
+      self.reset_card_manual_trade()
+      self.dropdown_manual_transaction_type.visible = True
+      self.textbox_manual_underlying.visible = True
 
   def button_save_manual_trade_click(self, **event_args):
     # get common elements
@@ -849,3 +875,5 @@ class Form1(Form1Template):
     self.repeatingpanel_trade_history.items = data['trades']
     self.label_agg_pl.text = f"Total P/L: ${data['total_pl']:.2f}"
     self.label_agg_rroc.text = f"Avg Daily RROC: {data['avg_rroc']:.2%}"
+
+  

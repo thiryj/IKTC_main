@@ -32,4 +32,13 @@ class Form_ManualLegEntry(Form_ManualLegEntryTemplate):
       self.textbox_manual_leg_quantity.text = self.item.get('quantity')
       self.textbox_manual_leg_strike.text = self.item.get('strike')
       self.datepicker_manual_leg_expiration.date = self.item.get('expiration')
+
+  def textbox_manual_leg_quantity_change(self, **event_args):
+    """This method is called when the user presses Enter in this text box"""
+    self.parent.raise_event('x-manual-qty-change', row_item=self)
+
+  def datepicker_manual_leg_expiration_change(self, **event_args):
+    """This method is called when the selected date changes"""
+    self.parent.raise_event('x-manual-date-change', row_item=self)
+    
       

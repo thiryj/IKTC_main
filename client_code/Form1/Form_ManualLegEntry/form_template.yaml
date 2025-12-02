@@ -5,7 +5,8 @@ components:
     properties:
       items: []
     type: DropDown
-  - layout_properties: {col_xs: 3, row: YOSOIP, width_xs: 1}
+  - event_bindings: {change: textbox_manual_leg_quantity_change}
+    layout_properties: {col_xs: 3, row: YOSOIP, width_xs: 1}
     name: textbox_manual_leg_quantity
     properties: {text: Qty, tooltip: Qty, type: number}
     type: TextBox
@@ -18,7 +19,8 @@ components:
     name: textbox_manual_leg_strike
     properties: {tooltip: strike, type: number}
     type: TextBox
-  - layout_properties: {col_xs: 8, row: YOSOIP, width_xs: 3}
+  - event_bindings: {change: datepicker_manual_leg_expiration_change}
+    layout_properties: {col_xs: 8, row: YOSOIP, width_xs: 3}
     name: datepicker_manual_leg_expiration
     properties: {tooltip: expiry}
     type: DatePicker
