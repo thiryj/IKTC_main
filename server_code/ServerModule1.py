@@ -333,7 +333,7 @@ def get_closed_trades(environment: str=server_config.ENV_SANDBOX):
   
   # Portfolio level accumulators
   total_margin_days = 0.0
-  earliest_open_date = dt.date.today()
+  earliest_open_date = min((t['OpenDate'] for t in closed_trades), default=dt.date.today())
   has_trades = False
   
   for trade in closed_trades:
@@ -343,37 +343,46 @@ def get_closed_trades(environment: str=server_config.ENV_SANDBOX):
     #--Date data--
     open_date = trade['OpenDate'] or dt.date.today()
     close_date = trade['CloseDate'] or dt.date.today()
-
-    # Track earliest date for Portfolio Inception
-    if open_date < earliest_open_date:
-      earliest_open_date = open_date
+    dit = max(1, (close_date - open_date).days)
     
-    # 1. Calc Stats (Days, Margin)
-    days = max(1, (trade['CloseDate'] - trade['OpenDate']).days) if trade['CloseDate'] and trade['OpenDate'] else 1
+    # 1. Trade level max margin
     trans = app_tables.transactions.search(Trade=trade)
     max_margin = max([t['ResultingMargin'] for t in trans if t['ResultingMargin'] is not None], default=0)
     
     # 2. Calc P/L & RROC
     pl = trade['TotalPL'] or 0.0
     total_pl_sum += pl
-    
+
+    # Trade level RROC
     if max_margin > 0:
-      daily_rroc = (pl / max_margin) / days
-      trade_dict['rroc'] = f"{daily_rroc:.2%}"
-      rroc_sum += daily_rroc
-      rroc_count += 1
+      trade_daily_rroc = (pl / max_margin) / dit
+      trade_dict['rroc'] = f"{trade_daily_rroc:.2%}"
+      trade_rroc_sum += trade_daily_rroc
+      trade_count += 1
+
+      # Portfolio level margin-days
+      total_margin_days += (max_margin * dit)
     else:
       trade_dict['rroc'] = "0.00%"
-      
-    enriched_trades.append(trade_dict)
   
+    enriched_trades.append(trade_dict)
+
+  # Trade level rroc average
+  avg_trade_rroc = (trade_rroc_sum / trade_count) if trade_count else 0.0
+
+  # Portfolio level rroc performance
+  portfolio_daily_rroc = 0.0
+  if total_margin_days > 0:
+    portfolio_daily_rroc = total_pl_sum / total_margin_days
+
   # 3. Sort & Return
   enriched_trades.sort(key=lambda x: x['OpenDate'] or dt.date.min, reverse=True)
   
   return {
     'trades': enriched_trades,
     'total_pl': total_pl_sum,
-    'avg_rroc': (rroc_sum / rroc_count) if rroc_count else 0.0
+    'trade_rroc_avg': avg_trade_rroc,
+    'portfolio_rroc_cum': portfolio_daily_rroc
   }
 
 @anvil.server.callable

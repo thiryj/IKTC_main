@@ -528,12 +528,16 @@ components:
       type: Label
     - components:
       - layout_properties: {col_xs: 0, row: UDMAXS, width_xs: 3}
-        name: label_agg_rroc
-        properties: {}
-        type: Label
-      - layout_properties: {col_xs: 3, row: UDMAXS, width_xs: 3}
         name: label_agg_pl
         properties: {text: Agg P/L}
+        type: Label
+      - layout_properties: {col_xs: 2, row: UDMAXS, width_xs: 3}
+        name: label_trade_rroc_ave
+        properties: {}
+        type: Label
+      - layout_properties: {col_xs: 6, row: UDMAXS, width_xs: 3}
+        name: label_portfolio_rroc_cum
+        properties: {}
         type: Label
       layout_properties: {grid_position: 'OATPAP,ONRIOW'}
       name: grid_panel_4

@@ -874,6 +874,9 @@ class Form1(Form1Template):
     data = anvil.server.call('get_closed_trades', self.environment)
     self.repeatingpanel_trade_history.items = data['trades']
     self.label_agg_pl.text = f"Total P/L: ${data['total_pl']:.2f}"
-    self.label_agg_rroc.text = f"Avg Daily RROC: {data['avg_rroc']:.2%}"
+    self.label_trade_rroc_ave.text = f"Trade RROC Ave: {data['trade_rroc_avg']:.2%}"
+    self.label_portfolio_rroc_cum.text = f"Portfolio RROC Cum: {data['portfolio_rroc_cum']:.2%}"
+    
+    
 
   
