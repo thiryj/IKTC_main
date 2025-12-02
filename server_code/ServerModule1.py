@@ -63,7 +63,16 @@ def get_account_nickname(account_number_to_check):
 def get_underlying_price(environment: str, symbol: str) ->float:
   # get underlying price and thus short strike
   t, endpoint_url = server_helpers.get_tradier_client(environment)
-  underlying_price = server_helpers.get_underlying_price_direct(t, symbol)
+  underlying_quote = server_helpers.get_quote(t, symbol)
+  
+  # Extract price: Use 'last' or fallback to 'close' 
+  underlying_price = underlying_quote.get('last')
+  if underlying_price is None:
+    underlying_price = underlying_quote.get('close') 
+
+  if underlying_price is None:
+    raise ValueError(f"Price not available in API response for {symbol}")
+  #print(f"underlying_price: {underlying_price}")
   return underlying_price
 
 @anvil.server.callable
@@ -237,16 +246,28 @@ def get_open_trades_with_risk(environment: str=server_config.ENV_SANDBOX,
           # Get live underlying price
           underlying_symbol = trade['Underlying']
           underlying_price = get_underlying_price(environment, underlying_symbol)
-    
+          """
           # Short leg quote
-          short_occ = server_helpers.build_occ_symbol(
-            underlying=underlying_symbol,
-            expiration_date=current_short_leg['Expiration'],
-            option_type=current_short_leg['OptionType'],
-            strike=current_short_leg['Strike']
-          )
+          if trade['Underlying'] in config.INDEX_SYMBOLS:
+            # slower API call 
+            short_occ = server_helpers.lookup_option_symbol(
+              tradier_client,
+              trade['Underlying'],
+              current_short_leg['Expiration'],
+              current_short_leg['OptionType'],
+              current_short_leg['Strike']
+            )
+          else:
+            # offline faster version
+            short_occ = server_helpers.build_occ_symbol(
+              underlying=underlying_symbol,
+              expiration_date=current_short_leg['Expiration'],
+              option_type=current_short_leg['OptionType'],
+              strike=current_short_leg['Strike']
+            )
           # print(f"calling get_quote on: {occ_symbol}")
-          short_quote = server_helpers.get_quote(environment, short_occ)
+          short_quote = server_helpers.get_quote_direct(tradier_client, short_occ)
+          print(f"in refresh: short_quote is: {short_quote}")
 
           # Long Leg Quote (if exists)
           long_quote = None
@@ -257,7 +278,11 @@ def get_open_trades_with_risk(environment: str=server_config.ENV_SANDBOX,
               option_type=current_long_leg['OptionType'],
               strike=current_long_leg['Strike']
             )
-            long_quote = server_helpers.get_quote(environment, long_occ)
+            long_quote = server_helpers.get_quote_direct(tradier_client, long_occ)
+          """
+          # 3. Fetch Quotes for Both Legs
+          short_quote = server_helpers.fetch_leg_quote(tradier_client, trade['Underlying'], current_short_leg)
+          long_quote = server_helpers.fetch_leg_quote(tradier_client, trade['Underlying'], current_long_leg)  
 
           # D. Calculate Current P/L
           # Sum collected credit (per share)
@@ -265,8 +290,8 @@ def get_open_trades_with_risk(environment: str=server_config.ENV_SANDBOX,
 
           # Calculate Cost to Close (per share)
           # Short: Buy to close (Ask) | Long: Sell to close (Bid)
-          short_ask = short_quote.ask if short_quote else 0
-          long_bid = long_quote.bid if long_quote else 0
+          short_ask = short_quote.get('ask', 0) if short_quote else 0
+          long_bid = long_quote.get('bid', 0) if long_quote else 0
 
           # Cost to close is Debit (buying back short) - Credits (selling long)
           cost_to_close_per_share = short_ask - long_bid
@@ -287,7 +312,7 @@ def get_open_trades_with_risk(environment: str=server_config.ENV_SANDBOX,
             trade_dto['rroc'] = "0.00%"
 
           # do the assignment risk part
-          option_price = short_quote.bid # Use bid for risk calc
+          option_price = short_quote.get('bid') # Use bid for risk calc
           intrinsic_value = 0
           if current_short_leg['OptionType'] == server_config.OPTION_TYPE_PUT:
             intrinsic_value = max(0, short_strike_price - underlying_price)
@@ -398,8 +423,8 @@ def submit_order(environment: str='SANDBOX',
 
   #print(f"submit order: trade_dto_list: {trade_dto_list}")
   # submit order
-  trade_response = server_helpers.submit_diagonal_spread_order(environment,
-                                                               t, 
+  trade_response = server_helpers.submit_diagonal_spread_order(
+                                                              t, 
                                                               endpoint_url, 
                                                               underlying_symbol, 
                                                               quantity, 
@@ -652,11 +677,13 @@ def save_manual_trade(environment: str,
     return f"Error: {e}"
 
 @anvil.server.callable
-def validate_manual_legs(environment, legs_data_list):
+def validate_manual_legs(environment: str, legs_data_list):
   """
     Checks if all legs in a list are valid tradable options.
     Returns True if all are valid, or an error string if one fails.
     """
+  t, _ = server_helpers.get_tradier_client(environment)
+  
   for leg in legs_data_list:
     # Build the OCC symbol just like your risk function does
     occ_symbol = server_helpers.build_occ_symbol(
@@ -666,7 +693,7 @@ def validate_manual_legs(environment, legs_data_list):
       strike=leg['strike']
     )
 
-    quote = server_helpers.get_quote(environment, occ_symbol)
+    quote = server_helpers.get_quote(t, occ_symbol)
 
     if quote is None:
       return f"Invalid leg: {occ_symbol}"
@@ -690,6 +717,7 @@ def get_roll_package_dto(environment: str,
     }
     'new_spread_dto' is a nested dict with {meta..., 'short_put', 'long_put'}
     """
+  t, _ = server_helpers.get_tradier_client(environment)
   
   # --- 1. Get Live Quotes for CURRENT Active Legs ---
   short_leg_quote = None
@@ -721,8 +749,8 @@ def get_roll_package_dto(environment: str,
       strike=long_leg_db['Strike']
     )
 
-    short_leg_quote = server_helpers.get_quote(environment, short_occ)
-    long_leg_quote = server_helpers.get_quote(environment, long_occ)
+    short_leg_quote = server_helpers.get_quote(t, short_occ)
+    long_leg_quote = server_helpers.get_quote(t, long_occ)
 
     if not short_leg_quote or not long_leg_quote:
       raise Exception("Could not get live quotes for active legs.")
@@ -769,7 +797,9 @@ def get_roll_package_dto(environment: str,
                                                              max_roll_to_spread)
   
   #print(f"new spread is: {new_spread}")
-
+  if not new_spread_object or isinstance(new_spread_object, int):
+    print(f"No valid roll configuration found for {trade_row['Underlying']}")
+    return None
   # --- 4. Calculate Opening Credit & Build Opening Leg Dicts (FIXED) ---
   total_open_credit = new_spread_object.calculate_net_premium()
   #print(f"open credit of roll to: {total_open_credit}")
@@ -882,6 +912,8 @@ def delete_trade(trade_row):
 @anvil.server.callable
 def get_close_trade_dto(environment: str, trade_row: Row) -> Dict:
   """Calculates the closing trade package for an active position."""
+  t, _ = server_helpers.get_tradier_client(environment)
+  
   try:
     # 1. Get Active Legs from DB
     trade_transactions = app_tables.transactions.search(Trade=trade_row)
@@ -892,8 +924,8 @@ def get_close_trade_dto(environment: str, trade_row: Row) -> Dict:
     short_occ = server_helpers.build_occ_symbol(trade_row['Underlying'], short_leg_db['Expiration'], short_leg_db['OptionType'], short_leg_db['Strike'])
     long_occ = server_helpers.build_occ_symbol(trade_row['Underlying'], long_leg_db['Expiration'], long_leg_db['OptionType'], long_leg_db['Strike'])
 
-    short_quote = server_helpers.get_quote(environment, short_occ)
-    long_quote = server_helpers.get_quote(environment, long_occ)
+    short_quote = server_helpers.get_quote(t, short_occ)
+    long_quote = server_helpers.get_quote(t, long_occ)
 
     # 3. Build DTO (Position Object)
     current_spread = positions.DiagonalPutSpread(short_quote, long_quote)

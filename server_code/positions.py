@@ -11,11 +11,21 @@ import datetime
 class DiagonalPutSpread:    
   def __init__(self, short_put: Quote, long_put: Quote):
     """
-        Initializes a DiagonalPutSpread position from two option leg objects.
-        """
+        Initializes a DiagonalPutSpread position from two option leg objects OR dictionaries (and converts them).
+    """
+    # Helper to convert dict to Quote if necessary
+    def ensure_quote(item):
+      if isinstance(item, dict):
+        try:
+          return Quote(**item)
+        except Exception as e:
+          print(f"Error converting dict to Quote: {e}")
+          return item
+      return item
+      
     # Data (Attributes)
-    self.short_put = short_put
-    self.long_put = long_put
+    self.short_put = ensure_quote(short_put)
+    self.long_put = ensure_quote(long_put)
 
     # Behavior (Methods) that calculate properties from the data
     self.net_premium = self.calculate_net_premium()

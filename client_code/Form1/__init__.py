@@ -313,8 +313,8 @@ class Form1(Form1Template):
       # The 'to close' legs are the first two in the list
             
       # extract the legs from the list
-      closing_short = [p for p in current_roll_dto_list if p.get('action')==config.ACTION_BUY_TO_CLOSE][0]
-      closing_long = [p for p in current_roll_dto_list if p.get('action')==config.ACTION_SELL_TO_CLOSE][0]
+      #closing_short = [p for p in current_roll_dto_list if p.get('action')==config.ACTION_BUY_TO_CLOSE][0]
+      #closing_long = [p for p in current_roll_dto_list if p.get('action')==config.ACTION_SELL_TO_CLOSE][0]
       opening_short = [p for p in current_roll_dto_list if p.get('action')==config.ACTION_SELL_TO_OPEN][0]
       opening_long = [p for p in current_roll_dto_list if p.get('action')==config.ACTION_BUY_TO_OPEN][0]
         

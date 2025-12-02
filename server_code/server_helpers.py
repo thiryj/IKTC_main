@@ -50,20 +50,6 @@ def get_tradier_client(environment: str)->Tuple[TradierAPI, str]:
     default_account_id=account_id, 
     endpoint=endpoint_url)
   return t, endpoint_url
-
-def get_quote(environment: str, symbol: str) ->str:
-  # get full quote data for a single symbol
-  t, endpoint_url = get_tradier_client(environment)
-  try:
-    quote_list = t.get_quotes([symbol, "bogus"], greeks=False)
-    # note:  needed to send a fake symbol in because of a bug in the get_quotes endpoint
-    if quote_list:
-      return quote_list[0]
-    else:
-      return None
-  except Exception as e:
-    print(f"Validation failed for symbol {symbol}: {e}")
-    return None
     
 def get_near_term_expirations(tradier_client: TradierAPI, 
                               symbol: str, 
@@ -177,7 +163,6 @@ def get_valid_diagonal_put_spreads(short_strike: float,
   return valid_positions
   
 def submit_diagonal_spread_order(
-                                environment: str,
                                 tradier_client: TradierAPI,
                                 endpoint_url: str,
                                 underlying_symbol: str,
@@ -208,7 +193,7 @@ def submit_diagonal_spread_order(
   #print(f"endpoint_url: {endpoint_url}")
   api_url = urljoin(endpoint_url, path)
 
-  payload = build_multileg_payload(environment, underlying_symbol, quantity, trade_dto_list)
+  payload = build_multileg_payload(tradier_client, underlying_symbol, quantity, trade_dto_list)
 
   # override price if limit_price sent in
   if limit_price is not None:
@@ -236,7 +221,7 @@ def submit_diagonal_spread_order(
     return None
 
 def build_multileg_payload(
-  environment: str,
+  tradier_client: TradierAPI,
   underlying_symbol: str, 
   quantity: int,
   trade_dto_list: List # list of nested dicts with {spread meta..., 'short_put', 'long_put'}
@@ -284,9 +269,9 @@ def build_multileg_payload(
 
     #print(f"build multi leg: credit to open: {credit_to_open}")
     # get fresh cost to close
-    short_position_to_close_quote = get_quote(environment, short_position_to_close_symbol)
-    long_position_to_close_quote =  get_quote(environment, long_position_to_close_symbol)
-    cost_to_close = short_position_to_close_quote.ask - long_position_to_close_quote.bid
+    short_position_to_close_quote = get_quote(tradier_client, short_position_to_close_symbol)
+    long_position_to_close_quote =  get_quote(tradier_client, long_position_to_close_symbol)
+    cost_to_close = short_position_to_close_quote.get('ask',0) - long_position_to_close_quote.get('bid',0)
     roll_value = credit_to_open - cost_to_close
     #print(f"build multi leg: roll credit: {roll_value}")
     payload['price'] = f"{abs(roll_value):.2f}"
@@ -386,12 +371,14 @@ def find_new_diagonal_trade(environment: str='SANDBOX',
     #print(f"position to roll short symbol: {short_symbol}")
     short_strike = get_strike(short_symbol)
     short_expiry = get_expiration_date(short_symbol)
-    short_quote = t.get_quotes([short_symbol, "bogus"],greeks=False)[0]
+    short_quote = get_quote(t, short_symbol)
     long_symbol = position_to_roll.long_put.symbol
-    long_quote = t.get_quotes([long_symbol, "bogus"], greeks=False)[0]
-
+    long_quote = get_quote(t, long_symbol)
+    if not short_quote or not long_quote:
+      print(f"Could not fetch live quotes for roll positions: {short_symbol}, {long_symbol}")
+      return None
+      
     live_position_to_roll = positions.DiagonalPutSpread(short_quote, long_quote)
-    #cost_to_close = short_quote.ask = long_quote.bid
     cost_to_close = live_position_to_roll.calculate_cost_to_close()
 
   # get list of valid positions
@@ -413,8 +400,8 @@ def find_new_diagonal_trade(environment: str='SANDBOX',
     # positions must have a larger credit to open than the existing spread cost to close    
     valid_positions = [pos for pos in valid_positions if 
                        (pos.net_premium > 0.01 and #abs(cost_to_close) and 
-                        pos.short_put.expiration_date >= short_quote.expiration_date and
-                        pos.long_put.expiration_date != long_quote.expiration_date
+                        pos.short_put.expiration_date >= short_quote.get('expiration_date') and
+                        pos.long_put.expiration_date != long_quote.get('expiration_date')
                        )
                       ]
 
@@ -434,7 +421,7 @@ def find_new_diagonal_trade(environment: str='SANDBOX',
     )
   if not best_position:
     print("No good position identified")
-    return 1
+    return None
 
   print('To Open')
   best_position.print_leg_details()
@@ -605,10 +592,82 @@ def fetch_option_chain_direct(
     print(f"An unexpected error occurred during API call for {symbol} {expiration}: {e}")
     return []  # Return empty list on failure
 
-def get_underlying_price_direct(tradier_client: "TradierAPI",
-                                symbol: str) ->float:
+def get_quote(provider, symbol: str) -> dict:
   """
-    Bypasses the tradier_python model validation to get the 'last' price 
+  Fetches a quote directly from the Tradier API, bypassing the buggy library wrapper.
+  Args:
+      provider: Can be an environment string (e.g., 'SANDBOX') OR an authenticated TradierAPI client.
+      symbol: The symbol to fetch (Equity, Index, or OCC Option)
+  Returns:
+      dict: The quote data dictionary, or None if not found/error.
+  """
+  # 1. Resolve the Client
+  if isinstance(provider, str):
+    # If a string was passed, initialize the client here (Legacy support)
+    tradier_client, _ = get_tradier_client(provider)
+  else:
+    # Otherwise, assume it's an authenticated client object (Efficient)
+    tradier_client = provider
+
+  endpoint = '/v1/markets/quotes'
+  params = {'symbols': symbol, 'greeks': 'false'}
+
+  try:
+    # 2. Direct API Call
+    data = tradier_client.get(endpoint, params=params)
+
+    # 3. Validate Response Structure
+    if not isinstance(data, dict):
+      print(f"API call for {symbol} returned non-dictionary: {type(data)}")
+      return None
+
+    if 'errors' in data or 'error' in data:
+      # Use .get() to avoid crashing on structure mismatches
+      api_error = data.get('errors', data.get('error', 'Unknown API error'))
+      # Only print error if it's NOT just an unmatched symbol (which we handle via fallback)
+      if "unmatched" not in str(api_error).lower():
+        print(f"Tradier API returned an error for {symbol}: {api_error}")
+      return None
+
+    # 4. Parse 'quotes' -> 'quote'
+    # Tradier returns {'quote': {...}} for single, or {'quote': [{...}]} for multiple
+    quotes_container = data.get('quotes', {})
+    if not quotes_container:
+      return None
+
+    quote_data = quotes_container.get('quote')
+
+    # Handle List vs Dict inconsistency
+    if isinstance(quote_data, list) and quote_data:
+      quote = quote_data[0]
+    elif isinstance(quote_data, dict):
+      quote = quote_data
+    else:
+      # Quote is empty list or None
+      quote = None
+
+    # 5. SPX Fallback Logic
+    # If we got no data, and it's an SPX symbol (but not already SPXW), try SPXW
+    if not quote and symbol.startswith('SPX') and not symbol.startswith('SPXW'):
+      print(f"SPX symbol lookup failed for {symbol}. Retrying with SPXW fallback...")
+      alt_symbol = symbol.replace('SPX', 'SPXW', 1)
+      # Recursive call with the same client
+      return get_quote(tradier_client, alt_symbol)
+
+    if not quote:
+      # print(f"No quote data returned for {symbol}.") # Optional noise reduction
+      return None
+
+    return quote
+
+  except Exception as e:
+    print(f"Critical parsing error for {symbol}: {e}")
+    return None
+'''
+def get_quote_direct(tradier_client: "TradierAPI",
+                                symbol: str) ->Dict:
+  """
+    Bypasses the tradier_python model validation to get the quote 
     for both securities and indices.
   """
   
@@ -635,22 +694,13 @@ def get_underlying_price_direct(tradier_client: "TradierAPI",
     # 3. Safely access the quote (quotes -> quote -> [0])
     # Use .get() with default values to prevent KeyErrors if the structure is missing
     quotes = data.get('quotes', {})
-    print(f"quotes: {quotes}")
+    #print(f"quotes: {quotes}")
     quote = quotes.get('quote', [])
-    print(f"quote: {quote}")
+    #print(f"quote: {quote}")
     if not quote:
       print(f"No quote data returned for {symbol}.")
       return 0.0
-
-    # 4. Extract price: Use 'last' (Stock) or fallback to 'close' (Index)
-    underlying_price = quote.get('last')
-    if underlying_price is None:
-      underlying_price = quote.get('close') # Index prices are usually in 'close'
-
-    if underlying_price is None:
-      raise ValueError(f"Price not available in API response for {symbol}")
-
-    return float(underlying_price)
+    return quote
 
   except requests.exceptions.RequestException as e:
     print(f"Network error fetching quote for {symbol}: {e}")
@@ -659,3 +709,90 @@ def get_underlying_price_direct(tradier_client: "TradierAPI",
     # Catch errors from missing keys or failed float conversion
     print(f"Critical parsing error for {symbol}: {e}")
     return 0.0
+'''
+
+def lookup_option_symbol(tradier_client, underlying, expiration, option_type, strike):
+  """
+  Queries Tradier to find the correct OCC symbol for the given parameters.
+  Useful for indices (SPX vs SPXW) where the root symbol varies.
+  """
+  endpoint = '/v1/markets/options/lookup'
+
+  # 1. Format Parameters
+  if isinstance(expiration, dt.date):
+    exp_str = expiration.strftime('%Y-%m-%d')
+    # Suffix Date Format: YYMMDD
+    suffix_date = expiration.strftime('%y%m%d')
+  else:
+    exp_str = expiration
+    # Try to parse string to get YYMMDD, or assume user passed date obj usually
+    try:
+      d = dt.datetime.strptime(expiration, '%Y-%m-%d')
+      suffix_date = d.strftime('%y%m%d')
+    except:
+      suffix_date = ""
+
+  params = {
+    'underlying': underlying,
+    'expiration': exp_str,
+    'type': option_type.lower(), # API expects 'put' or 'call'
+    'strike': str(strike)
+  }
+
+  try:
+    # 2. Call API
+    response = tradier_client.get(endpoint, params=params)
+    # Debug print to confirm structure if needed
+    # print(f"Lookup response: {response}") 
+
+    # 3. Build Expected Suffix (e.g., 251231P04200000)
+    # This allows us to pick the right symbol from the list regardless of the Root
+    type_char = 'P' if option_type.lower() == 'put' else 'C'
+    strike_int = int(float(strike) * 1000)
+    strike_str = f"{strike_int:08d}"
+    expected_suffix = f"{suffix_date}{type_char}{strike_str}"
+
+    # 4. Parse Response: {'symbols': [{'rootSymbol': 'SPXW', 'options': [...]}]}
+    symbols_data = response.get('symbols', [])
+
+    # Handle case where it might be a single dict instead of list
+    if isinstance(symbols_data, dict):
+      symbols_data = [symbols_data]
+
+    for root_entry in symbols_data:
+      options_list = root_entry.get('options', [])
+      for symbol in options_list:
+        if symbol.endswith(expected_suffix):
+          return symbol
+
+    print(f"No matching symbol found in lookup for suffix {expected_suffix}")
+    return None
+
+  except Exception as e:
+    print(f"Error looking up option symbol: {e}")
+    return None
+
+  except Exception as e:
+    print(f"Error looking up option symbol: {e}")
+    return None
+
+def fetch_leg_quote(tradier_client, underlying, leg_row):
+  """Helper to resolve OCC symbol and fetch quote for any leg."""
+  if not leg_row: 
+    return None
+
+  if underlying in config.INDEX_SYMBOLS:
+    occ = lookup_option_symbol(
+      tradier_client, underlying, leg_row['Expiration'], 
+      leg_row['OptionType'], leg_row['Strike']
+    )
+  else:
+    occ = build_occ_symbol(
+      underlying, leg_row['Expiration'], 
+      leg_row['OptionType'], leg_row['Strike']
+    )
+
+  if not occ:
+    return None
+
+  return get_quote(tradier_client, occ)
