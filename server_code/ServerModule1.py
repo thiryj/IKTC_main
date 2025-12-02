@@ -483,6 +483,26 @@ def save_manual_trade(environment: str,
                       existing_trade_row=None):  #CLOSE or ROLL: exising Trade row.  OPEN: None
 
   print(f"Server saving to environment {environment}: {strategy}")
+  # --- 0. NEW: Safety Validation for Diagonals ---
+  if strategy == config.POSITION_TYPE_DIAGONAL:
+    try:
+      # Filter for opening legs
+      short_legs = [l for l in legs_data_list if l['action'] == config.ACTION_SELL_TO_OPEN]
+      long_legs = [l for l in legs_data_list if l['action'] == config.ACTION_BUY_TO_OPEN]
+
+      # If we have both (opening a new spread or rolling), check quantities
+      if short_legs and long_legs:
+        short_qty = short_legs[0]['quantity']
+        long_qty = long_legs[0]['quantity']
+
+        if short_qty != long_qty:
+          print(f"WARNING: Mismatched quantities detected (Short: {short_qty}, Long: {long_qty}). Normalizing to Short qty.")
+          # Force the long leg to match the short leg
+          long_legs[0]['quantity'] = short_qty
+          # Update the main list reference if needed (dictionaries are mutable, so this should stick)
+
+    except Exception as e:
+      print(f"Validation warning: {e}")
   underlying_symbol = legs_data_list[0]['underlying_symbol']  # can use any leg as they should all be the same underlying
   trade_row = None
   resulting_margin = 0.0
