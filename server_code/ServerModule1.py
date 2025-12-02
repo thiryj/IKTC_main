@@ -320,23 +320,33 @@ def get_open_trades_with_risk(environment: str=server_config.ENV_SANDBOX,
     # get live quotes, and do the risk calculation.
     # 3. Return the new list of DTOs
   return enriched_trades_list
-'''
-@anvil.server.callable
-def get_closed_trades(environment: str=server_config.ENV_SANDBOX):
-  """Fetches all trades with a status of 'Closed'."""
-  return app_tables.trades.search(Status='Closed', Account=environment)
-'''
 
 @anvil.server.callable
 def get_closed_trades(environment: str=server_config.ENV_SANDBOX):
   closed_trades = app_tables.trades.search(Status='Closed', Account=environment)
   enriched_trades = []
+  
+  # Trade level accumulators
   total_pl_sum = 0.0
-  rroc_sum = 0.0
-  rroc_count = 0
-
+  trade_rroc_sum = 0.0
+  trade_count = 0
+  
+  # Portfolio level accumulators
+  total_margin_days = 0.0
+  earliest_open_date = dt.date.today()
+  has_trades = False
+  
   for trade in closed_trades:
+    has_trades = True
     trade_dict = dict(trade)
+
+    #--Date data--
+    open_date = trade['OpenDate'] or dt.date.today()
+    close_date = trade['CloseDate'] or dt.date.today()
+
+    # Track earliest date for Portfolio Inception
+    if open_date < earliest_open_date:
+      earliest_open_date = open_date
     
     # 1. Calc Stats (Days, Margin)
     days = max(1, (trade['CloseDate'] - trade['OpenDate']).days) if trade['CloseDate'] and trade['OpenDate'] else 1
