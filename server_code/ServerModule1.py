@@ -791,50 +791,60 @@ def get_roll_package_dto(environment: str,
   closing_legs_list = [closing_leg_1, closing_leg_2]
 
   # --- 3.  Find NEW Legs ---
-  # call find_new_diagonal_trade with the closing legs as the third arg
-  # I want to control new spread width expansion to my_settings.margin_expansion_limit.  this is an integer that counts the number of strikes
-  # only look at new spreads that have strike widths equal to or less than the original strike width + margin expansion limit
-  original_tick_width = 0
-  try:
-    # get strike list 
-    all_strikes = server_helpers.fetch_strikes_direct(
-      t, 
+  # can be the old diagonal logic or the new vertical spread logic (better)
+  use_vertical_roll = True #base this on the spread type in the future
+
+  if use_vertical_roll:
+    new_spread_object = server_helpers.find_vertical_roll(
+      environment,
       trade_row['Underlying'],
-      long_leg_db['Expiration']
+      current_spread
     )
-    if all_strikes:
-      s_strike = float(short_leg_db['Strike'])
-      l_strike = float(long_leg_db['Strike'])
-      try:
-        s_idx = next(i for i, v in enumerate(all_strikes) if abs(v - s_strike) < 0.01)
-        l_idx = next(i for i, v in enumerate(all_strikes) if abs(v - l_strike) < 0.01)
-
-        # The difference in index IS the width in "ticks"
-        original_tick_width = abs(l_idx - s_idx)
-        print(f"Original Width: {original_tick_width} ticks ({s_strike}->{l_strike})")
-
-      except StopIteration:
-        print(f"Warning: One of the strikes ({s_strike}, {l_strike}) not found in official strike list.")
-        # Fallback: Approximate if strikes are missing (e.g. delisted)
-        # But usually, if we hold the position, the strike exists.
-        pass
-  except Exception as e:
-    print(f"Error calc tick width: {e}")
-
-  limit_ticks = int(margin_expansion_limit) # margin expansion limit counts the number of min price ticks
-  max_search_width = max(1, original_tick_width + limit_ticks)
+  else:
+    # call find_new_diagonal_trade with the closing legs as the third arg
+    # I want to control new spread width expansion to my_settings.margin_expansion_limit.  this is an integer that counts the number of strikes
+    # only look at new spreads that have strike widths equal to or less than the original strike width + margin expansion limit
+    original_tick_width = 0
+    try:
+      # get strike list 
+      all_strikes = server_helpers.fetch_strikes_direct(
+        t, 
+        trade_row['Underlying'],
+        long_leg_db['Expiration']
+      )
+      if all_strikes:
+        s_strike = float(short_leg_db['Strike'])
+        l_strike = float(long_leg_db['Strike'])
+        try:
+          s_idx = next(i for i, v in enumerate(all_strikes) if abs(v - s_strike) < 0.01)
+          l_idx = next(i for i, v in enumerate(all_strikes) if abs(v - l_strike) < 0.01)
   
-  #current_spread_reference_margin = server_helpers.calculate_reference_margin(trade_row, short_leg_db['Strike'], long_leg_db['Strike'])
-  #max_roll_to_margin = current_spread_reference_margin + margin_expansion_limit * short_leg_db['Quantity'] * config.DEFAULT_MULTIPLIER
-  # convert roll to margin position dollars into roll to spread width
-  #max_roll_to_spread = math.ceil(max_roll_to_margin / (short_leg_db['Quantity'] * config.DEFAULT_MULTIPLIER))
-  #print(f" current_spread_reference_margin: {current_spread_reference_margin}")
-  #print(f"searching for roll to spreads up to: {max_roll_ticks} strikes (not dollars) wide")
+          # The difference in index IS the width in "ticks"
+          original_tick_width = abs(l_idx - s_idx)
+          print(f"Original Width: {original_tick_width} ticks ({s_strike}->{l_strike})")
   
-  new_spread_object = server_helpers.find_new_diagonal_trade(t, 
-                                                             trade_row['Underlying'], 
-                                                             current_spread, 
-                                                             max_search_width)
+        except StopIteration:
+          print(f"Warning: One of the strikes ({s_strike}, {l_strike}) not found in official strike list.")
+          # Fallback: Approximate if strikes are missing (e.g. delisted)
+          # But usually, if we hold the position, the strike exists.
+          pass
+    except Exception as e:
+      print(f"Error calc tick width: {e}")
+  
+    limit_ticks = int(margin_expansion_limit) # margin expansion limit counts the number of min price ticks
+    max_search_width = max(1, original_tick_width + limit_ticks)
+    
+    #current_spread_reference_margin = server_helpers.calculate_reference_margin(trade_row, short_leg_db['Strike'], long_leg_db['Strike'])
+    #max_roll_to_margin = current_spread_reference_margin + margin_expansion_limit * short_leg_db['Quantity'] * config.DEFAULT_MULTIPLIER
+    # convert roll to margin position dollars into roll to spread width
+    #max_roll_to_spread = math.ceil(max_roll_to_margin / (short_leg_db['Quantity'] * config.DEFAULT_MULTIPLIER))
+    #print(f" current_spread_reference_margin: {current_spread_reference_margin}")
+    #print(f"searching for roll to spreads up to: {max_roll_ticks} strikes (not dollars) wide")
+    
+    new_spread_object = server_helpers.find_new_diagonal_trade(t, 
+                                                              trade_row['Underlying'], 
+                                                              current_spread, 
+                                                              max_search_width)
   
   #print(f"new spread is: {new_spread}")
   if not new_spread_object or isinstance(new_spread_object, int):
