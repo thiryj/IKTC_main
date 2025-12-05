@@ -75,13 +75,19 @@ REFRESH_TIMER_INTERVAL = 3600
 # data structs:
 """
 trade row in open positions
-{
+trade_dto = {
       'trade_row': trade,
       'Underlying': trade['Underlying'],
       'Strategy': trade['Strategy'],
+      'Quantity': None,
       'OpenDate': trade['OpenDate'],
       'extrinsic_value': None, # Placeholder
-      'is_at_risk': False       # Placeholder
+      'is_at_risk': False,       # Placeholder
+      'short_strike': None,
+      'long_strike': None,
+      'short_expiry': None,
+      'rroc': "N/A",
+      'is_harvestable': False
     }
 
 self.trade_dto: Dict

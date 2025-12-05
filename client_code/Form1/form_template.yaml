@@ -87,6 +87,16 @@ components:
         name: checkbox_use_max_qty
         properties: {text: ''}
         type: CheckBox
+      - layout_properties: {col_xs: 4, row: JWQWNJ, width_xs: 2}
+        name: label_21
+        properties: {text: Def. Target RROC}
+        type: Label
+      - data_bindings:
+        - {code: 'self.my_settings[''default_target_rroc'']', property: text, writeback: true}
+        layout_properties: {col_xs: 6, row: JWQWNJ, width_xs: 2}
+        name: textbox_settings_default_target_rroc
+        properties: {text: 'self.my_settings[''default_target_rroc'']', type: number}
+        type: TextBox
       - layout_properties: {col_xs: 0, row: HHHEZR, width_xs: 2}
         name: label_15
         properties: {text: Refresh Timer On}
@@ -478,9 +488,17 @@ components:
         name: label_7
         properties: {bold: true, text: Strategy}
         type: Label
+      - layout_properties: {grid_position: 'YYPOQI,XJHCOA'}
+        name: label_20
+        properties: {bold: true, text: Qty}
+        type: Label
       - layout_properties: {grid_position: 'YYPOQI,TLLPHO'}
         name: label_18
         properties: {bold: true, text: RROC}
+        type: Label
+      - layout_properties: {grid_position: 'YYPOQI,ALXENL'}
+        name: label_22
+        properties: {bold: true, text: Harvest Price}
         type: Label
       - layout_properties: {grid_position: 'YYPOQI,PPOLQI'}
         name: label_19
@@ -553,6 +571,7 @@ components:
         columns:
         - {data_key: Underlying, id: VLVEVX, title: Underlying}
         - {data_key: Strategy, id: XDNIRW, title: Strategy}
+        - {data_key: Quantity, id: ROMWEO, title: Qty}
         - {data_key: OpenDate, id: XTBLRO, title: OpenDate}
         - {data_key: CloseDate, id: QXSJXY, title: CloseDate}
         - {data_key: TotalPL, id: XDVKMG, title: TotalPL}

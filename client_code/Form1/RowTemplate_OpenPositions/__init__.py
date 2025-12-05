@@ -15,6 +15,8 @@ class RowTemplate_OpenPositions(RowTemplate_OpenPositionsTemplate):
       #print(f"short_expiry is {self.item.get('short_expiry')}")
       self.label_underlying.text = f"{self.item['Underlying']} {self.item.get('short_strike')}/{self.item.get('long_strike')}"
       self.label_strategy.text = self.item['Strategy']
+      self.label_open_qty.text = self.item['Quantity']
+      self.label_open_harvest_price.text = self.item['harvest_price']
       if self.item['OpenDate']:
         se = self.item.get('short_expiry')
         se_str = f"{se:%d-%b}" if se else "-"

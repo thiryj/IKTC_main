@@ -175,16 +175,19 @@ def get_open_trades_with_risk(environment: str=server_config.ENV_SANDBOX,
 
   #NOTE:  this only works for 2 leg spreads - need different logic for CSP or covered calls
   open_trades = app_tables.trades.search(Status='Open', Account=environment)
-  print(f"Found {len(open_trades)} open trades for {environment}")
-  enriched_trades_list = []
-
+  #print(f"Found {len(open_trades)} open trades for {environment}")
   tradier_client, endpoint_url = server_helpers.get_tradier_client(environment)
 
+  settings = app_tables.settings.get()
+  target_daily_rroc = settings['default_target_rroc'] if settings and settings['default_target_rroc'] else 0.001
+  enriched_trades_list = []
+  
   for trade in open_trades:
     trade_dto = {
       'trade_row': trade,
       'Underlying': trade['Underlying'],
       'Strategy': trade['Strategy'],
+      'Quantity': None,
       'OpenDate': trade['OpenDate'],
       'extrinsic_value': None, # Placeholder
       'is_at_risk': False,       # Placeholder
@@ -192,6 +195,7 @@ def get_open_trades_with_risk(environment: str=server_config.ENV_SANDBOX,
       'long_strike': None,
       'short_expiry': None,
       'rroc': "N/A",
+      'harvest_price': "N/A",
       'is_harvestable': False
     }
     
@@ -226,6 +230,8 @@ def get_open_trades_with_risk(environment: str=server_config.ENV_SANDBOX,
           print("missing short leg for the spread or CSP")
           continue
         #print(f"current_short_leg is: {current_short_leg}")
+        quantity = current_short_leg['Quantity']
+        trade_dto['Quantity'] = quantity
         short_strike_price = current_short_leg['Strike']
         trade_dto['short_strike'] = current_short_leg['Strike']
         trade_dto['short_expiry'] = current_short_leg['Expiration']
@@ -298,7 +304,7 @@ def get_open_trades_with_risk(environment: str=server_config.ENV_SANDBOX,
 
           # Net P/L Dollar Amount
           # (Total Credit - Cost to Close) * Quantity * 100
-          quantity = current_short_leg['Quantity']
+
           current_pl_dollars = (total_credit_per_share - cost_to_close_per_share) * quantity * config.DEFAULT_MULTIPLIER
 
           # E. Final RROC Calculation
@@ -308,6 +314,14 @@ def get_open_trades_with_risk(environment: str=server_config.ENV_SANDBOX,
             trade_dto['rroc'] = f"{daily_rroc:.2%}" # Format as percentage
             # flag if ready to harvest
             trade_dto['is_harvestable'] = True if daily_rroc >= config.DEFAULT_RROC_HARVEST_TARGET else False
+
+            # Target Profit = Target Rate * Margin * Days
+            target_profit_total = target_daily_rroc * latest_margin * days_in_trade
+            target_profit_per_share = target_profit_total / (quantity * config.DEFAULT_MULTIPLIER)
+
+            # Harvest Price = Credit Received - Target Profit
+            harvest_price = total_credit_per_share - target_profit_per_share
+            trade_dto['harvest_price'] = f"{harvest_price:.2f}"
           else:
             trade_dto['rroc'] = "0.00%"
 
@@ -369,6 +383,17 @@ def get_closed_trades(environment: str=server_config.ENV_SANDBOX):
     # 1. Trade level max margin
     trans = app_tables.transactions.search(Trade=trade)
     max_margin = max([t['ResultingMargin'] for t in trans if t['ResultingMargin'] is not None], default=0)
+
+    # get qty
+    qty = 0
+    if trans:
+      trade_legs = app_tables.legs.search(Transaction=q.any_of(*trans))
+      for leg in trade_legs:
+        # We assume the quantity of the 'Open' leg represents the trade size
+        if leg['Action'] in server_config.OPEN_ACTIONS:
+          qty = leg['Quantity']
+          break
+    trade_dict['Quantity'] = qty
     
     # 2. Calc P/L & RROC
     pl = trade['TotalPL'] or 0.0

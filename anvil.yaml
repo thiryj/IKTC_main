@@ -48,6 +48,9 @@ db_schema:
     - admin_ui: {order: 5, width: 200}
       name: allow_diagonals
       type: bool
+    - admin_ui: {order: 6, width: 200}
+      name: default_target_rroc
+      type: number
     server: full
     title: Settings
   trades:

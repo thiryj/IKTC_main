@@ -71,9 +71,8 @@ class Form1(Form1Template):
     # Populate misc components
     self.dropdown_strategy_picker.items = [config.POSITION_TYPE_DIAGONAL, config.POSITION_TYPE_CSP]
     self.textbox_symbol.text = self.my_settings.default_symbol
+    
     # Trade history grid
-    #self.repeatingpanel_trade_history.items = anvil.server.call('get_closed_trades', 
-    #                                                           self.dropdown_environment.selected_value)
     self.load_trade_history()
     
     # Manual Trade Entry Card (records trade history into db)
