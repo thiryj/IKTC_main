@@ -306,7 +306,7 @@ class Form1(Form1Template):
         # 3. Store the 4-leg DTO list. We'll need this when we submit.
       current_roll_dto_list = roll_package['legs_to_populate']
       self.trade_dto_list = [roll_package.get('new_spread_dto'), roll_package.get('closing_spread_dto')]
-      print(f"handle_roll_trade_request: self.trade_dto_list:{self.trade_dto_list}")
+      #print(f"handle_roll_trade_request: self.trade_dto_list:{self.trade_dto_list}")
   
       # 4. Populate the Trade Ticket UI.
       #    We will display the two *new* legs (legs 3 and 4)
