@@ -868,3 +868,115 @@ def fetch_strikes_direct(tradier_client, symbol, expiration):
   except Exception as e:
     print(f"Error fetching strikes for {symbol}: {e}")
     return []
+
+# In server_code/server_helpers.py
+
+def find_vertical_roll(environment, 
+                       underlying_symbol, 
+                       current_position: positions.DiagonalPutSpread, 
+                       margin_expansion_limit_ticks: int = 0):
+  """
+  Finds the best 'Roll Out and Down' candidate based on RROC.
+  1. Searches expirations > current.
+  2. Searches Short Strikes < current (Roll Down).
+  3. Evaluates various spread widths (allowing expansion if RROC justifies it).
+  4. Selects the package with the highest Roll RROC (Net Premium / Margin / Days).
+     Accepts debits if they yield the best relative score.
+  """
+  t, _ = get_tradier_client(environment)
+
+  # 1. Analyze Current Position
+  current_short = current_position.short_put
+  current_long = current_position.long_put
+  cost_to_close = current_position.calculate_cost_to_close()
+
+  # Calculate Old Width (Dollars) to set a baseline for search
+  old_width_val = current_short.strike - current_long.strike
+
+  print(f"Scanning Vertical Roll Down for {underlying_symbol}. Cost to Close: ${cost_to_close:.2f}")
+
+  # 2. Get Candidates (Roll OUT)
+  expirations = get_near_term_expirations(t, underlying_symbol, max_days_out=server_config.MAX_DTE)
+  valid_expirations = [e for e in expirations if e > current_short.expiration_date]
+
+  valid_rolls = []
+  today = dt.date.today()
+
+  for exp in valid_expirations:
+    # Fetch Chain
+    chain = fetch_option_chain_direct(t, underlying_symbol, exp)
+    if not chain: continue
+
+    # Filter Puts & Sort High to Low
+    puts = [o for o in chain if o['option_type'] == 'put']
+    puts.sort(key=lambda x: x['strike'], reverse=True)
+
+    # 3. Filter Short Candidates (Roll DOWN)
+    # Strictly LOWER than current strike
+    short_candidates = [p for p in puts if p['strike'] < current_short.strike]
+
+    for short_opt in short_candidates:
+      short_strike = short_opt['strike']
+
+      # 4. Find Matching Longs (Verticals)
+      # We allow widths from [Old Width] up to [Old Width + Expansion Limit]
+      # (approximated, or we just let the RROC sort filter out crazy wide spreads)
+
+      # Iterate through puts LOWER than the new short
+      long_candidates = [p for p in puts if p['strike'] < short_strike]
+
+      for long_opt in long_candidates:
+        long_strike = long_opt['strike']
+        width = short_strike - long_strike
+
+        # Optimization: Don't check massive spreads that blow up margin
+        # Limit to e.g. 2x old width or similar heuristic if speed is needed.
+        # For now, we check them all, the math will penalize them.
+
+        try:
+          # Calculate Metrics WITHOUT full object creation overhead first
+          new_credit_to_open = short_opt['bid'] - long_opt['ask']
+          net_roll_price = new_credit_to_open - cost_to_close # (+)Credit / (-)Debit
+
+          new_margin = width * 100
+
+          days_to_exp = (exp - today).days
+          if days_to_exp < 1: days_to_exp = 1
+
+          # Metric: Roll RROC
+          # (Net Price / Margin) / Days
+          # If Net Price is negative (Debit), this score is negative (bad), which is correct.
+          roll_rroc = (net_roll_price / new_margin) / days_to_exp
+
+          # Store Candidate
+          valid_rolls.append({
+            'short_leg': short_opt,
+            'long_leg': long_opt,
+            'net_roll_price': net_roll_price,
+            'new_margin': new_margin,
+            'rroc': roll_rroc,
+            'width': width
+          })
+
+        except Exception as e:
+          continue
+
+  # 5. Select Best Candidate
+  if not valid_rolls:
+    print("No valid roll candidates found.")
+    return None
+
+  # Sort by RROC descending (Highest positive is best, least negative is fallback)
+  best_candidate = max(valid_rolls, key=lambda x: x['rroc'])
+
+  print(f"Best Roll Found: Short {best_candidate['short_leg']['strike']} / Long {best_candidate['long_leg']['strike']}")
+  print(f"Net Price: {best_candidate['net_roll_price']:.2f}, RROC: {best_candidate['rroc']:.2%}")
+
+  # 6. Reconstruct Objects for Return
+  try:
+    new_short_obj = Quote(**best_candidate['short_leg'])
+    new_long_obj = Quote(**best_candidate['long_leg'])
+    return positions.DiagonalPutSpread(new_short_obj, new_long_obj)
+  except Exception as e:
+    print(f"Error building best position object: {e}")
+    return None
