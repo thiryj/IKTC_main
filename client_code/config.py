@@ -22,11 +22,12 @@ DEFAULT_SYMBOL = 'SPX'
 INDEX_SYMBOLS = ['SPX', 'NDX', 'RUT', 'VIX']
 DEFAULT_QUANTITY = 1
 DEFAULT_MULTIPLIER = 100
-DEFAULT_RROC_HARVEST_TARGET = 0.02
+DEFAULT_RROC_HARVEST_TARGET = 0.02   # 2% return on capital per day
 
 # Logic defaults
 DAYS_TO_NOT_OPEN = (4,)  # data shows don't open bullish positions on Friday because prices are statistically higher 
 VERTICAL_SPREADS_ONLY = False
+ROLL_EXPIRATION_EXTENSION_LIMIT = 5    #number of valid expirations from today to consider for rolling
 
 # Flags
 TRADE_ONE = True

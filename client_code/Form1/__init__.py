@@ -140,10 +140,11 @@ class Form1(Form1Template):
       return
     self.label_symbol.text = symbol
     self.label_quote_status.text = "Getting underlying price..."
-    underlying_price = anvil.server.call('get_underlying_price', self.environment, symbol) 
+    underlying_price = anvil.server.call('get_price', self.environment, symbol) 
     if underlying_price is None:
       alert("unable to get underlying price")
-    self.label_underlying_price.text = f"{underlying_price:.2f}"
+    else:
+      self.label_underlying_price.text = f"{underlying_price:.2f}"
     self.label_trade_ticket_title.text = f"{self.label_trade_ticket_title.text} - Open {self.dropdown_strategy_picker.selected_value}"
     self.trade_ticket_state = config.TRADE_TICKET_STATE_OPEN
     
@@ -277,10 +278,11 @@ class Form1(Form1Template):
     print(f"Handling roll request for trade: {trade['Underlying']} {trade['Strategy']}")
     try:      
       self.label_symbol.text = trade['Underlying']  
-      underlying_price = anvil.server.call('get_underlying_price', self.environment, self.label_symbol.text) 
+      underlying_price = anvil.server.call('get_price', self.environment, self.label_symbol.text) 
       if underlying_price is None:
         alert("unable to get underlying price")
-  
+      else:
+        self.label_underlying_price.text = f"{underlying_price:.2f}"
       # 2. Call the server to get the 4-leg package
       self.label_quote_status.text = "Calculating best roll..."
       # roll_package is a dict with 3 items
