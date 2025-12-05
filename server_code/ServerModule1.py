@@ -767,6 +767,16 @@ def get_roll_package_dto(environment: str,
   except Exception as e:
     raise Exception(f"Error finding active legs: {e}")
 
+  # --- NEW: Calculate Total Original Credit ---
+  # Sum of all credits collected so far (Open + previous Rolls)
+  # We use this to determine the "10% Pain Threshold"
+  trade_transactions = app_tables.transactions.search(Trade=trade_row)
+  original_credit = sum(
+    t['CreditDebit'] 
+    for t in trade_transactions 
+    if t['CreditDebit'] is not None
+  )
+  
     # --- 2. Calculate Closing Cost & Build Closing Leg Dicts ---
   current_spread = positions.DiagonalPutSpread(short_leg_quote, long_leg_quote)
   closing_spread_dto = current_spread.get_dto()
@@ -795,10 +805,13 @@ def get_roll_package_dto(environment: str,
   use_vertical_roll = True #base this on the spread type in the future
 
   if use_vertical_roll:
+    limit_ticks = int(margin_expansion_limit)
     new_spread_object = server_helpers.find_vertical_roll(
       environment,
       trade_row['Underlying'],
-      current_spread
+      current_spread,
+      original_credit=original_credit,
+      margin_expansion_limit_ticks=limit_ticks
     )
   else:
     # call find_new_diagonal_trade with the closing legs as the third arg

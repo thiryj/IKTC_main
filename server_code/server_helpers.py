@@ -16,6 +16,7 @@ import datetime as dt
 from pydantic_core import ValidationError
 from tradier_python import TradierAPI
 from tradier_python.models import Quote
+from itertools import groupby
 
 # Private libs
 import server_config
@@ -869,19 +870,17 @@ def fetch_strikes_direct(tradier_client, symbol, expiration):
     print(f"Error fetching strikes for {symbol}: {e}")
     return []
 
-# In server_code/server_helpers.py
-
 def find_vertical_roll(environment, 
                        underlying_symbol, 
                        current_position: positions.DiagonalPutSpread, 
+                       original_credit: float = 0.0,
                        margin_expansion_limit_ticks: int = 0):
   """
-  Finds the best 'Roll Out and Down' candidate based on RROC.
-  1. Searches expirations > current.
-  2. Searches Short Strikes < current (Roll Down).
-  3. Evaluates various spread widths (allowing expansion if RROC justifies it).
-  4. Selects the package with the highest Roll RROC (Net Premium / Margin / Days).
-     Accepts debits if they yield the best relative score.
+  Finds the best 'Roll Out and Down' candidate with Time Priority.
+  
+  Selection Hierarchy:
+  1. Priority: Nearest Expiration that offers a "Safe" trade (No Margin Exp, Debit < 10% credit).
+  2. Fallback: If no Safe trade exists in any expiration, consider Expanded Margin or Higher Debits.
   """
   t, _ = get_tradier_client(environment)
 
@@ -889,11 +888,13 @@ def find_vertical_roll(environment,
   current_short = current_position.short_put
   current_long = current_position.long_put
   cost_to_close = current_position.calculate_cost_to_close()
-
-  # Calculate Old Width (Dollars) to set a baseline for search
   old_width_val = current_short.strike - current_long.strike
 
+  # Calculate Debit Limit (10% of Original Credit)
+  debit_limit = -0.10 * abs(original_credit)
+
   print(f"Scanning Vertical Roll Down for {underlying_symbol}. Cost to Close: ${cost_to_close:.2f}")
+  print(f"Debit Limit: ${debit_limit:.2f} (Trades worse than this are fallback only)")
 
   # 2. Get Candidates (Roll OUT)
   expirations = get_near_term_expirations(t, underlying_symbol, max_days_out=server_config.MAX_DTE)
@@ -903,55 +904,41 @@ def find_vertical_roll(environment,
   today = dt.date.today()
 
   for exp in valid_expirations:
-    # Fetch Chain
     chain = fetch_option_chain_direct(t, underlying_symbol, exp)
     if not chain: continue
 
-    # Filter Puts & Sort High to Low
     puts = [o for o in chain if o['option_type'] == 'put']
     puts.sort(key=lambda x: x['strike'], reverse=True)
 
-    # 3. Filter Short Candidates (Roll DOWN)
-    # Strictly LOWER than current strike
     short_candidates = [p for p in puts if p['strike'] < current_short.strike]
 
     for short_opt in short_candidates:
       short_strike = short_opt['strike']
-
-      # 4. Find Matching Longs (Verticals)
-      # We allow widths from [Old Width] up to [Old Width + Expansion Limit]
-      # (approximated, or we just let the RROC sort filter out crazy wide spreads)
-
-      # Iterate through puts LOWER than the new short
       long_candidates = [p for p in puts if p['strike'] < short_strike]
 
       for long_opt in long_candidates:
         long_strike = long_opt['strike']
         width = short_strike - long_strike
 
-        # Optimization: Don't check massive spreads that blow up margin
-        # Limit to e.g. 2x old width or similar heuristic if speed is needed.
-        # For now, we check them all, the math will penalize them.
+        # Expansion Check
+        if width > old_width_val:
+          if margin_expansion_limit_ticks == 0: continue
+          if width > (old_width_val * 2.5): continue
 
         try:
-          # Calculate Metrics WITHOUT full object creation overhead first
           new_credit_to_open = short_opt['bid'] - long_opt['ask']
-          net_roll_price = new_credit_to_open - cost_to_close # (+)Credit / (-)Debit
-
+          net_roll_price = new_credit_to_open - cost_to_close
           new_margin = width * 100
 
           days_to_exp = (exp - today).days
           if days_to_exp < 1: days_to_exp = 1
 
-          # Metric: Roll RROC
-          # (Net Price / Margin) / Days
-          # If Net Price is negative (Debit), this score is negative (bad), which is correct.
           roll_rroc = (net_roll_price / new_margin) / days_to_exp
 
-          # Store Candidate
           valid_rolls.append({
             'short_leg': short_opt,
             'long_leg': long_opt,
+            'expiration': exp,  # <-- Crucial for sorting
             'net_roll_price': net_roll_price,
             'new_margin': new_margin,
             'rroc': roll_rroc,
@@ -961,18 +948,46 @@ def find_vertical_roll(environment,
         except Exception as e:
           continue
 
-  # 5. Select Best Candidate
   if not valid_rolls:
     print("No valid roll candidates found.")
     return None
 
-  # Sort by RROC descending (Highest positive is best, least negative is fallback)
-  best_candidate = max(valid_rolls, key=lambda x: x['rroc'])
+  # --- NEW: Time-Priority Selection Logic ---
 
-  print(f"Best Roll Found: Short {best_candidate['short_leg']['strike']} / Long {best_candidate['long_leg']['strike']}")
+  # 1. Sort by Date first, then RROC descending
+  valid_rolls.sort(key=lambda x: (x['expiration'], -x['rroc']))
+
+  best_candidate = None
+
+  # 2. Iterate through expirations in order (Nearest -> Farthest)
+  for expiration_date, group in groupby(valid_rolls, key=lambda x: x['expiration']):
+    group_list = list(group)
+
+    # Filter for "Safe" trades in this expiration:
+    #  A) No Margin Expansion
+    #  B) Price is better than the Debit Limit (e.g. Credit or small Debit)
+    safe_candidates = [
+      r for r in group_list 
+      if r['width'] <= old_width_val + 0.01 
+      and r['net_roll_price'] >= debit_limit
+    ]
+
+    if safe_candidates:
+      # If we found safe trades in the NEAREST expiry, stop here!
+      # Pick the best RROC among these safe options.
+      best_candidate = max(safe_candidates, key=lambda x: x['rroc'])
+      print(f"Found SAFE candidate in nearest valid expiry: {expiration_date}")
+      break
+
+  # 3. Fallback: If no Safe trades found in ANY expiration, allow Expansion/Higher Debits
+  if not best_candidate:
+    print("No safe trades found. Falling back to global best RROC (Expansion/Debit allowed).")
+    # Penalize expansion in the sort just like before
+    best_candidate = max(valid_rolls, key=lambda x: x['rroc'] * (0.8 if x['width'] > old_width_val + 0.01 else 1.0))
+
+  print(f"Best Roll: {best_candidate['short_leg']['strike']}/{best_candidate['long_leg']['strike']} Exp: {best_candidate['expiration']}")
   print(f"Net Price: {best_candidate['net_roll_price']:.2f}, RROC: {best_candidate['rroc']:.2%}")
 
-  # 6. Reconstruct Objects for Return
   try:
     new_short_obj = Quote(**best_candidate['short_leg'])
     new_long_obj = Quote(**best_candidate['long_leg'])
