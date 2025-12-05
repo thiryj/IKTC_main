@@ -728,7 +728,7 @@ def validate_manual_legs(environment: str, legs_data_list):
 @anvil.server.callable
 def get_roll_package_dto(environment: str, 
                          trade_row: Row, 
-                         margin_expansion_limit: float = server_config.LONG_STRIKE_DELTA_MAX
+                         margin_expansion_limit: float = 0
                         )->Dict:
   """
     Finds active legs, gets live prices, and calculates
@@ -814,9 +814,10 @@ def get_roll_package_dto(environment: str,
 
   # convert roll to margin into roll to spread width
   max_roll_to_spread = math.ceil(max_roll_to_margin / (short_leg_db['Quantity'] * config.DEFAULT_MULTIPLIER))
+  print(f" current_spread_reference_margin: {current_spread_reference_margin}")
   print(f" max_roll_to_margin: {max_roll_to_margin}, max roll to spread: {max_roll_to_spread}")
   
-  new_spread_object = server_helpers.find_new_diagonal_trade(environment, 
+  new_spread_object = server_helpers.find_new_diagonal_trade(t, 
                                                              trade_row['Underlying'], 
                                                              current_spread, 
                                                              max_roll_to_spread)
@@ -877,14 +878,14 @@ def get_new_open_trade_dto(environment: str, symbol: str) -> Dict:
     'new_spread_dto': best_position_object_dto
   }
     """
-
+  t, _ = server_helpers.get_tradier_client(environment)
   # 1. Call your main engine (which is now a helper)
   # we get back a position object
-  best_position_object = server_helpers.find_new_diagonal_trade(environment=environment,
+  best_position_object = server_helpers.find_new_diagonal_trade(t,
                                                                 underlying_symbol=symbol,
                                                                 position_to_roll=None  # We pass None to trigger 'open' logic
   )
-
+  
   # 2. Check the result
   if not best_position_object:
     print("find new diagonal trade did not return a best trade dto")

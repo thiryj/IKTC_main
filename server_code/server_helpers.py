@@ -342,7 +342,7 @@ def get_net_roll_rom_per_day(pos: positions.DiagonalPutSpread, cost_to_close: fl
 
   return return_on_margin / dte
 
-def find_new_diagonal_trade(environment: str='SANDBOX', 
+def find_new_diagonal_trade(t: TradierAPI, 
                             underlying_symbol: str=None,
                             position_to_roll: positions.DiagonalPutSpread=None,
                             max_roll_to_spread: int = server_config.LONG_STRIKE_DELTA_MAX
@@ -356,8 +356,6 @@ def find_new_diagonal_trade(environment: str='SANDBOX',
   if underlying_symbol is None:
     anvil.alert("must select underlying symbol")
     return
-
-  t, endpoint_url = get_tradier_client(environment)
 
   roll = True if position_to_roll else None
 
@@ -603,12 +601,10 @@ def get_quote(provider, symbol: str) -> dict:
   """
   # 1. Resolve the Client
   if isinstance(provider, str):
-    # If a string was passed, initialize the client here (Legacy support)
     tradier_client, _ = get_tradier_client(provider)
   else:
-    # Otherwise, assume it's an authenticated client object (Efficient)
     tradier_client = provider
-
+    
   endpoint = '/v1/markets/quotes'
   params = {'symbols': symbol, 'greeks': 'false'}
 
@@ -632,30 +628,34 @@ def get_quote(provider, symbol: str) -> dict:
     # 4. Parse 'quotes' -> 'quote'
     # Tradier returns {'quote': {...}} for single, or {'quote': [{...}]} for multiple
     quotes_container = data.get('quotes', {})
-    if not quotes_container:
+    quote = None
+    if quotes_container:
+      quote_data = quotes_container.get('quote')
+      # Handle List vs Dict inconsistency
+      if isinstance(quote_data, list) and quote_data:
+        quote = quote_data[0]
+      elif isinstance(quote_data, dict):
+        quote = quote_data
+      else:
+        #print("in get_quote: quote_data: {quote_data} is empty or None, trying weekly 'w' suffix")
+        quote = None
+    else:
+      print("get_quote failed: quotes_container is None")
       return None
 
-    quote_data = quotes_container.get('quote')
-
-    # Handle List vs Dict inconsistency
-    if isinstance(quote_data, list) and quote_data:
-      quote = quote_data[0]
-    elif isinstance(quote_data, dict):
-      quote = quote_data
-    else:
-      # Quote is empty list or None
-      quote = None
-
-    # 5. SPX Fallback Logic
-    # If we got no data, and it's an SPX symbol (but not already SPXW), try SPXW
-    if not quote and symbol.startswith('SPX') and not symbol.startswith('SPXW'):
-      print(f"SPX symbol lookup failed for {symbol}. Retrying with SPXW fallback...")
-      alt_symbol = symbol.replace('SPX', 'SPXW', 1)
-      # Recursive call with the same client
-      return get_quote(tradier_client, alt_symbol)
+    # 5. Index Fallback Logic
+    # If we got no data, and it's an index symbol (but not already xxxW), try xxxW
+    if not quote:
+      for index_root in config.INDEX_SYMBOLS:
+        weekly_root = f"{index_root}W"
+        if symbol.startswith(index_root) and not symbol.startswith(weekly_root):   #don't keep looping if indexW fails too
+          #print(f"lookup failed for {symbol}. Retrying with {symbol}W fallback...")      
+          alt_symbol = symbol.replace(index_root, weekly_root, 1)
+          # Recursive call with the same client
+          return get_quote(tradier_client, alt_symbol)
 
     if not quote:
-      # print(f"No quote data returned for {symbol}.") # Optional noise reduction
+      print(f"No quote data returned for {symbol}.") # Optional noise reduction
       return None
 
     return quote
