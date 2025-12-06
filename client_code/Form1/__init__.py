@@ -225,6 +225,7 @@ class Form1(Form1Template):
     self.card_trade_entry.visible = True
     self.active_trade_row = trade # Store it
     print(f"Handling close request for: {trade['Underlying']}")
+    
     try:
       self.label_symbol.text = trade['Underlying']
       self.label_quote_status.text = "Calculating closing cost..."
@@ -262,7 +263,7 @@ class Form1(Form1Template):
       self.label_quote_status.text = "Closing trade loaded."
 
       # 5. Open Ticket
-      self.common_trade_ticket()
+      self.common_trade_ticket(trade)
 
     except Exception as e:
       alert(f"Error preparing close trade: {e}")
@@ -343,19 +344,22 @@ class Form1(Form1Template):
   
       self.label_quote_status.text = "Roll package loaded. Ready for preview."
       self.trade_ticket_state = config.TRADE_TICKET_STATE_ROLL
-      self.common_trade_ticket()
+      self.common_trade_ticket(trade)
   
     except Exception as e:
       alert(f"Error calculating roll: {e}")
       #self.card_trade_entry.visible = False
       self.card_trade_entry.visible = True  
 
-  def common_trade_ticket(self):
+  def common_trade_ticket(self, trade=None):
     """
-    Called from find new trade button or Roll button.  Places live trades
+    Called from find new trade button or Roll button or Close button.  Places live trades
     """
     #pop the trade entry card and preview
     self.button_preview_trade.enabled = True
+    if trade:
+      legs_list = anvil.server.call('get_active_legs_for_trade', trade, 'short')
+      self.textbox_trade_entry_quantity.text = legs_list[0]['Quantity'] if legs_list else 0
     self.card_trade_entry.visible = True   
     # auto run preview trade:  why wait?
     self.button_preview_trade_click()

@@ -499,19 +499,33 @@ def cancel_order(environment: str, order_id: int):
     return "Error"
 
 @anvil.server.callable
-def get_active_legs_for_trade(trade_row):
+def get_active_legs_for_trade(trade_row, direction:str=None):
   """
     Finds all 'active' leg rows associated with a single trade.
+    Args:
+    direction (str): 'short', 'long', or None (returns all)
     """
   try:
     # 1. Find all transactions for this trade
     trade_transactions = app_tables.transactions.search(Trade=trade_row)
 
-    # 2. Find all legs for those transactions that are 'active'
-    active_legs = app_tables.legs.search(
-      Transaction=q.any_of(*trade_transactions),
-      active=True
-    )
+    action_filter = None
+    if direction:
+      if direction.lower() == 'short':
+        action_filter = config.ACTION_SELL_TO_OPEN
+      elif direction.lower() == 'long':
+        action_filter = config.ACTION_BUY_TO_OPEN
+    if action_filter:    
+      active_legs = app_tables.legs.search(
+        Transaction=q.any_of(*trade_transactions),
+        active=True, Action=action_filter
+      )
+    else:
+      # 2. Find all legs for those transactions that are 'active'
+      active_legs = app_tables.legs.search(
+        Transaction=q.any_of(*trade_transactions),
+        active=True
+      )
 
     # 3. Return the list of leg rows
     return list(active_legs)
@@ -519,8 +533,6 @@ def get_active_legs_for_trade(trade_row):
   except Exception as e:
     print(f"Error getting active legs: {e}")
     return []
-
-# In ServerModule1.py
 
 @anvil.server.callable
 def save_manual_trade(environment: str, 
