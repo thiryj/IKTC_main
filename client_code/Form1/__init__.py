@@ -69,7 +69,7 @@ class Form1(Form1Template):
     )
           
     # Populate misc components
-    self.dropdown_strategy_picker.items = [config.POSITION_TYPE_DIAGONAL, config.POSITION_TYPE_CSP]
+    self.dropdown_strategy_picker.items = [config.POSITION_TYPE_VERTICAL, config.POSITION_TYPE_DIAGONAL, config.POSITION_TYPE_CSP]
     self.textbox_symbol.text = self.my_settings.default_symbol
     
     # Trade history grid
@@ -222,12 +222,13 @@ class Form1(Form1Template):
       
   def handle_close_trade_request(self, trade, **event_args):
     """Called by the 'Close' button in Open Positions row."""
+    self.card_trade_entry.visible = True
     self.active_trade_row = trade # Store it
     print(f"Handling close request for: {trade['Underlying']}")
     try:
       self.label_symbol.text = trade['Underlying']
       self.label_quote_status.text = "Calculating closing cost..."
-      self.label_trade_ticket_title.text = f"{self.label_trade_ticket_title.text} - Close {self.dropdown_strategy_picker.selected_value}"
+      self.label_trade_ticket_title.text = f"{self.label_trade_ticket_title.text} - Close {trade['Strategy']}"
 
       # 1. Fetch Close Package
       close_dto = anvil.server.call('get_close_trade_dto', self.environment, trade)
