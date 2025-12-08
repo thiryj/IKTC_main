@@ -942,6 +942,7 @@ def get_new_open_trade_dto(environment: str,
     if result and not result.get('error'):
       # ADAPTER: Normalize Vertical Dict to match Diagonal DTO structure
       # Parse string date to object
+      print(f"get_vertical_spread dto: {result}")
       exp_date = dt.datetime.strptime(result['parameters']['expiration'], '%Y-%m-%d').date()
 
       credit = result['financials']['credit_per_contract']
@@ -962,7 +963,8 @@ def get_new_open_trade_dto(environment: str,
         },
         'net_premium': credit,
         'margin': margin,
-        'ROM_rate': rom
+        'ROM_rate': rom,
+        'quantity': result['parameters']['quantity']
       }
   elif strategy_type == config.POSITION_TYPE_DIAGONAL:
     best_position_object = server_helpers.find_new_diagonal_trade(t,
@@ -1066,8 +1068,8 @@ def get_vertical_spread(environment: str,
                                    symbol: str = config.DEFAULT_SYMBOL, 
                                    target_delta: float = config.DEFAULT_VERTICAL_DELTA, 
                                    width: float = None, 
-                                   quantity: int = config.DEFAULT_QUANTITY,
-                                   target_rroc: float = config.DEFAULT_RROC_HARVEST_TARGET):
+                                   quantity: int = None,
+                                   target_rroc: float = None):
   """
     Finds a 0DTE (or nearest term) Vertical Put Spread based on Delta.
   """
@@ -1077,6 +1079,7 @@ def get_vertical_spread(environment: str,
   settings_row = app_tables.settings.get() or {} # Assumes single-row settings table
 
   # Defaults
+  target_rroc = target_rroc if target_rroc is not None else (settings_row['default_target_rroc'] if settings_row and settings_row['default_target_rroc'] else config.DEFAULT_RROC_HARVEST_TARGET)
   eff_width = width if width is not None else (settings_row['default_width'] if settings_row and settings_row['default_width'] else config.DEFAULT_VERTICAL_WIDTH)
   eff_qty = quantity if quantity is not None else (settings_row['default_qty'] if settings_row and settings_row['default_qty'] else config.DEFAULT_QUANTITY)
 
