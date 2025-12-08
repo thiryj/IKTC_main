@@ -451,6 +451,7 @@ def find_new_diagonal_trade(t: TradierAPI,
 
 def build_leg_dto(spread_dto: Dict, option_index)->Dict:
   """
+  NOT USED - needs work.  Delete?
   takes a spread dto and return a leg dto
   """
   selected_leg = spread_dto[option_index]
@@ -472,9 +473,7 @@ opening_leg_1 = {
     'quantity': 1 # Assuming quantity 1
   }
   """
-# In server_helpers.py
 # Make sure app_tables is available (from anvil.tables import app_tables)
-
 def calculate_reference_margin(trade_row, 
                                current_short_strike: float, 
                                current_long_strike: float
