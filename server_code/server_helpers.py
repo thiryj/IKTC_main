@@ -822,7 +822,7 @@ def fetch_leg_quote(tradier_client, underlying, leg_row):
 def get_underlying_price(tradier_client: TradierAPI, symbol: str) ->float:
   # get underlying price and thus short strike
   underlying_quote = get_quote(tradier_client, symbol)
-
+  #print(f"quote: {underlying_quote}")
   # Extract price: Use 'last' or fallback to 'close' 
   underlying_price = underlying_quote.get('last')
   if underlying_price is None:

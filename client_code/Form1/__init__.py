@@ -134,7 +134,7 @@ class Form1(Form1Template):
   def button_find_new_trade_click(self, **event_args):
     """This method is called when the button is clicked"""
     self.active_trade_row = None  # Clear it for new trades
-    symbol = self.textbox_symbol.text
+    symbol = self.textbox_symbol.text.upper()
     if symbol is None:
       alert("must select symbol")
       return
@@ -151,9 +151,57 @@ class Form1(Form1Template):
     # get type of trade from strategy drop down
     trade_strategy = self.dropdown_strategy_picker.selected_value
     try:
-        
-      if trade_strategy == config.POSITION_TYPE_DIAGONAL:
-        self.label_quote_status.text = "Getting best trade..."
+      best_trade_dict = None
+      if trade_strategy == config.POSITION_TYPE_VERTICAL:
+        result = anvil.server.call('get_vertical_spread', 
+                                   self.environment, 
+                                   symbol=symbol,
+                                   target_delta=config.DEFAULT_VERTICAL_DELTA,
+                                   width=self.my_settings.default_width,
+                                   quantity=self.my_settings.default_qty,
+                                   target_rroc=self.my_settings.default_target_rroc)
+        #print(f"vert_spread result: {result}")
+        if result is None:
+          alert("Server returned no result.")
+          self.label_quote_status.text = "Search failed."
+          return
+        if result.get('error'):
+          alert(f"Error: {result['error']}")
+          return
+  
+        # 2. ADAPTER: Convert result to 'best_trade_dto' format
+        # Parse string date to object
+        exp_date = dt.datetime.strptime(result['parameters']['expiration'], '%Y-%m-%d').date()
+
+        # Calculate ROM (Return on Margin)
+        credit = result['financials']['credit_per_contract']
+        margin = result['financials']['margin_per_contract']
+        rom = (credit / margin) if margin > 0 else 0
+
+        # Build the DTO your UI expects
+        best_trade_dto = {
+          'short_put': {
+            'symbol': result['legs']['short']['symbol'],
+            'strike': result['legs']['short']['strike'],
+            'expiration_date': exp_date,
+            'contract_size': 100
+          },
+          'long_put': {
+            'symbol': result['legs']['long']['symbol'],
+            'strike': result['legs']['long']['strike'],
+            'expiration_date': exp_date # Verticals share expiry
+          },
+          'net_premium': credit,
+          'margin': margin,
+          'ROM_rate': rom,
+          'spread_action': config.TRADE_ACTION_OPEN
+          #'strategy_type': config.STRATEGY_VERTICAL
+        }
+
+        # Wrap it to match existing structure
+        best_trade_dict = {'new_spread_dto': best_trade_dto}
+      elif trade_strategy == config.POSITION_TYPE_DIAGONAL:
+        self.label_quote_status.text = "Getting best diagonal..."
         print("calling get_new_open_trade_dto")
         # best_trade_dto is really a dict with 'new_spread_dto' as the payload
         best_trade_dict = anvil.server.call('get_new_open_trade_dto',
@@ -170,7 +218,7 @@ class Form1(Form1Template):
         alert("No Valid open trade")
         return
       if best_trade_dto:
-        print(f"best put diag DTO is: {best_trade_dto}")
+        print(f"best {trade_strategy} DTO is: {best_trade_dto}")
 
         # 4. Store the best trade DTO (the dictionary)
         self.trade_dto = best_trade_dto

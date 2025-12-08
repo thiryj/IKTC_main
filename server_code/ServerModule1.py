@@ -797,14 +797,14 @@ def get_roll_package_dto(environment: str,
 
   # Build standardized dicts for the closing legs
   closing_leg_1 = {
-    'action': 'Buy to Close',
+    'action': config.ACTION_BUY_TO_CLOSE,
     'type': short_leg_db['OptionType'],
     'strike': short_leg_db['Strike'],
     'expiration': short_leg_db['Expiration'],
     'quantity': short_leg_db['Quantity']
   }
   closing_leg_2 = {
-    'action': 'Sell to Close',
+    'action': config.ACTION_SELL_TO_CLOSE,
     'type': long_leg_db['OptionType'],
     'strike': long_leg_db['Strike'],
     'expiration': long_leg_db['Expiration'],
@@ -887,14 +887,14 @@ def get_roll_package_dto(environment: str,
   
   # Build standardized dicts for the opening legs
   opening_leg_1 = {
-    'action': 'Sell to Open',
+    'action': config.ACTION_SELL_TO_OPEN,
     'type': new_short_leg_dto['option_type'],
     'strike': new_short_leg_dto['strike'],
     'expiration': new_short_leg_dto['expiration_date'],
     'quantity': 1 # Assuming quantity 1
   }
   opening_leg_2 = {
-    'action': 'Buy to Open',
+    'action': config.ACTION_BUY_TO_OPEN,
     'type': new_long_leg_dto['option_type'],
     'strike': new_long_leg_dto['strike'],
     'expiration': new_long_leg_dto['expiration_date'],
@@ -917,10 +917,14 @@ def get_roll_package_dto(environment: str,
   }
 
 @anvil.server.callable
-def get_new_open_trade_dto(environment: str, symbol: str) -> Dict:
+def get_new_open_trade_dto(environment: str, 
+                           symbol: str=config.DEFAULT_SYMBOL, 
+                           strategy_type: str=config.POSITION_TYPE_VERTICAL
+                          ) -> Dict:
   """
-    This is the new "wrapper" for the 'Find New Trade' button.
-    It calls the main engine and returns a Dict with:
+  Unified wrapper for 'Find New Trade'.
+  Dispatches to the correct logic (Vertical vs Diagonal) and normalizes the output 
+  so the UI receives a consistent DTO with:
     {
     'legs_to_populate': None,
     'total_roll_credit': None,
@@ -928,28 +932,61 @@ def get_new_open_trade_dto(environment: str, symbol: str) -> Dict:
   }
     """
   t, _ = server_helpers.get_tradier_client(environment)
-  # 1. Call your main engine (which is now a helper)
-  # we get back a position object
-  best_position_object = server_helpers.find_new_diagonal_trade(t,
-                                                                underlying_symbol=symbol,
-                                                                position_to_roll=None  # We pass None to trigger 'open' logic
-  )
   
-  # 2. Check the result
-  if not best_position_object:
-    print("find new diagonal trade did not return a best trade dto")
-    return None # Or return an error string
+  # we get back a position object
+  best_spread_dto = None
+  if strategy_type == config.POSITION_TYPE_VERTICAL:
+    # This helper returns a raw Dictionary result
+    result = get_vertical_spread(environment, symbol=symbol)
 
-  # 3. Convert the object to the spread DTO
-  best_position_object_dto = best_position_object.get_dto()
+    if result and not result.get('error'):
+      # ADAPTER: Normalize Vertical Dict to match Diagonal DTO structure
+      # Parse string date to object
+      exp_date = dt.datetime.strptime(result['parameters']['expiration'], '%Y-%m-%d').date()
+
+      credit = result['financials']['credit_per_contract']
+      margin = result['financials']['margin_per_contract']
+      rom = (credit / margin) if margin > 0 else 0
+
+      best_spread_dto = {
+        'short_put': {
+          'symbol': result['legs']['short']['symbol'],
+          'strike': result['legs']['short']['strike'],
+          'expiration_date': exp_date,
+          'contract_size': 100
+        },
+        'long_put': {
+          'symbol': result['legs']['long']['symbol'],
+          'strike': result['legs']['long']['strike'],
+          'expiration_date': exp_date
+        },
+        'net_premium': credit,
+        'margin': margin,
+        'ROM_rate': rom
+      }
+  elif strategy_type == config.POSITION_TYPE_DIAGONAL:
+    best_position_object = server_helpers.find_new_diagonal_trade(t,
+                                                                  underlying_symbol=symbol,
+                                                                  position_to_roll=None  # We pass None to trigger 'open' logic
+    )
+    # 3. Convert the object to the spread DTO
+    if best_position_object:
+      best_spread_dto = best_position_object.get_dto()
+  else:
+    anvil.alert(f"Strategy: {strategy_type} is not implemented")
+    return
+  # 2. Check the result
+  if not best_spread_dto:
+    print("find new trade for {strategy_type} on {symbol} did not return a best trade dto")
+    return None # Or return an error string
   
   # mark as a spread open action
-  best_position_object_dto['spread_action'] = config.TRADE_ACTION_OPEN
+  best_spread_dto['spread_action'] = config.TRADE_ACTION_OPEN
     
   return {
     'legs_to_populate': None,
     'total_roll_credit': None,
-    'new_spread_dto': best_position_object_dto
+    'new_spread_dto': best_spread_dto
   }
 
 @anvil.server.callable
@@ -1021,3 +1058,146 @@ def get_close_trade_dto(environment: str, trade_row: Row) -> Dict:
 def get_price(environment: str, symbol: str, price_type: str=None)->float:
   t, _ = server_helpers.get_tradier_client(environment)
   return server_helpers.get_underlying_price(t, symbol)
+
+# In server_code/ServerModule1.py
+
+@anvil.server.callable
+def get_vertical_spread(environment: str, 
+                                   symbol: str = config.DEFAULT_SYMBOL, 
+                                   target_delta: float = config.DEFAULT_VERTICAL_DELTA, 
+                                   width: float = None, 
+                                   quantity: int = config.DEFAULT_QUANTITY,
+                                   target_rroc: float = config.DEFAULT_RROC_HARVEST_TARGET):
+  """
+    Finds a 0DTE (or nearest term) Vertical Put Spread based on Delta.
+  """
+  t, _ = server_helpers.get_tradier_client(environment)
+
+  # 1. Resolve Settings
+  settings_row = app_tables.settings.get() or {} # Assumes single-row settings table
+
+  # Defaults
+  eff_width = width if width is not None else (settings_row['default_width'] if settings_row and settings_row['default_width'] else config.DEFAULT_VERTICAL_WIDTH)
+  eff_qty = quantity if quantity is not None else (settings_row['default_qty'] if settings_row and settings_row['default_qty'] else config.DEFAULT_QUANTITY)
+
+  # 2. Find Expiration (Nearest valid date)
+  # We re-use your existing helper to find the first valid expiration (Today or Tomorrow)
+  expirations = server_helpers.get_near_term_expirations(t, symbol, max_days_out=3)
+  if not expirations:
+    return {"error": f"No expirations found for {symbol}"}
+
+  target_date = expirations[0] # Pick the nearest one (0DTE logic)
+
+  # 3. Fetch Chain WITH GREEKS
+  # We cannot use fetch_option_chain_direct if it hardcodes greeks=False. 
+  # Let's make a direct call here to be safe and efficient.
+  try:
+    endpoint = '/v1/markets/options/chains'
+    params = {
+      'symbol': symbol, 
+      'expiration': target_date.strftime('%Y-%m-%d'), 
+      'greeks': 'true' # <--- CRITICAL
+    }
+    resp = t.get(endpoint, params=params)
+    chain = resp.get('options', {}).get('option', [])
+    if isinstance(chain, dict): chain = [chain]
+  except Exception as e:
+    print(f"Error fetching chain: {e}")
+    return {"error": "API Error fetching chain."}
+
+    # 4. Find Short Leg (Closest to Delta)
+    # Filter for Puts with valid Delta
+  puts = [
+    p for p in chain 
+    if p.get('option_type') == 'put' 
+    and p.get('greeks') 
+    and p['greeks'].get('delta') is not None
+  ]
+  if not puts:
+    return {"error": "No puts with greeks found."}
+
+    # Find put with delta closest to target (e.g., -0.20)
+    # Note: Put delta is negative, so we compare abs(delta)
+  def delta_distance(opt):
+    d = float(opt['greeks']['delta'])
+    return abs(abs(d) - abs(target_delta))
+
+  short_leg = min(puts, key=delta_distance)
+  short_strike = float(short_leg['strike'])
+
+  # 5. Find Long Leg (Short Strike - Width)
+  target_long_strike = short_strike - eff_width
+
+  # Look for exact match first
+  long_leg = next((p for p in puts if abs(float(p['strike']) - target_long_strike) < 0.01), None)
+
+  # Fallback: Find closest strike if exact width doesn't exist
+  if not long_leg:
+    def strike_distance(opt):
+      return abs(float(opt['strike']) - target_long_strike)
+      # Filter to only strikes BELOW short strike
+    lower_puts = [p for p in puts if float(p['strike']) < short_strike]
+    if not lower_puts:
+      return {"error": "No valid long legs found below short strike."}
+    long_leg = min(lower_puts, key=strike_distance)
+
+  actual_width = short_strike - float(long_leg['strike'])
+  #print(f"short: {short_leg}, long: {long_leg}")
+  # 6. Financial Calculations
+  short_bid = float(short_leg.get('bid', 0) or 0) # Handle None safely
+  long_ask = float(long_leg.get('ask', 0) or 0)
+  gross_credit = short_bid - long_ask
+  #print(f"short_bid: {short_bid}, long_ask: {long_ask}, gross_credit: {gross_credit}")
+  margin_per_spread = (actual_width * 100) - (gross_credit * 100) # Assuming standard x100
+  # Actually, your reference used logic: margin = width - credit. 
+  # Usually margin on vertical is (Width * Multiplier) - Credit. 
+  # Let's stick to your simple unit math if that's what you prefer, 
+  # OR use standard $ calculations:
+
+  # Standard:
+  credit_total = gross_credit * eff_qty * 100
+  margin_total = (actual_width * eff_qty * 100) - credit_total
+
+  # Harvest: 5% of risk? Or your specific formula?
+  # Your formula: harvest_target_per_contract = margin_per_spread * 0.05
+  # Let's keep your formula structure but ensure floats are safe
+
+  simple_margin = actual_width - gross_credit
+  #print(f"margin_per_spread: {margin_per_spread}, credit_total: {credit_total}, margin_total: {margin_total}, simple_margin: {simple_margin}")
+  harvest_amt = simple_margin * target_rroc
+  #print(f"harvest_target: {target_rroc}, harvest_amt: {harvest_amt}")
+  return_dict = {
+    "status": "success",
+    "parameters": {
+      "symbol": symbol,
+      "expiration": target_date.strftime('%Y-%m-%d'),
+      "width": actual_width,
+      "quantity": eff_qty,
+      "target_delta": target_delta
+    },
+    "legs": {
+      "short": {
+        "symbol": short_leg['symbol'],
+        "strike": short_strike,
+        "delta": short_leg['greeks']['delta'],
+        "bid": short_bid,
+        "description": short_leg.get('description', '')
+      },
+      "long": {
+        "symbol": long_leg['symbol'],
+        "strike": long_leg['strike'],
+        "delta": long_leg['greeks']['delta'],
+        "ask": long_ask,
+        "description": long_leg.get('description', '')
+      }
+    },
+    "financials": {
+      "credit_per_contract": round(gross_credit, 2),
+      "margin_per_contract": round(margin_per_spread, 2), # <--- Add this line
+      "total_credit": round(credit_total, 2),
+      "total_margin_risk": round(margin_total, 2),
+      "harvest_price": round(gross_credit - harvest_amt, 2)
+    }
+  }
+  #print(f"return_dict: {return_dict}")
+  return return_dict

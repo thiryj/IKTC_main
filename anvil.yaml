@@ -51,6 +51,9 @@ db_schema:
     - admin_ui: {order: 6, width: 200}
       name: default_target_rroc
       type: number
+    - admin_ui: {order: 7, width: 200}
+      name: default_width
+      type: number
     server: full
     title: Settings
   trades:
