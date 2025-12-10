@@ -110,3 +110,42 @@ roll_dto_list list of Dicts
 {'action': 'Buy to Open', 'type': 'PUT', 'strike': 244, 'expiration': datetime.date(2025, 11, 17), 'quantity': 1}
 ]
 """
+
+"""
+my class's dto returned from myposition.get_dto()
+position_dto = {
+      # --- Top-level calculated metrics ---
+      'net_premium': self.net_premium,
+      'margin': self.margin,
+      'ROM': self.ROM,
+      'short_put_DTE': self.short_put_DTE,
+      'ROM_rate': self.ROM_rate,
+
+      # --- Nested dictionary for the short put leg ---
+      # We assume the 'Quote' object has these attributes based on your methods
+      'short_put': {
+        'symbol': self.short_put.symbol,
+        'option_type': self.short_put.option_type.name,
+        'strike': self.short_put.strike,
+        'expiration_date': self.short_put.expiration_date,
+        'bid': self.short_put.bid,
+        'ask': self.short_put.ask,
+        'last': self.short_put.last,
+        'contract_size': self.short_put.contract_size
+      },
+
+      # --- Nested dictionary for the long put leg ---
+      'long_put': {
+        'symbol': self.long_put.symbol,
+        'option_type': self.long_put.option_type.name,
+        'strike': self.long_put.strike,
+        'expiration_date': self.long_put.expiration_date,
+        'bid': self.long_put.bid,
+        'ask': self.long_put.ask,
+        'last': self.long_put.last,
+        'contract_size': self.long_put.contract_size
+      }
+    }
+    return position_dto
+      
+"""

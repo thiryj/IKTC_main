@@ -50,7 +50,6 @@ class DiagonalPutSpread:
 
   def describe(self):
     """A method to print a nice summary of the position."""
-
     print(f"Premium: ${self.net_premium:.2f}, ROM/day: {self.ROM_rate*self.short_put.contract_size:.2%}")
 
   def print_leg_details(self, leg_direction: str=None):  #leg_direction should be "short" or "long"

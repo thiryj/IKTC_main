@@ -1007,3 +1007,142 @@ def find_vertical_roll(environment,
   except Exception as e:
     print(f"Error building best position object: {e}")
     return None
+
+def get_vertical_spread(t: TradierAPI, 
+                        symbol: str = config.DEFAULT_SYMBOL, 
+                        target_delta: float = config.DEFAULT_VERTICAL_DELTA, 
+                        width: float = None, 
+                        quantity: int = None,
+                        target_rroc: float = None):
+  """
+    Finds a 0DTE (or nearest term) Vertical Put Spread based on Delta.
+  """
+  # 1. Resolve Settings
+  settings_row = app_tables.settings.get() or {} # Assumes single-row settings table
+
+  # Defaults
+  target_rroc = target_rroc if target_rroc is not None else (settings_row['default_target_rroc'] if settings_row and settings_row['default_target_rroc'] else config.DEFAULT_RROC_HARVEST_TARGET)
+  eff_width = width if width is not None else (settings_row['default_width'] if settings_row and settings_row['default_width'] else config.DEFAULT_VERTICAL_WIDTH)
+  eff_qty = quantity if quantity is not None else (settings_row['default_qty'] if settings_row and settings_row['default_qty'] else config.DEFAULT_QUANTITY)
+
+  # 2. Find Expiration (Nearest valid date)
+  # We re-use your existing helper to find the first valid expiration (Today or Tomorrow)
+  expirations = get_near_term_expirations(t, symbol, max_days_out=3)
+  if not expirations:
+    return {"error": f"No expirations found for {symbol}"}
+
+  target_date = expirations[0] # Pick the nearest one (0DTE logic)
+
+  # 3. Fetch Chain WITH GREEKS
+  # We cannot use fetch_option_chain_direct if it hardcodes greeks=False. 
+  # Let's make a direct call here to be safe and efficient.
+  try:
+    endpoint = '/v1/markets/options/chains'
+    params = {
+      'symbol': symbol, 
+      'expiration': target_date.strftime('%Y-%m-%d'), 
+      'greeks': 'true' # <--- CRITICAL
+    }
+    resp = t.get(endpoint, params=params)
+    chain = resp.get('options', {}).get('option', [])
+    if isinstance(chain, dict): chain = [chain]
+  except Exception as e:
+    print(f"Error fetching chain: {e}")
+    return {"error": "API Error fetching chain."}
+
+    # 4. Find Short Leg (Closest to Delta)
+    # Filter for Puts with valid Delta
+  puts = [
+    p for p in chain 
+    if p.get('option_type') == 'put' 
+    and p.get('greeks') 
+    and p['greeks'].get('delta') is not None
+  ]
+  if not puts:
+    return {"error": "No puts with greeks found."}
+
+    # Find put with delta closest to target (e.g., -0.20)
+    # Note: Put delta is negative, so we compare abs(delta)
+  def delta_distance(opt):
+    d = float(opt['greeks']['delta'])
+    return abs(abs(d) - abs(target_delta))
+
+  short_leg = min(puts, key=delta_distance)
+  short_strike = float(short_leg['strike'])
+
+  # 5. Find Long Leg (Short Strike - Width)
+  target_long_strike = short_strike - eff_width
+
+  # Look for exact match first
+  long_leg = next((p for p in puts if abs(float(p['strike']) - target_long_strike) < 0.01), None)
+
+  # Fallback: Find closest strike if exact width doesn't exist
+  if not long_leg:
+    def strike_distance(opt):
+      return abs(float(opt['strike']) - target_long_strike)
+      # Filter to only strikes BELOW short strike
+    lower_puts = [p for p in puts if float(p['strike']) < short_strike]
+    if not lower_puts:
+      return {"error": "No valid long legs found below short strike."}
+    long_leg = min(lower_puts, key=strike_distance)
+
+  actual_width = short_strike - float(long_leg['strike'])
+  #print(f"short: {short_leg}, long: {long_leg}")
+  # 6. Financial Calculations
+  short_bid = float(short_leg.get('bid', 0) or 0) # Handle None safely
+  long_ask = float(long_leg.get('ask', 0) or 0)
+  gross_credit = short_bid - long_ask
+  #print(f"short_bid: {short_bid}, long_ask: {long_ask}, gross_credit: {gross_credit}")
+  margin_per_spread = (actual_width * 100) - (gross_credit * 100) # Assuming standard x100
+  # Actually, your reference used logic: margin = width - credit. 
+  # Usually margin on vertical is (Width * Multiplier) - Credit. 
+  # Let's stick to your simple unit math if that's what you prefer, 
+  # OR use standard $ calculations:
+
+  # Standard:
+  credit_total = gross_credit * eff_qty * 100
+  margin_total = (actual_width * eff_qty * 100) - credit_total
+
+  # Harvest: 5% of risk? Or your specific formula?
+  # Your formula: harvest_target_per_contract = margin_per_spread * 0.05
+  # Let's keep your formula structure but ensure floats are safe
+
+  simple_margin = actual_width - gross_credit
+  #print(f"margin_per_spread: {margin_per_spread}, credit_total: {credit_total}, margin_total: {margin_total}, simple_margin: {simple_margin}")
+  harvest_amt = simple_margin * target_rroc
+  #print(f"harvest_target: {target_rroc}, harvest_amt: {harvest_amt}")
+  return_dict = {
+    "status": "success",
+    "parameters": {
+      "symbol": symbol,
+      "expiration": target_date.strftime('%Y-%m-%d'),
+      "width": actual_width,
+      "quantity": eff_qty,
+      "target_delta": target_delta
+    },
+    "legs": {
+      "short": {
+        "symbol": short_leg['symbol'],
+        "strike": short_strike,
+        "delta": short_leg['greeks']['delta'],
+        "bid": short_bid,
+        "description": short_leg.get('description', '')
+      },
+      "long": {
+        "symbol": long_leg['symbol'],
+        "strike": long_leg['strike'],
+        "delta": long_leg['greeks']['delta'],
+        "ask": long_ask,
+        "description": long_leg.get('description', '')
+      }
+    },
+    "financials": {
+      "credit_per_contract": round(gross_credit, 2),
+      "margin_per_contract": round(margin_per_spread, 2), # <--- Add this line
+      "total_credit": round(credit_total, 2),
+      "total_margin_risk": round(margin_total, 2),
+      "harvest_price": round(gross_credit - harvest_amt, 2)
+    }
+  }
+  #print(f"return_dict: {return_dict}")
+  return return_dict
