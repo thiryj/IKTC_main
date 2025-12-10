@@ -10,6 +10,7 @@ import requests
 import math
 import logging
 import sys
+import pytz
 from urllib.parse import urljoin
 from typing import Dict, List, Tuple, Any, TYPE_CHECKING
 import datetime as dt
@@ -69,18 +70,21 @@ def get_near_term_expirations(tradier_client: TradierAPI,
         List[dt.date]: A list of datetime.date objects representing the valid,
                     near-term expiration dates.
     """
-  # 1. Fetch all valid expiration dates from the API
+
+  # 1. Get current time in ET to handle market close correctly
+  now_et = dt.datetime.now(pytz.timezone('US/Eastern'))
+
+  # 2. If after 4:00 PM ET, minimum days out is 1 (tomorrow), else 0 (today)
+  min_days = 1 if now_et.time() >= dt.time(16, 0) else 0
+
+  # 3. Use the ET date for accurate comparison
+  today = now_et.date()
+  
   all_expirations = tradier_client.get_option_expirations(symbol=symbol, include_all_roots=True)
-
-  # 2. Get today's date for comparison
-  today = dt.date.today()
-
-  # 3. Use a list comprehension to filter for dates within the desired window
   near_term_expirations = [
     exp for exp in all_expirations
-    if 0 <= (exp - today).days <= max_days_out
+    if min_days <= (exp - today).days <= max_days_out
   ]
-
   return near_term_expirations
 
 def get_valid_diagonal_put_spreads(short_strike: float,
@@ -869,7 +873,7 @@ def fetch_strikes_direct(tradier_client, symbol, expiration):
     print(f"Error fetching strikes for {symbol}: {e}")
     return []
 
-def find_vertical_roll(environment, 
+def find_vertical_roll(t: TradierAPI, 
                        underlying_symbol, 
                        current_position: positions.DiagonalPutSpread, 
                        original_credit: float = 0.0,
@@ -882,8 +886,7 @@ def find_vertical_roll(environment,
   2. DEFENSE: Nearest expiration with Safe Width + "Acceptable" Cost.
   3. ESCAPE: If nearest expiry is "Catastrophically" expensive, move to next expiry.
   """
-  t, _ = get_tradier_client(environment)
-
+  
   current_short = current_position.short_put
   current_long = current_position.long_put
   cost_to_close = current_position.calculate_cost_to_close()
@@ -1019,8 +1022,6 @@ def get_vertical_spread(t: TradierAPI,
   """
   # 1. Resolve Settings
   settings_row = app_tables.settings.get() or {} # Assumes single-row settings table
-
-  # Defaults
   target_rroc = target_rroc if target_rroc is not None else (settings_row['default_target_rroc'] if settings_row and settings_row['default_target_rroc'] else config.DEFAULT_RROC_HARVEST_TARGET)
   eff_width = width if width is not None else (settings_row['default_width'] if settings_row and settings_row['default_width'] else config.DEFAULT_VERTICAL_WIDTH)
   eff_qty = quantity if quantity is not None else (settings_row['default_qty'] if settings_row and settings_row['default_qty'] else config.DEFAULT_QUANTITY)
@@ -1030,28 +1031,15 @@ def get_vertical_spread(t: TradierAPI,
   expirations = get_near_term_expirations(t, symbol, max_days_out=3)
   if not expirations:
     return {"error": f"No expirations found for {symbol}"}
-
   target_date = expirations[0] # Pick the nearest one (0DTE logic)
-
+  
   # 3. Fetch Chain WITH GREEKS
-  # We cannot use fetch_option_chain_direct if it hardcodes greeks=False. 
-  # Let's make a direct call here to be safe and efficient.
-  try:
-    endpoint = '/v1/markets/options/chains'
-    params = {
-      'symbol': symbol, 
-      'expiration': target_date.strftime('%Y-%m-%d'), 
-      'greeks': 'true' # <--- CRITICAL
-    }
-    resp = t.get(endpoint, params=params)
-    chain = resp.get('options', {}).get('option', [])
-    if isinstance(chain, dict): chain = [chain]
-  except Exception as e:
-    print(f"Error fetching chain: {e}")
-    return {"error": "API Error fetching chain."}
+  chain = fetch_option_chain_direct(t, symbol, target_date, greeks=True)
+  if not chain:
+    return {"error": "API Error fetching chain or no valid options found."}
 
-    # 4. Find Short Leg (Closest to Delta)
-    # Filter for Puts with valid Delta
+  # 4. Find Short Leg (Closest to Delta)
+  # Filter for Puts with valid Delta
   puts = [
     p for p in chain 
     if p.get('option_type') == 'put' 
@@ -1068,80 +1056,46 @@ def get_vertical_spread(t: TradierAPI,
     return abs(abs(d) - abs(target_delta))
 
   short_leg = min(puts, key=delta_distance)
-  short_strike = float(short_leg['strike'])
-
+  
   # 5. Find Long Leg (Short Strike - Width)
-  target_long_strike = short_strike - eff_width
+  target_long_strike = short_leg['strike'] - eff_width
 
   # Look for exact match first
   long_leg = next((p for p in puts if abs(float(p['strike']) - target_long_strike) < 0.01), None)
-
-  # Fallback: Find closest strike if exact width doesn't exist
   if not long_leg:
     def strike_distance(opt):
       return abs(float(opt['strike']) - target_long_strike)
       # Filter to only strikes BELOW short strike
-    lower_puts = [p for p in puts if float(p['strike']) < short_strike]
+    lower_puts = [p for p in puts if float(p['strike']) < short_leg['strike']]
     if not lower_puts:
       return {"error": "No valid long legs found below short strike."}
     long_leg = min(lower_puts, key=strike_distance)
-
-  actual_width = short_strike - float(long_leg['strike'])
-  #print(f"short: {short_leg}, long: {long_leg}")
-  # 6. Financial Calculations
-  short_bid = float(short_leg.get('bid', 0) or 0) # Handle None safely
-  long_ask = float(long_leg.get('ask', 0) or 0)
-  gross_credit = short_bid - long_ask
-  #print(f"short_bid: {short_bid}, long_ask: {long_ask}, gross_credit: {gross_credit}")
-  margin_per_spread = (actual_width * 100) - (gross_credit * 100) # Assuming standard x100
-  # Actually, your reference used logic: margin = width - credit. 
-  # Usually margin on vertical is (Width * Multiplier) - Credit. 
-  # Let's stick to your simple unit math if that's what you prefer, 
-  # OR use standard $ calculations:
-
-  # Standard:
-  credit_total = gross_credit * eff_qty * 100
-  margin_total = (actual_width * eff_qty * 100) - credit_total
-
-  # Harvest: 5% of risk? Or your specific formula?
-  # Your formula: harvest_target_per_contract = margin_per_spread * 0.05
-  # Let's keep your formula structure but ensure floats are safe
-
-  simple_margin = actual_width - gross_credit
-  #print(f"margin_per_spread: {margin_per_spread}, credit_total: {credit_total}, margin_total: {margin_total}, simple_margin: {simple_margin}")
-  harvest_amt = simple_margin * target_rroc
+  # 5.2. Create Position Object
+  # Note: ensure keys like 'contract_size' exist or are defaulted if API omits them
+  short_leg.setdefault('contract_size', 100)
+  long_leg.setdefault('contract_size', 100)
+  position = positions.DiagonalPutSpread(short_leg, long_leg)
+  #print(f"position is: {position.get_dto()}")
+  # 6. Return Dict with Object
+  harvest_amt = (position.margin / 100) * target_rroc # adapting your margin logic to your harvest logic
+  
   #print(f"harvest_target: {target_rroc}, harvest_amt: {harvest_amt}")
   return_dict = {
     "status": "success",
     "parameters": {
       "symbol": symbol,
       "expiration": target_date.strftime('%Y-%m-%d'),
-      "width": actual_width,
+      "width": abs(short_leg['strike'] - long_leg['strike']),
       "quantity": eff_qty,
       "target_delta": target_delta
     },
-    "legs": {
-      "short": {
-        "symbol": short_leg['symbol'],
-        "strike": short_strike,
-        "delta": short_leg['greeks']['delta'],
-        "bid": short_bid,
-        "description": short_leg.get('description', '')
-      },
-      "long": {
-        "symbol": long_leg['symbol'],
-        "strike": long_leg['strike'],
-        "delta": long_leg['greeks']['delta'],
-        "ask": long_ask,
-        "description": long_leg.get('description', '')
-      }
-    },
+    "legs": position,
     "financials": {
-      "credit_per_contract": round(gross_credit, 2),
-      "margin_per_contract": round(margin_per_spread, 2), # <--- Add this line
-      "total_credit": round(credit_total, 2),
-      "total_margin_risk": round(margin_total, 2),
-      "harvest_price": round(gross_credit - harvest_amt, 2)
+      "credit_per_contract": round(position.net_premium, 2),
+      "margin_per_contract": round(position.margin / 100, 2), # Class calculates total margin (width*100), normalizing for display if needed
+      "total_credit": round(position.net_premium * eff_qty * 100, 2),
+      "total_margin_risk": round(position.margin * eff_qty, 2),
+      "harvest_price": round(position.net_premium - harvest_amt, 2)
     }
   }
   #print(f"return_dict: {return_dict}")

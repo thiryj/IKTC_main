@@ -819,7 +819,7 @@ def get_roll_package_dto(environment: str,
   if use_vertical_roll:
     limit_ticks = int(margin_expansion_limit)
     new_spread_object = server_helpers.find_vertical_roll(
-      environment,
+      t,
       trade_row['Underlying'],
       current_spread,
       original_credit=original_credit,
@@ -933,55 +933,30 @@ def get_new_open_trade_dto(environment: str,
     """
   t, _ = server_helpers.get_tradier_client(environment)
   
-  best_spread_dto = None
+  best_spread_object = None
+  qty = config.DEFAULT_QUANTITY
   if strategy_type == config.POSITION_TYPE_VERTICAL:
-    # This helper returns a raw Dictionary result
-    result = server_helpers.get_vertical_spread(environment, symbol=symbol)
-
+    # This helper returns a Dictionary result that now contains a position object in the 'legs' key
+    result = server_helpers.get_vertical_spread(t, symbol=symbol)
     if result and not result.get('error'):
-      # ADAPTER: Normalize Vertical Dict to match Diagonal DTO structure
-      # Parse string date to object
-      print(f"get_vertical_spread dto: {result}")
-      exp_date = dt.datetime.strptime(result['parameters']['expiration'], '%Y-%m-%d').date()
-
-      credit = result['financials']['credit_per_contract']
-      margin = result['financials']['margin_per_contract']
-      rom = (credit / margin) if margin > 0 else 0
-
-      best_spread_dto = {
-        'short_put': {
-          'symbol': result['legs']['short']['symbol'],
-          'strike': result['legs']['short']['strike'],
-          'expiration_date': exp_date,
-          'contract_size': 100
-        },
-        'long_put': {
-          'symbol': result['legs']['long']['symbol'],
-          'strike': result['legs']['long']['strike'],
-          'expiration_date': exp_date
-        },
-        'net_premium': credit,
-        'margin': margin,
-        'ROM_rate': rom,
-        'quantity': result['parameters']['quantity']
-      }
+      best_spread_object = result['legs']
+      qty = result['parameters']['quantity'] # Capture quantity before discarding result dict
   elif strategy_type == config.POSITION_TYPE_DIAGONAL:
-    best_position_object = server_helpers.find_new_diagonal_trade(t,
+    best_spread_object = server_helpers.find_new_diagonal_trade(t,
                                                                   underlying_symbol=symbol,
                                                                   position_to_roll=None  # We pass None to trigger 'open' logic
     )
-    # 3. Convert the object to the spread DTO
-    if best_position_object:
-      best_spread_dto = best_position_object.get_dto()
   else:
     anvil.alert(f"Strategy: {strategy_type} is not implemented")
     return
-  # 2. Check the result
-  if not best_spread_dto:
-    print("find new trade for {strategy_type} on {symbol} did not return a best trade dto")
-    return None # Or return an error string
   
-  # mark as a spread open action
+  if not best_spread_object:
+    print("find new trade for {strategy_type} on {symbol} did not return a best trade object")
+    return None # Or return an error string
+    
+  best_spread_dto = best_spread_object.get_dto()
+  # inject qty into return and mark as a spread open action
+  best_spread_dto['quantity'] = qty
   best_spread_dto['spread_action'] = config.TRADE_ACTION_OPEN
     
   return {
