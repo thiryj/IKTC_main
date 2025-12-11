@@ -695,136 +695,88 @@ def find_vertical_roll(t: TradierAPI,
   """
   Finds the best 'Roll Out and Down' candidate.
   
-  PRIORITY:
-  1. TIME: Nearest expiration with Safe Width + "Affordable" Cost.
-  2. DEFENSE: Nearest expiration with Safe Width + "Acceptable" Cost.
-  3. ESCAPE: If nearest expiry is "Catastrophically" expensive, move to next expiry.
+  PRIORITIES:
+  1. MINIMIZE DTE: Stop at the first (nearest) expiration date that offers a valid trade.
+  2. AGGRESSION: Within that expiration, pick the Lowest Strike (Max Distance) possible for Zero Debit.
   """
-  
+
+  # 1. Setup
   current_short = current_position.short_put
   current_long = current_position.long_put
   cost_to_close = current_position.calculate_cost_to_close()
-  old_width_val = current_short.strike - current_long.strike
+  target_width = current_short.strike - current_long.strike
 
-  # 1. Define Thresholds
-  # Target: Small debit or credit (e.g. keep 90% of profit)
-  target_debit_limit = -0.10 * abs(original_credit) 
+  print(f"Scanning Vertical Roll (Down & Out) for {underlying_symbol}.")
+  print(f"Cost to Close: ${cost_to_close:.2f} | Target Width: {target_width:.2f}")
 
-  # Catastrophic: Do not auto-accept a debit worse than this (e.g. wiping out 80% of profit)
-  # If the only options in 12/08 are -$2.00 debits, skip 12/08.
-  catastrophic_limit = -0.80 * abs(original_credit) 
-
-  print(f"Scanning Vertical Roll Down for {underlying_symbol}. Cost to Close: ${cost_to_close:.2f}")
-  print(f"Target Debit: > ${target_debit_limit:.2f} | Catastrophic Limit: < ${catastrophic_limit:.2f}")
-
-  # 2. Get Candidates (Same search logic as before)
+  # 2. Get Expirations (Out) and Sort by Date (Nearest First)
   expirations = get_near_term_expirations(t, underlying_symbol, max_days_out=server_config.MAX_DTE)
-  valid_expirations = [e for e in expirations if e > current_short.expiration_date]
+  valid_expirations = sorted([e for e in expirations if e > current_short.expiration_date])
 
-  valid_rolls = []
-  today = dt.date.today()
-
+  # 3. Iterate Expirations (Nearest -> Farthest)
   for exp in valid_expirations:
     chain = fetch_option_chain_direct(t, underlying_symbol, exp)
     if not chain: continue
 
+    # Filter for Puts and Sort by Strike Descending (High -> Low)
     puts = [o for o in chain if o['option_type'] == 'put']
     puts.sort(key=lambda x: x['strike'], reverse=True)
 
-    short_candidates = [p for p in puts if p['strike'] < current_short.strike]
+    best_for_this_exp = None
 
-    for short_opt in short_candidates:
-      short_strike = short_opt['strike']
-      long_candidates = [p for p in puts if p['strike'] < short_strike]
+    for short_opt in puts:
+      # CONSTRAINT: Down (Strike must be lower than current)
+      if short_opt['strike'] >= current_short.strike:
+        continue
 
-      for long_opt in long_candidates:
-        long_strike = long_opt['strike']
-        width = short_strike - long_strike
+      # Find matching Long Leg (maintain width)
+      target_long_strike = short_opt['strike'] - target_width
+      # fuzzy match for long strike (within 0.05)
+      long_opt = next((p for p in puts if abs(p['strike'] - target_long_strike) < 0.05), None)
 
-        if width > old_width_val + 0.01:
-          if margin_expansion_limit_ticks == 0: continue
-          if width > (old_width_val * 2.5): continue
+      if not long_opt:
+        continue
 
-        try:
-          new_credit_to_open = short_opt['bid'] - long_opt['ask']
-          net_roll_price = new_credit_to_open - cost_to_close
-          new_margin = width * 100
-          days_to_exp = max(1, (exp - today).days)
-          roll_rroc = (net_roll_price / new_margin) / days_to_exp
+      # Calculate Economics
+      credit_to_open = short_opt['bid'] - long_opt['ask']
+      net_roll_price = credit_to_open - cost_to_close
 
-          valid_rolls.append({
-            'short_leg': short_opt,
-            'long_leg': long_opt,
-            'expiration': exp,
-            'net_roll_price': net_roll_price,
-            'new_margin': new_margin,
-            'rroc': roll_rroc,
-            'width': width
-          })
-        except: continue
+      # CONSTRAINT: Zero Debit (Credit >= 0)
+      if net_roll_price >= 0.00:
 
-  if not valid_rolls:
-    print("No valid roll candidates found.")
-    return None
+        # Candidate found. 
+        # Since we iterate DOWN (High -> Low Strike), and premium drops as we go down,
+        # we keep overwriting 'best_for_this_exp' as long as we find valid trades.
+        # The last one we find will be the Lowest Strike (Max Distance) for this expiry.
+        best_for_this_exp = {
+          'short_leg': short_opt,
+          'long_leg': long_opt,
+          'expiration': exp,
+          'net_roll_price': net_roll_price,
+          'new_margin': (short_opt['strike'] - long_opt['strike']) * 100,
+          'width': short_opt['strike'] - long_opt['strike']
+        }
+      else:
+        # Net Roll became negative. Stop searching lower strikes for this expiry.
+        break
 
-  # --- SELECTION LOGIC ---
-  valid_rolls.sort(key=lambda x: x['expiration'])
-  best_candidate = None
+    # PRIORITY CHECK: Did we find ANY valid candidate in this (nearest) expiration?
+    if best_for_this_exp:
+      print(f"Best Roll Found in Nearest Valid Expiry: {best_for_this_exp['expiration']}")
+      print(f"Strike: {best_for_this_exp['short_leg']['strike']} | Net Price: {best_for_this_exp['net_roll_price']:.2f}")
 
-  for expiration_date, group in groupby(valid_rolls, key=lambda x: x['expiration']):
-    group_list = list(group)
+      try:
+        new_short_obj = Quote(**best_for_this_exp['short_leg'])
+        new_long_obj = Quote(**best_for_this_exp['long_leg'])
+        return positions.DiagonalPutSpread(new_short_obj, new_long_obj)
+      except Exception as e:
+        print(f"Error building best position object: {e}")
+        return None
 
-    # Filter 1: Safe Width (No Expansion)
-    safe_width_candidates = [r for r in group_list if r['width'] <= old_width_val + 0.01]
-
-    if not safe_width_candidates:
-      continue
-
-      # Filter 2: Affordable (Better than Target Limit)
-    affordable = [r for r in safe_width_candidates if r['net_roll_price'] >= target_debit_limit]
-
-    if affordable:
-      # Gold Standard: Near term, Safe Width, Cheap. STOP HERE.
-      best_candidate = max(affordable, key=lambda x: x['rroc'])
-      print(f"Found TARGET trade in {expiration_date}")
-      break
-
-      # Filter 3: Acceptable (Worse than Target, but NOT Catastrophic)
-    acceptable = [r for r in safe_width_candidates if r['net_roll_price'] >= catastrophic_limit]
-
-    if acceptable:
-      # Silver Standard: Near term, Safe Width, Expensive but survivable. STOP HERE.
-      # We prefer to take the hit here rather than adding more time risk.
-      # Pick the LEAST BAD price (highest net_roll_price) to minimize cash burn.
-      best_candidate = max(acceptable, key=lambda x: x['net_roll_price'])
-      print(f"Found ACCEPTABLE trade in {expiration_date}. (Price {best_candidate['net_roll_price']:.2f})")
-      break
-    else:
-      # Bronze Standard: Everything here is Catastrophic.
-      # SKIP this expiration. Force the loop to check the next date.
-      print(f"Skipping {expiration_date}: Best price is below catastrophic limit.")
-      continue
-
-  # 3. Fallback: If we skipped ALL expirations (or found nothing), take Global Best RROC
-  if not best_candidate:
-    print("No non-catastrophic trades found. Falling back to global best (Expansion allowed).")
-    def fallback_score(r):
-      score = r['rroc']
-      if r['width'] > old_width_val + 0.01: score *= 0.8 
-      return score
-    best_candidate = max(valid_rolls, key=fallback_score)
-
-  print(f"Best Roll: {best_candidate['short_leg']['strike']}/{best_candidate['long_leg']['strike']} Exp: {best_candidate['expiration']}")
-  print(f"Net Price: {best_candidate['net_roll_price']:.2f}")
-
-  try:
-    new_short_obj = Quote(**best_candidate['short_leg'])
-    new_long_obj = Quote(**best_candidate['long_leg'])
-    return positions.DiagonalPutSpread(new_short_obj, new_long_obj)
-  except Exception as e:
-    print(f"Error building best position object: {e}")
-    return None
-
+  # If loop finishes without returning, no valid rolls exist.
+  print("No valid roll candidates found (Zero Debit / Down & Out).")
+  return None
+  
 def get_vertical_spread(t: TradierAPI, 
                         symbol: str = config.DEFAULT_SYMBOL, 
                         target_delta: float = config.DEFAULT_VERTICAL_DELTA, 
