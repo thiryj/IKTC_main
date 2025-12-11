@@ -513,7 +513,7 @@ class Form1(Form1Template):
     """code common to both preview and trade button clicks"""
     quantity = int(self.textbox_trade_entry_quantity.text)
     
-    print(f"calling submit order with preview: {preview}")        
+    #print(f"calling submit order with preview: {preview}")        
     trade_dict = anvil.server.call('submit_order',
                                      self.dropdown_environment.selected_value,
                                      self.textbox_symbol.text,
@@ -524,7 +524,7 @@ class Form1(Form1Template):
                                     )
 
     # handle return dict
-    print(f"trade response data:{trade_dict}")
+    #print(f"trade response data:{trade_dict}")
     return trade_dict
 
   def button_cancel_trade_click(self, **event_args):

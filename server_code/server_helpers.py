@@ -86,100 +86,8 @@ def get_near_term_expirations(tradier_client: TradierAPI,
     if min_days <= (exp - today).days <= max_days_out
   ]
   return near_term_expirations
-
-def get_valid_diagonal_put_spreads(short_strike: float,
-                                   tradier_client: TradierAPI,
-                                   symbol: str,
-                                   max_days_out: int = 10,
-                                   short_expiry: dt.date = None,
-                                   max_spread_width: int = server_config.LONG_STRIKE_DELTA_MAX
-                                  )->List[positions.DiagonalPutSpread]:
-  print(f"get_valid: short strike:{short_strike}, symbol: {symbol}, short expiry: {short_expiry}, max_spread_width: {max_spread_width}")
-  # get list of valid expirations
-  expirations = get_near_term_expirations(tradier_client=tradier_client, symbol=symbol, max_days_out=max_days_out)
-  # if roll, exclude all expirations equal to or before existing short expiry.  if not roll, then short_expiry = today
-  expirations = expirations if short_expiry is None else [expiry for expiry in expirations if expiry > short_expiry]
-  exp_count = len(expirations)
-  valid_positions = []
-  #print(f"expirations: {expirations}")
   
-  for i in range(min(config.ROLL_EXPIRATION_EXTENSION_LIMIT, exp_count)): #this is the short expiry outer loop.  5 means don't look at short strikes further than 5 expiries out from today
-    short_put_expiration = expirations[i]
-    short_put_chain = fetch_option_chain_direct(tradier_client=tradier_client,
-                                                symbol=symbol,
-                                                expiration=short_put_expiration
-    )
-    if not short_put_chain:  continue
-    # Filter for the matching *dictionary* for the short put
-    short_puts_data = [
-      opt_data for opt_data in short_put_chain
-      if opt_data['option_type'] == 'put'
-      and opt_data['strike'] == short_strike
-    ]
-    if not short_puts_data: continue
-    #print(f"short_puts_data[0]: {short_puts_data[0]}")
-    try:
-      short_put_obj = Quote(**short_puts_data[0])
-    except (TypeError, KeyError, ValidationError) as e:
-      print(f"Bad data for short leg {symbol} date {short_put_expiration}: {e}")
-      continue
-
-    long_dte_offset = 0 # 0 to allow verticals.  1 or more to force diagonals
-    # use for j in range(i, i+1) if I want to enforce only verticals
-    end_range = i+1 if config.VERTICAL_SPREADS_ONLY else exp_count     # counting j up to exp_count considers diagonals
-    for j in range(i+long_dte_offset, end_range):
-      long_put_expiration = expirations[j]
-      #long_put_chain = tradier_client.get_option_chains(symbol=symbol, expiration=long_put_expiration.strftime('%Y-%m-%d'), greeks=False)
-      long_put_chain = fetch_option_chain_direct(
-                                                tradier_client=tradier_client,
-                                                symbol=symbol,
-                                                expiration=long_put_expiration
-      )
-      if not long_put_chain: continue
-      # for a valid expiration pair, iterate through long put strikes
-      for k in range(1, max_spread_width + 1):
-
-        # build the long position 
-        long_puts_data = [
-          opt_data for opt_data in long_put_chain
-          if opt_data['option_type'] == 'put'
-        ]
-        # Sort descending (High to Low) so index+1 is the next strike DOWN
-        sorted_long_puts = sorted(long_puts_data, key=lambda x: x['strike'], reverse=True)
-        all_strikes = [opt['strike'] for opt in sorted_long_puts]
-
-        # B. Find where the Short Strike 'sits' in this chain.  can't use simple .index because floating point uncertainty: 1.0 <> 1.00000001
-        try:
-          start_index = next(i for i, s in enumerate(all_strikes) if abs(s - short_strike) < 0.01)
-        except StopIteration:
-          # If exact short strike doesn't exist in long chain (rare), skip
-          continue
-        # C. Iterate 'k' Ticks DOWN from Short Strike
-        # range(1, 3) checks index+1 and index+2
-        for k in range(1, max_spread_width + 1):
-          target_index = start_index + k
-  
-          # Stop if we run out of strikes
-          if target_index >= len(sorted_long_puts):
-            break
-
-          long_put_data = sorted_long_puts[target_index]
-          if not long_put_data: continue
-          
-          # Build position object
-          try:
-            # Pass the data dictionary to the 'option' argument
-            long_put_obj = Quote(**long_put_data)
-            new_position = positions.DiagonalPutSpread(short_put_obj, long_put_obj)
-            valid_positions.append(new_position)
-  
-          except (TypeError, KeyError, ValidationError) as e:
-            # Added ValidationError to the catch
-            print(f"Could not create position {symbol} @ {short_strike}/{short_strike-k}. Error: {e}")
-            continue
-  return valid_positions
-  
-def submit_diagonal_spread_order(
+def submit_spread_order(
                                 tradier_client: TradierAPI,
                                 endpoint_url: str,
                                 underlying_symbol: str,
@@ -358,100 +266,6 @@ def get_net_roll_rom_per_day(pos: positions.DiagonalPutSpread, cost_to_close: fl
   return_on_margin = net_roll_credit / pos.margin 
 
   return return_on_margin / dte
-
-def find_new_diagonal_trade(t: TradierAPI, 
-                            underlying_symbol: str=None,
-                            position_to_roll: positions.DiagonalPutSpread=None,
-                            max_roll_to_spread: int = server_config.LONG_STRIKE_DELTA_MAX
-                           )->positions.DiagonalPutSpread:
-  """
-  Connect to Tradier,
-  find an optimal new short put diagonal, and return a position object.
-  if an existing position is passed in, then use roll logic,otherwise its a simple open
-  """
-  print("Server function 'find_new_diagonal_trade' was called.")
-  if underlying_symbol is None:
-    anvil.alert("must select underlying symbol")
-    return
-
-  roll = True if position_to_roll else None
-
-  if roll is None: # use simple open logic
-    print("simple open")
-    underlying_price = get_underlying_price(t, underlying_symbol)
-    short_strike = math.ceil(underlying_price)
-    short_expiry = None
-  else:     # use roll logic
-    short_symbol = position_to_roll.short_put.symbol
-    long_symbol = position_to_roll.long_put.symbol
-    #print(f"position to roll short symbol: {short_symbol}")
-    short_strike = get_strike(short_symbol)
-
-    # fetch raw dictionary quotes
-    short_quote = get_quote(t, short_symbol)
-    long_quote = get_quote(t, long_symbol)
-    
-    if not short_quote or not long_quote:
-      print(f"Could not fetch live quotes for roll positions: {short_symbol}, {long_symbol}")
-      return None
-      
-    live_position_to_roll = positions.DiagonalPutSpread(short_quote, long_quote)
-    cost_to_close = live_position_to_roll.calculate_cost_to_close()
-
-    # 3. Extract the PARSED dates for comparison
-    current_short_date = live_position_to_roll.short_put.expiration_date
-    current_long_date = live_position_to_roll.long_put.expiration_date
-
-    # Use the parsed date for the search param as well
-    short_expiry = current_short_date  
-
-  # get list of valid positions
-  print("calling get_valid_diagonal_put_spreads")
-  valid_positions = get_valid_diagonal_put_spreads(short_strike=short_strike, 
-                                                  tradier_client=t, 
-                                                  symbol=underlying_symbol, 
-                                                  max_days_out=server_config.MAX_DTE,
-                                                  short_expiry=short_expiry,
-                                                  max_spread_width = max_roll_to_spread
-                                                  )
-  number_positions = len(valid_positions)
-  print(f"Number of valid positions: {len(valid_positions)}")
-  if number_positions == 0:
-    print("Halting script - no positions")
-    return None
-
-  if roll:
-    # positions must have a larger credit to open than the existing spread cost to close    
-    valid_positions = [pos for pos in valid_positions if 
-                       (pos.net_premium > 0.01 and #abs(cost_to_close) and 
-                        pos.short_put.expiration_date >= current_short_date and
-                        pos.long_put.expiration_date != current_long_date
-                       )
-                      ]
-
-    # find best put diag based on highest return on margin per day of trade
-    today = dt.date.today()
-    sorted_positions = sorted(
-      valid_positions,
-      key=lambda pos: get_net_roll_rom_per_day(pos, cost_to_close, today),
-      reverse=True
-    )
-    best_position = sorted_positions[0] if sorted_positions else None
-  else:
-    best_position = max(
-      valid_positions,
-      key=lambda pos: pos.ROM_rate,
-      default=None
-    )
-  if not best_position:
-    print("No good position identified")
-    return None
-
-  print('To Open')
-  best_position.print_leg_details()
-  best_position.describe()
-  # best_position is a position object
-  return best_position
 
 def build_leg_dto(spread_dto: Dict, option_index)->Dict:
   """
@@ -1020,12 +834,7 @@ def get_vertical_spread(t: TradierAPI,
   """
     Finds a 0DTE (or nearest term) Vertical Put Spread based on Delta.
   """
-  # 1. Resolve Settings
-  settings_row = app_tables.settings.get() or {} # Assumes single-row settings table
-  target_rroc = target_rroc if target_rroc is not None else (settings_row['default_target_rroc'] if settings_row and settings_row['default_target_rroc'] else config.DEFAULT_RROC_HARVEST_TARGET)
-  eff_width = width if width is not None else (settings_row['default_width'] if settings_row and settings_row['default_width'] else config.DEFAULT_VERTICAL_WIDTH)
-  eff_qty = quantity if quantity is not None else (settings_row['default_qty'] if settings_row and settings_row['default_qty'] else config.DEFAULT_QUANTITY)
-
+  
   # 2. Find Expiration (Nearest valid date)
   # We re-use your existing helper to find the first valid expiration (Today or Tomorrow)
   expirations = get_near_term_expirations(t, symbol, max_days_out=3)
@@ -1058,7 +867,7 @@ def get_vertical_spread(t: TradierAPI,
   short_leg = min(puts, key=delta_distance)
   
   # 5. Find Long Leg (Short Strike - Width)
-  target_long_strike = short_leg['strike'] - eff_width
+  target_long_strike = short_leg['strike'] - width
 
   # Look for exact match first
   long_leg = next((p for p in puts if abs(float(p['strike']) - target_long_strike) < 0.01), None)
@@ -1086,15 +895,15 @@ def get_vertical_spread(t: TradierAPI,
       "symbol": symbol,
       "expiration": target_date.strftime('%Y-%m-%d'),
       "width": abs(short_leg['strike'] - long_leg['strike']),
-      "quantity": eff_qty,
+      "quantity": quantity,
       "target_delta": target_delta
     },
     "legs": position,
     "financials": {
       "credit_per_contract": round(position.net_premium, 2),
       "margin_per_contract": round(position.margin / 100, 2), # Class calculates total margin (width*100), normalizing for display if needed
-      "total_credit": round(position.net_premium * eff_qty * 100, 2),
-      "total_margin_risk": round(position.margin * eff_qty, 2),
+      "total_credit": round(position.net_premium * quantity * 100, 2),
+      "total_margin_risk": round(position.margin * quantity, 2),
       "harvest_price": round(position.net_premium - harvest_amt, 2)
     }
   }
