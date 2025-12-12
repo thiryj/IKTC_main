@@ -195,11 +195,11 @@ def get_open_trades_with_risk(environment: str=server_config.ENV_SANDBOX,
       current_long_leg = None
       
       #print(f"Active legs found: {active_legs}")
-      if trade['Strategy'] in (config.POSITION_TYPE_DIAGONAL, config.POSITION_TYPE_COVERED_CALL):
+      if trade['Strategy'] in config.POSITION_TYPES_ACTIVE:
         current_short_leg = next((leg for leg in active_legs if leg['Action'] == server_config.SHORT_OPEN_ACTION), None)
         
-        if trade['Strategy'] == config.POSITION_TYPE_DIAGONAL:
-          #print(f"trade strategy: {trade['Strategy']} is identified: as position type:{config.POSITION_TYPE_DIAGONAL}")
+        if trade['Strategy'] == config.POSITION_TYPE_VERTICAL:
+          #print(f"trade strategy: {trade['Strategy']} is identified: as position type:{config.POSITION_TYPE_VERTICAL}")
           current_long_leg =  next((leg for leg in active_legs if leg['Action'] == server_config.LONG_OPEN_ACTION), None)
           if current_long_leg:
             trade_dto['long_strike'] = current_long_leg['Strike']
