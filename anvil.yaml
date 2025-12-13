@@ -83,9 +83,12 @@ db_schema:
     - admin_ui: {order: -1, width: 125}
       name: Account
       type: string
-    - admin_ui: {order: 6, width: 200}
-      name: campaign
+    - admin_ui: {order: 6, width: 86}
+      name: Campaign
       type: string
+    - admin_ui: {order: 7, width: 200}
+      name: TargetHarvestPrice
+      type: number
     server: full
     title: Trades
   transactions:

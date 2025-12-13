@@ -342,7 +342,7 @@ def get_open_trades_with_risk(environment: str=server_config.ENV_SANDBOX,
 
 @anvil.server.callable
 def get_closed_trades(environment: str=server_config.ENV_SANDBOX, campaign_filter: str=None)->Dict: 
-  search_kwargs = {'campaign': campaign_filter} if campaign_filter else {}
+  search_kwargs = {'Campaign': campaign_filter} if campaign_filter else {}
   
   closed_trades = app_tables.trades.search(Status='Closed', Account=environment, **search_kwargs)
   enriched_trades = []
@@ -585,7 +585,7 @@ def save_manual_trade(environment: str,
         Status=server_config.TRADE_ROW_STATUS_OPEN,
         OpenDate=trade_date,
         Account=environment,
-        campaign=settings_row['current_campaign']
+        Campaign=settings_row['current_campaign']
       )
     else:
       raise ValueError("Manual Transaction Card State unknown")

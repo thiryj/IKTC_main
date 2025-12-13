@@ -783,7 +783,7 @@ def get_vertical_spread(t: TradierAPI,
                         target_delta: float = config.DEFAULT_VERTICAL_DELTA, 
                         width: float = None, 
                         quantity: int = None,
-                        target_rroc: float = None):
+                        target_rroc: float = None)->Dict:
   """
     Finds a 0DTE (or nearest term) Vertical Put Spread based on Delta.
   """
