@@ -73,7 +73,9 @@ class Form1(Form1Template):
     self.textbox_symbol.text = self.my_settings.default_symbol
     
     # Trade history grid
-    self.load_trade_history()
+    #self.load_trade_history() # don't load until needed, save startup time
+    self.dropdown_campaign.items = [("All Campaigns", None),*config.CAMPAIGN_ALL]
+    self.dropdown_campaign.selected_value = None
     
     # Manual Trade Entry Card (records trade history into db)
     self.dropdown_manual_transaction_type.items = config.POSITION_TYPES
@@ -98,8 +100,8 @@ class Form1(Form1Template):
     """This method is called when an item is selected"""
     self.environment= self.dropdown_environment.selected_value # save to form global
     self.refresh_open_positions_grid(refresh_risk=False)
-    #self.repeatingpanel_trade_history.items = anvil.server.call('get_closed_trades', self.environment)
-    self.load_trade_history()
+    if self.card_trade_history.visible:
+      self.load_trade_history()
     profile_details = anvil.server.call('get_tradier_profile', environment=self.environment)
     if profile_details:
       account_number = profile_details['account_number']
@@ -113,8 +115,6 @@ class Form1(Form1Template):
     # Hide the open positions card and show the history card
     self.card_open_positions.visible = False
     self.card_trade_history.visible = True
-    #self.repeatingpanel_trade_history.items = anvil.server.call('get_closed_trades', 
-    #                                                            self.dropdown_environment.selected_value)
     self.load_trade_history()
   
     # Update the button appearance to show which tab is active
@@ -940,12 +940,13 @@ class Form1(Form1Template):
         alert(f"Error deleting trade: {e}")
 
   def load_trade_history(self):
-    data = anvil.server.call('get_closed_trades', self.environment)
+    
+    data = anvil.server.call('get_closed_trades', self.environment, self.dropdown_campaign.selected_value)
     self.repeatingpanel_trade_history.items = data['trades']
     self.label_agg_pl.text = f"Total P/L: ${data['total_pl']:.2f}"
     self.label_trade_rroc_ave.text = f"Trade RROC Ave: {data['trade_rroc_avg']:.2%}"
     self.label_portfolio_rroc_cum.text = f"Portfolio RROC Cum: {data['portfolio_rroc_cum']:.2%}"
-    
-    
 
-  
+  def dropdown_campaign_change(self, **event_args):
+    """This method is called when an item is selected"""
+    self.load_trade_history()

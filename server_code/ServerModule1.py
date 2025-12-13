@@ -18,7 +18,7 @@ import positions
 import config
 
 # To allow anvil.server.call() to call functions here, we mark
-#
+#  
 @anvil.server.callable
 def get_settings():
   # Attempt to get the first row
@@ -341,8 +341,10 @@ def get_open_trades_with_risk(environment: str=server_config.ENV_SANDBOX,
   return enriched_trades_list
 
 @anvil.server.callable
-def get_closed_trades(environment: str=server_config.ENV_SANDBOX):
-  closed_trades = app_tables.trades.search(Status='Closed', Account=environment)
+def get_closed_trades(environment: str=server_config.ENV_SANDBOX, campaign_filter: str=None)->Dict: 
+  search_kwargs = {'campaign': campaign_filter} if campaign_filter else {}
+  
+  closed_trades = app_tables.trades.search(Status='Closed', Account=environment, **search_kwargs)
   enriched_trades = []
   
   # Trade level accumulators
@@ -576,12 +578,14 @@ def save_manual_trade(environment: str,
         existing_trade_row.update(Status=server_config.TRADE_ROW_STATUS_CLOSED, CloseDate=trade_date)      
     # Create new trade row for OPEN
     elif manual_entry_state == config.MANUAL_ENTRY_STATE_OPEN:
+      settings_row = app_tables.settings.get()
       trade_row = app_tables.trades.add_row(
         Underlying=underlying_symbol,
         Strategy=strategy,    # Strategy
         Status=server_config.TRADE_ROW_STATUS_OPEN,
         OpenDate=trade_date,
-        Account=environment
+        Account=environment,
+        campaign=settings_row['current_campaign']
       )
     else:
       raise ValueError("Manual Transaction Card State unknown")

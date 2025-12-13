@@ -712,6 +712,7 @@ def find_vertical_roll(t: TradierAPI,
   # 2. Get Expirations (Out) and Sort by Date (Nearest First)
   expirations = get_near_term_expirations(t, underlying_symbol, max_days_out=server_config.MAX_DTE)
   valid_expirations = sorted([e for e in expirations if e > current_short.expiration_date])
+  print(f"number of roll expirations inspected: {len(valid_expirations)}")
 
   # 3. Iterate Expirations (Nearest -> Farthest)
   for exp in valid_expirations:
