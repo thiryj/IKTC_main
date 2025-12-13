@@ -575,8 +575,10 @@ def save_manual_trade(environment: str,
     # --- 1. Find or Create the Trade (Your existing logic) ---
     settings_row = app_tables.settings.get()
     harvest_fraction = settings_row['harvest_fraction']
+    # If it's a Roll but we have no DTO, we fallback to net_price (flawed but necessary fallback).
     basis_price = open_spread_credit if open_spread_credit is not None else net_price
-    harvest_price = basis_price *  harvest_fraction
+    
+    harvest_price = basis_price *  harvest_fraction if basis_price > 0 else 0
     # update trade row Status for CLOSE/ROLL  
     if manual_entry_state in (config.MANUAL_ENTRY_STATE_CLOSE, config.MANUAL_ENTRY_STATE_ROLL):
       trade_row = existing_trade_row
@@ -870,8 +872,8 @@ def get_roll_package_dto(environment: str,
   all_4_legs = closing_legs_list + opening_legs_list
   total_roll_credit = total_open_credit - total_close_cost
 
-  print(f"in get_roll: roll legs:{all_4_legs}, roll credit: {total_roll_credit}")
-
+  #print(f"in get_roll: roll legs:{all_4_legs}, roll credit: {total_roll_credit}")
+  print(f" in get_roll: new_spread_dto['net_premium']: {new_spread_dto['net_premium']}")
   return {
     'legs_to_populate': all_4_legs, # list of leg_dto [{leg1}, {leg2}, etc] closing-short, closing-long, opening-short, opening-long
     'total_roll_credit': total_roll_credit,

@@ -656,9 +656,13 @@ class Form1(Form1Template):
         alert(f"Validation Error: {validation_result}. Please correct and resave.")
         return # Stop processing if there's an error
     open_credit_proxy = None
-    print(f"self.trade_dto: {self.trade_dto}")
-    if self.trade_dto and 'new_spread_dto' in self.trade_dto:
-      open_credit_proxy = self.trade_dto['new_spread_dto']['net_premium']
+    #print(f"self.trade_dto_list: {self.trade_dto_list}")
+    if self.trade_dto_list and len(self.trade_dto_list) > 0:
+      try: # index 0 is the open spread.  index 1 is the closing spread
+        open_credit_proxy = self.trade_dto_list[0].get('net_premium')
+        print(f"open spread of roll credit:{open_credit_proxy}")
+      except Exception as e:
+        print(f"Could not extract open credit from roll dto {e}")
     response = anvil.server.call('save_manual_trade', 
                                   self.environment,
                                   selected_strategy, # Strategy: Diagonal, Covered Call
@@ -877,7 +881,7 @@ class Form1(Form1Template):
                                                         self.trade_dto_list, 
                                                         self.textbox_trade_entry_quantity.text
                                                        )
-    print(f"leg defs are: {leg_definitions}")
+    #print(f"leg defs are: {leg_definitions}")
     
     # TODO:  switch this to getting underlying from the trade dto.  note 
     # trade_dto doesn't have symbol, so get it from Trade Ticket
