@@ -77,6 +77,11 @@ TRADE_TICKET_STATE_OPEN = 'OPEN'
 TRADE_TICKET_STATE_CLOSE = 'CLOSE'
 TRADE_TICKET_STATE_ROLL = 'ROLL'
 
+# Campaings
+PRE_AUTO = "Pre-Auto"   #used app to select and send open verts, but manually closed/rolled.  subject to human emotion + error
+SEMI_AUTO = "Semi-Auto" #app now sends harvest orders and panic close orders (rolls?)
+FULL_AUTO = "Full-Auto" #app now executes all rules including hedge management w/o human intervention
+
 # Globals
 REFRESH_TIMER_INTERVAL = 3600
 

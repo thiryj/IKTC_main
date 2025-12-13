@@ -30,30 +30,33 @@ db_schema:
   settings:
     client: full
     columns:
-    - admin_ui: {order: 0, width: 200}
+    - admin_ui: {order: 0, width: 123}
       name: default_symbol
       type: string
-    - admin_ui: {order: 1, width: 200}
+    - admin_ui: {order: 1, width: 120}
       name: default_qty
       type: number
-    - admin_ui: {order: 2, width: 200}
+    - admin_ui: {order: 2, width: 112}
       name: use_max_qty
       type: bool
-    - admin_ui: {order: 3, width: 200}
+    - admin_ui: {order: 3, width: 135}
       name: refresh_timer_on
       type: bool
-    - admin_ui: {order: 4, width: 200}
+    - admin_ui: {order: 4, width: 181}
       name: margin_expansion_limit
       type: number
-    - admin_ui: {order: 5, width: 200}
+    - admin_ui: {order: 5, width: 128}
       name: allow_diagonals
       type: bool
-    - admin_ui: {order: 6, width: 200}
+    - admin_ui: {order: 6, width: 150}
       name: default_target_rroc
       type: number
-    - admin_ui: {order: 7, width: 200}
+    - admin_ui: {order: 7, width: 111}
       name: default_width
       type: number
+    - admin_ui: {order: 8, width: 200}
+      name: current_campaign
+      type: string
     server: full
     title: Settings
   trades:
@@ -79,6 +82,9 @@ db_schema:
       type: number
     - admin_ui: {order: -1, width: 125}
       name: Account
+      type: string
+    - admin_ui: {order: 6, width: 200}
+      name: campaign
       type: string
     server: full
     title: Trades
