@@ -655,7 +655,10 @@ class Form1(Form1Template):
       except Exception as e:
         alert(f"Validation Error: {validation_result}. Please correct and resave.")
         return # Stop processing if there's an error
-        
+    open_credit_proxy = None
+    print(f"self.trade_dto: {self.trade_dto}")
+    if self.trade_dto and 'new_spread_dto' in self.trade_dto:
+      open_credit_proxy = self.trade_dto['new_spread_dto']['net_premium']
     response = anvil.server.call('save_manual_trade', 
                                   self.environment,
                                   selected_strategy, # Strategy: Diagonal, Covered Call
@@ -663,7 +666,8 @@ class Form1(Form1Template):
                                   trade_date, 
                                   net_price,
                                   legs_data_list,                            
-                                  existing_trade_row   # existing trade for Close/Roll (or None for Open)
+                                  existing_trade_row,   # existing trade for Close/Roll (or None for Open)
+                                  open_spread_credit=open_credit_proxy
                       )
     alert(response)
 

@@ -54,9 +54,12 @@ db_schema:
     - admin_ui: {order: 7, width: 111}
       name: default_width
       type: number
-    - admin_ui: {order: 8, width: 200}
+    - admin_ui: {order: 8, width: 143}
       name: current_campaign
       type: string
+    - admin_ui: {order: 9, width: 128}
+      name: harvest_fraction
+      type: number
     server: full
     title: Settings
   trades:

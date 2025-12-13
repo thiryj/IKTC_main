@@ -542,11 +542,12 @@ def save_manual_trade(environment: str,
                       trade_date, 
                       net_price: float, 
                       legs_data_list,            # list of leg data entries.  may be 1 (CSP) or 2 (diag open/close) or 4 (roll)                    
-                      existing_trade_row=None):  #CLOSE or ROLL: exising Trade row.  OPEN: None
+                      existing_trade_row=None,
+                      open_spread_credit: float=None):  #CLOSE or ROLL: exising Trade row.  OPEN: None
 
   print(f"Server saving to environment {environment}: {strategy}")
   # --- 0. NEW: Safety Validation for Diagonals ---
-  if strategy == config.POSITION_TYPE_DIAGONAL:
+  if strategy == config.POSITION_TYPE_DIAGONAL or config.POSITION_TYPE_VERTICAL:
     try:
       # Filter for opening legs
       short_legs = [l for l in legs_data_list if l['action'] == config.ACTION_SELL_TO_OPEN]
@@ -556,7 +557,8 @@ def save_manual_trade(environment: str,
       if short_legs and long_legs:
         short_qty = short_legs[0]['quantity']
         long_qty = long_legs[0]['quantity']
-
+        # calculate net credit here for harvest calculation
+        
         if short_qty != long_qty:
           print(f"WARNING: Mismatched quantities detected (Short: {short_qty}, Long: {long_qty}). Normalizing to Short qty.")
           # Force the long leg to match the short leg
@@ -571,21 +573,28 @@ def save_manual_trade(environment: str,
   
   try:
     # --- 1. Find or Create the Trade (Your existing logic) ---
+    settings_row = app_tables.settings.get()
+    harvest_fraction = settings_row['harvest_fraction']
+    basis_price = open_spread_credit if open_spread_credit is not None else net_price
+    harvest_price = basis_price *  harvest_fraction
     # update trade row Status for CLOSE/ROLL  
     if manual_entry_state in (config.MANUAL_ENTRY_STATE_CLOSE, config.MANUAL_ENTRY_STATE_ROLL):
       trade_row = existing_trade_row
       if manual_entry_state == config.MANUAL_ENTRY_STATE_CLOSE:
-        existing_trade_row.update(Status=server_config.TRADE_ROW_STATUS_CLOSED, CloseDate=trade_date)      
+        existing_trade_row.update(Status=server_config.TRADE_ROW_STATUS_CLOSED, CloseDate=trade_date)    
+      elif manual_entry_state == config.MANUAL_ENTRY_STATE_ROLL:
+        existing_trade_row.update(TargetHarvestPrice=harvest_price)
     # Create new trade row for OPEN
     elif manual_entry_state == config.MANUAL_ENTRY_STATE_OPEN:
-      settings_row = app_tables.settings.get()
+      harvest_price = net_price * harvest_fraction
       trade_row = app_tables.trades.add_row(
         Underlying=underlying_symbol,
         Strategy=strategy,    # Strategy
         Status=server_config.TRADE_ROW_STATUS_OPEN,
         OpenDate=trade_date,
         Account=environment,
-        Campaign=settings_row['current_campaign']
+        Campaign=settings_row['current_campaign'],
+        TargetHarvestPrice=harvest_price
       )
     else:
       raise ValueError("Manual Transaction Card State unknown")

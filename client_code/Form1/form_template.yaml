@@ -76,6 +76,16 @@ components:
         name: checkbox_settings_allow_diagonals
         properties: {text: ''}
         type: CheckBox
+      - layout_properties: {col_xs: 4, row: RXEBHO, width_xs: 2}
+        name: label_24
+        properties: {text: Harvest Fraction}
+        type: Label
+      - data_bindings:
+        - {code: 'self.my_settings[''harvest_fraction'']', property: text, writeback: true}
+        layout_properties: {col_xs: 6, row: RXEBHO, width_xs: 1}
+        name: textbox_harvest_fraction
+        properties: {type: number}
+        type: TextBox
       - layout_properties: {col_xs: 7, row: RXEBHO, width_xs: 2}
         name: label_14
         properties: {text: Use Max Qty}
