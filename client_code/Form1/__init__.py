@@ -78,7 +78,8 @@ class Form1(Form1Template):
     self.dropdown_campaign.selected_value = None
     
     # Manual Trade Entry Card (records trade history into db)
-    self.dropdown_manual_transaction_type.items = config.POSITION_TYPES
+    self.dropdown_manual_transaction_type.items = config.POSITION_TYPES_ACTIVE
+    self.dropdown_manual_transaction_type.selected_value = config.POSITION_TYPE_VERTICAL
         
     # Trade Ticket
     self.button_place_trade.enabled = False
@@ -572,7 +573,7 @@ class Form1(Form1Template):
     """
     #manual_trade.manual_transaction_type_change(self, action=config.TRADE_ACTION_OPEN)
     selected_strategy = self.dropdown_manual_transaction_type.selected_value
-    if selected_strategy in config.POSITION_TYPES:
+    if selected_strategy in config.POSITION_TYPES_ACTIVE:
       manual_trade.new_leg_builder(self, selected_strategy, self.my_settings.default_qty)
       self.button_save_manual_trade.enabled=True
     else:

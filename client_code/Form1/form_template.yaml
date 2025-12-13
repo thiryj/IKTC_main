@@ -189,7 +189,7 @@ components:
           layout_properties: {width: 174}
           name: dropdown_manual_transaction_type
           properties:
-            include_placeholder: true
+            include_placeholder: false
             items: []
             placeholder: Transaction Type
             role: null

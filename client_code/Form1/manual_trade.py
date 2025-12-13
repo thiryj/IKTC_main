@@ -16,9 +16,9 @@ from .. import config
 #
 
 def new_leg_builder(form_instance, selected_type: str, quantity: int=1):
-  print("new leg builder ")
+  print(f"new leg builder with strategy: {selected_type} ")
 
-  if selected_type == config.POSITION_TYPE_DIAGONAL:
+  if selected_type == config.POSITION_TYPE_VERTICAL:
     leg_definitions = [
       {'action': 'Sell to Open', 'type': config.OPTION_TYPE_PUT, 'quantity': quantity},
       {'action': 'Buy to Open', 'type': config.OPTION_TYPE_PUT, 'quantity': quantity}
