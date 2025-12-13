@@ -875,9 +875,9 @@ class Form1(Form1Template):
                                                        )
     print(f"leg defs are: {leg_definitions}")
     
-    # Use the value that was actually submitted/previeweds to 
-    # TODO:  switch this to getting underlying from the trade dto
-    underlying = self.textbox_symbol.text 
+    # TODO:  switch this to getting underlying from the trade dto.  note 
+    # trade_dto doesn't have symbol, so get it from Trade Ticket
+    underlying = self.label_symbol.text
 
     # 3. Populate the Manual Entry Card
     self.reset_card_manual_trade()
