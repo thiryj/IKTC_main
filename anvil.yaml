@@ -21,7 +21,8 @@ db_schema:
       type: number
     - admin_ui: {order: 5, width: 200}
       name: RuleSet
-      type: string
+      target: rulesets
+      type: link_single
     server: full
     title: Cycles
   legs:
@@ -143,7 +144,7 @@ db_schema:
       name: TargetHarvestPrice
       type: number
     - admin_ui: {order: 8, width: 200}
-      name: Cylce
+      name: Cycle
       target: cycles
       type: link_single
     server: full

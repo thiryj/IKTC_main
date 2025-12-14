@@ -10,7 +10,8 @@ from anvil.tables import app_tables, Row
 import datetime as dt
 
 # Private libs
-from .. import config, client_helpers
+from shared import config
+from .. import client_helpers
 from . import manual_trade
 from .Form_ConfirmTrade import Form_ConfirmTrade # Import your custom form
 from .Form_ManualLegEntry import Form_ManualLegEntry
@@ -169,75 +170,7 @@ class Form1(Form1Template):
       # 2. Populate UI (Standard Logic)
       self.trade_dto = best_trade_dto
       self.trade_dto_list = [self.trade_dto]
-      
-      """
-      if trade_strategy == config.POSITION_TYPE_VERTICAL:
-        result = anvil.server.call('get_vertical_spread', 
-                                   self.environment, 
-                                   symbol=symbol,
-                                   target_delta=config.DEFAULT_VERTICAL_DELTA,
-                                   width=self.my_settings.default_width,
-                                   quantity=self.my_settings.default_qty,
-                                   target_rroc=self.my_settings.default_target_rroc)
-        #print(f"vert_spread result: {result}")
-        if result is None:
-          alert("Server returned no result.")
-          self.label_quote_status.text = "Search failed."
-          return
-        if result.get('error'):
-          alert(f"Error: {result['error']}")
-          return
-  
-        # 2. ADAPTER: Convert result to 'best_trade_dto' format
-        # Parse string date to object
-        exp_date = dt.datetime.strptime(result['parameters']['expiration'], '%Y-%m-%d').date()
-
-        # Calculate ROM (Return on Margin)
-        credit = result['financials']['credit_per_contract']
-        margin = result['financials']['margin_per_contract']
-        rom = (credit / margin) if margin > 0 else 0
-
-        # Build the DTO your UI expects
-        best_trade_dto = {
-          'short_put': {
-            'symbol': result['legs']['short']['symbol'],
-            'strike': result['legs']['short']['strike'],
-            'expiration_date': exp_date,
-            'contract_size': 100
-          },
-          'long_put': {
-            'symbol': result['legs']['long']['symbol'],
-            'strike': result['legs']['long']['strike'],
-            'expiration_date': exp_date # Verticals share expiry
-          },
-          'net_premium': credit,
-          'margin': margin,
-          'ROM_rate': rom,
-          'spread_action': config.TRADE_ACTION_OPEN
-          #'strategy_type': config.STRATEGY_VERTICAL
-        }
-
-        # Wrap it to match existing structure
-        best_trade_dict = {'new_spread_dto': best_trade_dto}
-      elif trade_strategy == config.POSITION_TYPE_DIAGONAL:
-        self.label_quote_status.text = "Getting best diagonal..."
-        print("calling get_new_open_trade_dto")
-        # best_trade_dto is really a dict with 'new_spread_dto' as the payload
-        best_trade_dict = anvil.server.call('get_new_open_trade_dto',
-                                           self.dropdown_environment.selected_value,
-                                           symbol)
-      elif trade_strategy == config.POSITION_TYPE_CSP:
-        alert("strategy not implemented")
-      
-      # Check if the server call was successful
-      # extract trade_dto from dict
-      if best_trade_dict:
-        best_trade_dto = best_trade_dict['new_spread_dto']
-      else:
-        alert("No Valid open trade")
-        return
-      """
-      
+            
       print(f"best {trade_strategy} DTO is: {best_trade_dto}")
 
       # 5. Populate strategy leg fields
@@ -571,7 +504,6 @@ class Form1(Form1Template):
     """Shows the correct number of leg entry rows based on
     what type of manual transaction is being entered.
     """
-    #manual_trade.manual_transaction_type_change(self, action=config.TRADE_ACTION_OPEN)
     selected_strategy = self.dropdown_manual_transaction_type.selected_value
     if selected_strategy in config.POSITION_TYPES_ACTIVE:
       manual_trade.new_leg_builder(self, selected_strategy, self.my_settings.default_qty)

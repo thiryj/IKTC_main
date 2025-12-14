@@ -15,7 +15,7 @@ from tradier_python import TradierAPI, Position
 import server_helpers
 import server_config
 import positions
-import config
+from shared import config
 
 # To allow anvil.server.call() to call functions here, we mark
 #  
@@ -236,40 +236,7 @@ def get_open_trades_with_risk(environment: str=server_config.ENV_SANDBOX,
           # Get live underlying price
           underlying_symbol = trade['Underlying']
           underlying_price = server_helpers.get_underlying_price(tradier_client, underlying_symbol)
-          """
-          # Short leg quote
-          if trade['Underlying'] in config.INDEX_SYMBOLS:
-            # slower API call 
-            short_occ = server_helpers.lookup_option_symbol(
-              tradier_client,
-              trade['Underlying'],
-              current_short_leg['Expiration'],
-              current_short_leg['OptionType'],
-              current_short_leg['Strike']
-            )
-          else:
-            # offline faster version
-            short_occ = server_helpers.build_occ_symbol(
-              underlying=underlying_symbol,
-              expiration_date=current_short_leg['Expiration'],
-              option_type=current_short_leg['OptionType'],
-              strike=current_short_leg['Strike']
-            )
-          # print(f"calling get_quote on: {occ_symbol}")
-          short_quote = server_helpers.get_quote_direct(tradier_client, short_occ)
-          print(f"in refresh: short_quote is: {short_quote}")
-
-          # Long Leg Quote (if exists)
-          long_quote = None
-          if current_long_leg:
-            long_occ = server_helpers.build_occ_symbol(
-              underlying=trade['Underlying'],
-              expiration_date=current_long_leg['Expiration'],
-              option_type=current_long_leg['OptionType'],
-              strike=current_long_leg['Strike']
-            )
-            long_quote = server_helpers.get_quote_direct(tradier_client, long_occ)
-          """
+          
           # 3. Fetch Quotes for Both Legs
           short_quote = server_helpers.fetch_leg_quote(tradier_client, trade['Underlying'], current_short_leg)
           long_quote = server_helpers.fetch_leg_quote(tradier_client, trade['Underlying'], current_long_leg)  
@@ -901,7 +868,7 @@ def get_new_open_trade_dto(environment: str,
   # 1. Resolve Settings
   settings_row = app_tables.settings.get() or {} # Assumes single-row settings table
   target_rroc = settings_row['default_target_rroc'] if settings_row and settings_row['default_target_rroc'] else config.DEFAULT_RROC_HARVEST_TARGET
-  width = settings_row['default_width'] if settings_row and settings_row['default_width'] else config.DEFAULT_VERTICAL_WIDTH
+  width = settings_row['default_width'] if settings_row and settings_row['default_width'] else config.DEFAULT_WIDTH
   qty = settings_row['default_qty'] if settings_row and settings_row['default_qty'] else config.DEFAULT_QUANTITY
   
   best_spread_object = None

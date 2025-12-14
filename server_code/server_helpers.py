@@ -21,7 +21,7 @@ from itertools import groupby
 
 # Private libs
 import server_config
-import config #client side / combined config
+from shared import config #client side / combined config
 import positions
 import ServerModule1
 

@@ -11,44 +11,45 @@
 ENV_SANDBOX = 'SANDBOX'
 ENV_PRODUCTION = 'PROD'
 
+# Position Types
+POSITION_TYPE_VERTICAL = 'VERTICAL'
+POSITION_TYPES = [POSITION_TYPE_VERTICAL]
+POSITION_TYPES_ACTIVE = [POSITION_TYPE_VERTICAL]
+
+# Defaults
+DEFAULT_SYMBOL = 'SPX'
+DEFAULT_QUANTITY = 1
+
+# Spread Defaults
+DEFTAULT_WIDTH = 25
+DEFAULT_VERTICAL_DELTA = -0.20
+DEFAULT_MULTIPLIER = 100
+DEFAULT_HARVEST_TARGET = 0.50   # % of current spread premium
+
+#Roll Defaults
+MAX_DTE = 90
+
+# Hedge Defaults
+DEFAULT_HEDGE_DELTA = -.25
+DEFAULT_HEDGE_RATIO = 0.20   # 1 hedge per 5 spreads
+DEFAULT_HEDGE_DTE = 90
+
 # Tradier Enums
 TRADIER_INTERVAL_TICK = 'tick'
 TRADIER_INTERVAL_1MIN = '1min'
 TRADIER_INTERVAL_5MIN = '5min'
 TRADIER_INTERVAL_15MIN = '15min'
 
-# Default underlying symbol
-DEFAULT_SYMBOL = 'SPX'
-INDEX_SYMBOLS = ['SPX', 'NDX', 'RUT', 'VIX']
-DEFAULT_QUANTITY = 1
-DEFAULT_MULTIPLIER = 100
-DEFAULT_RROC_HARVEST_TARGET = 0.02   # 2% return on capital per day
-DEFAULT_VERTICAL_DELTA = 0.2
-DEFAULT_VERTICAL_WIDTH = 25
-DEFAULT_VERTICAL_HEDGE_DELTA = 25
-DEFAULT_VERTICAL_HEDGE_RATIO = int(1/5)
-DEFAULT_VERTICAL_HEDGE_DTE = 90
-
-# Logic defaults
-DAYS_TO_NOT_OPEN = (4,)  # data shows don't open bullish positions on Friday because prices are statistically higher 
-VERTICAL_SPREADS_ONLY = False
-ROLL_EXPIRATION_EXTENSION_LIMIT = 5    #number of valid expirations from today to consider for rolling
-
 # Flags
 TRADE_ONE = True
-VERTICAL_SPREADS_ONLY = False
 
 # Option types
 OPTION_TYPE_PUT = 'PUT'
 OPTION_TYPE_CALL = 'CALL'
 
 # Trade Actions
-TRADE_ACTION_OPEN = 'Open'
-TRADE_ACTION_ROLL = 'Roll'
-TRADE_ACTION_CLOSE = 'Close'
-NEW_TRADE_ACTIONS = {TRADE_ACTION_OPEN}
-CLOSE_TRADE_ACTIONS = {TRADE_ACTION_ROLL, TRADE_ACTION_CLOSE}
-POSITION_ACTIONS = [*NEW_TRADE_ACTIONS, *CLOSE_TRADE_ACTIONS]
+TRADE_ACTION_OPEN = 'OPEN'
+TRADE_ACTION_CLOSE = 'CLOSE'
 
 # Leg actions
 ACTION_SELL_TO_OPEN = 'Sell to Open'
@@ -58,15 +59,9 @@ ACTION_BUY_TO_CLOSE = 'Buy to Close'
 OPEN_ACTIONS = {ACTION_SELL_TO_OPEN, ACTION_BUY_TO_OPEN}
 CLOSE_ACTIONS = {ACTION_BUY_TO_CLOSE, ACTION_SELL_TO_CLOSE}
 
-# Position Types
-POSITION_TYPE_VERTICAL = 'Vertical 0DTE'
-POSITION_TYPE_DIAGONAL = 'Diagonal'
-POSITION_TYPE_CSP = 'CSP'
-POSITION_TYPE_COVERED_CALL = 'Covered Call'
-POSITION_TYPE_STOCK = 'Stock'
-POSITION_TYPE_MISC = 'Misc'
-POSITION_TYPES = [POSITION_TYPE_VERTICAL, POSITION_TYPE_DIAGONAL, POSITION_TYPE_CSP, POSITION_TYPE_COVERED_CALL, POSITION_TYPE_STOCK, POSITION_TYPE_MISC]
-POSITION_TYPES_ACTIVE = [POSITION_TYPE_VERTICAL]
+# Option Metadata
+OPTION_TYPE_PUT = 'PUT'
+OPTION_TYPE_CALL = 'CALL'
 
 MANUAL_ENTRY_STATE_OPEN = 'OPEN'
 MANUAL_ENTRY_STATE_CLOSE = 'CLOSE'
@@ -78,11 +73,12 @@ TRADE_TICKET_STATE_CLOSE = 'CLOSE'
 TRADE_TICKET_STATE_ROLL = 'ROLL'
 
 # Campaings
-CAMPAIGN_AUTO_PRE = "Pre-Auto"   #used app to select and send open verts, but manually closed/rolled.  subject to human emotion + error
-CAMPAIGN_AUTO_SEMI = "Semi-Auto" #app now sends harvest orders and panic close orders (rolls?)
-CAMPAIGN_AUTO_FULL = "Full-Auto" #app now executes all rules including hedge management w/o human intervention
+CAMPAIGN_AUTO_PRE = "PRE-AUTO"   #used app to select and send open verts, but manually closed/rolled.  subject to human emotion + error
+CAMPAIGN_AUTO_SEMI = "SEMI-AUTO" #app now sends harvest orders and panic close orders (rolls?)
+CAMPAIGN_AUTO_FULL = "FULL-AUTO" #app now executes all rules including hedge management w/o human intervention
 CAMPAIGN_ALL = [CAMPAIGN_AUTO_PRE, CAMPAIGN_AUTO_SEMI, CAMPAIGN_AUTO_FULL]
 
+#INDEX_SYMBOLS = ['SPX', 'NDX', 'RUT', 'VIX']
 
 # Globals
 REFRESH_TIMER_INTERVAL = 3600
