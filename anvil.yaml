@@ -2,7 +2,26 @@ allow_embedding: false
 db_schema:
   cycles:
     client: none
-    columns: []
+    columns:
+    - admin_ui: {order: 0, width: 61}
+      name: Status
+      type: string
+    - admin_ui: {order: 1, width: 200}
+      name: HedgeLeg
+      target: legs
+      type: link_single
+    - admin_ui: {order: 2, width: 200}
+      name: StartDate
+      type: date
+    - admin_ui: {order: 3, width: 200}
+      name: EndDate
+      type: date
+    - admin_ui: {order: 4, width: 200}
+      name: NetPL
+      type: number
+    - admin_ui: {order: 5, width: 200}
+      name: RuleSet
+      type: string
     server: full
     title: Cycles
   legs:
@@ -32,6 +51,32 @@ db_schema:
       type: bool
     server: full
     title: Legs
+  rulesets:
+    client: none
+    columns:
+    - admin_ui: {order: 0, width: 200}
+      name: Name
+      type: string
+    - admin_ui: {order: 1, width: 200}
+      name: Description
+      type: string
+    - admin_ui: {order: 2, width: 200}
+      name: HedgeDelta
+      type: number
+    - admin_ui: {order: 3, width: 200}
+      name: HedgeDTE
+      type: number
+    - admin_ui: {order: 4, width: 200}
+      name: SpreadDelta
+      type: number
+    - admin_ui: {order: 5, width: 200}
+      name: HarvestFraction
+      type: number
+    - admin_ui: {order: 6, width: 200}
+      name: RollTriggerMultiple
+      type: number
+    server: full
+    title: RuleSets
   settings:
     client: full
     columns:
@@ -97,6 +142,10 @@ db_schema:
     - admin_ui: {order: 7, width: 200}
       name: TargetHarvestPrice
       type: number
+    - admin_ui: {order: 8, width: 200}
+      name: Cylce
+      target: cycles
+      type: link_single
     server: full
     title: Trades
   transactions:
