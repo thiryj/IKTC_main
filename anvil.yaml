@@ -1,5 +1,10 @@
 allow_embedding: false
 db_schema:
+  cycles:
+    client: none
+    columns: []
+    server: full
+    title: Cycles
   legs:
     client: none
     columns:
