@@ -20,7 +20,6 @@ from tradier_python.models import Quote
 from itertools import groupby
 
 # Private libs
-import server_config
 from shared import config #client side / combined config
 import positions
 import ServerModule1
@@ -710,7 +709,7 @@ def find_vertical_roll(t: TradierAPI,
   print(f"Cost to Close: ${cost_to_close:.2f} | Target Width: {target_width:.2f}")
 
   # 2. Get Expirations (Out) and Sort by Date (Nearest First)
-  expirations = get_near_term_expirations(t, underlying_symbol, max_days_out=server_config.MAX_DTE)
+  expirations = get_near_term_expirations(t, underlying_symbol, max_days_out=config.MAX_DTE)
   valid_expirations = sorted([e for e in expirations if e > current_short.expiration_date])
   print(f"number of roll expirations inspected: {len(valid_expirations)}")
 

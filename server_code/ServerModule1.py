@@ -13,7 +13,6 @@ from tradier_python import TradierAPI, Position
 
 # personal lib section
 import server_helpers
-import server_config
 import positions
 from shared import config
 
@@ -60,7 +59,7 @@ def get_account_nickname(account_number_to_check):
   return nicknames.get(account_number_to_check, "account nickname not found")
 
 @anvil.server.callable
-def get_open_trades_for_dropdown(environment: str=server_config.ENV_SANDBOX):
+def get_open_trades_for_dropdown(environment: str=config.ENV_SANDBOX):
   """
     Fetches all open trades and formats them as a list
     of (display_text, item) tuples for a DropDown.
@@ -143,14 +142,14 @@ def get_tradier_positions(environment: str):
     return e
 
 @anvil.server.callable
-def get_open_trades(environment: str=server_config.ENV_SANDBOX):
+def get_open_trades(environment: str=config.ENV_SANDBOX):
   """Fetches all trades with a status of 'Open'."""
   open_trades_list = list(app_tables.trades.search(Status=q.full_text_match('Open'),Account=environment))
   #print(f"Found {len(open_trades_list)} open trades.")
   return open_trades_list
 
 @anvil.server.callable
-def get_open_trades_with_risk(environment: str=server_config.ENV_SANDBOX, 
+def get_open_trades_with_risk(environment: str=config.ENV_SANDBOX, 
                               refresh_risk: bool=True)->Dict:
   """
     Fetches all open trades, then enriches them with live
@@ -196,11 +195,11 @@ def get_open_trades_with_risk(environment: str=server_config.ENV_SANDBOX,
       
       #print(f"Active legs found: {active_legs}")
       if trade['Strategy'] in config.POSITION_TYPES_ACTIVE:
-        current_short_leg = next((leg for leg in active_legs if leg['Action'] == server_config.SHORT_OPEN_ACTION), None)
+        current_short_leg = next((leg for leg in active_legs if leg['Action'] == config.ACTION_SELL_TO_OPEN), None)
         
         if trade['Strategy'] == config.POSITION_TYPE_VERTICAL:
           #print(f"trade strategy: {trade['Strategy']} is identified: as position type:{config.POSITION_TYPE_VERTICAL}")
-          current_long_leg =  next((leg for leg in active_legs if leg['Action'] == server_config.LONG_OPEN_ACTION), None)
+          current_long_leg =  next((leg for leg in active_legs if leg['Action'] == config.ACTION_BUY_TO_OPEN), None)
           if current_long_leg:
             trade_dto['long_strike'] = current_long_leg['Strike']
           else:
@@ -279,10 +278,10 @@ def get_open_trades_with_risk(environment: str=server_config.ENV_SANDBOX,
           # do the assignment risk part
           option_price = short_quote.get('bid') # Use bid for risk calc
           intrinsic_value = 0
-          if current_short_leg['OptionType'] == server_config.OPTION_TYPE_PUT:
+          if current_short_leg['OptionType'] == config.OPTION_TYPE_PUT:
             intrinsic_value = max(0, short_strike_price - underlying_price)
             #print(f"in put: intrinsic: {intrinsic_value}, extrinsic: {extrinsic_value}")
-          elif current_short_leg['OptionType'] == server_config.OPTION_TYPE_CALL: 
+          elif current_short_leg['OptionType'] == config.OPTION_TYPE_CALL: 
             intrinsic_value = max(0, underlying_price - short_strike_price)
             #print(f"in call: intrinsic: {intrinsic_value}, extrinsic: {extrinsic_value}")
           else:
@@ -291,7 +290,7 @@ def get_open_trades_with_risk(environment: str=server_config.ENV_SANDBOX,
           trade_dto['extrinsic_value'] = extrinsic_value
     
           # Our risk rule: ITM and extrinsic is less than $0.10
-          if intrinsic_value > 0 and extrinsic_value < server_config.ASSIGNMENT_RISK_THRESHOLD:
+          if intrinsic_value > 0 and extrinsic_value < config.ASSIGNMENT_RISK_THRESHOLD:
             trade_dto['is_at_risk'] = True
           
         except Exception as e:
@@ -308,7 +307,7 @@ def get_open_trades_with_risk(environment: str=server_config.ENV_SANDBOX,
   return enriched_trades_list
 
 @anvil.server.callable
-def get_closed_trades(environment: str=server_config.ENV_SANDBOX, campaign_filter: str=None)->Dict: 
+def get_closed_trades(environment: str=config.ENV_SANDBOX, campaign_filter: str=None)->Dict: 
   search_kwargs = {'Campaign': campaign_filter} if campaign_filter else {}
   
   closed_trades = app_tables.trades.search(Status='Closed', Account=environment, **search_kwargs)
@@ -343,7 +342,7 @@ def get_closed_trades(environment: str=server_config.ENV_SANDBOX, campaign_filte
       trade_legs = app_tables.legs.search(Transaction=q.any_of(*trans))
       for leg in trade_legs:
         # We assume the quantity of the 'Open' leg represents the trade size
-        if leg['Action'] in server_config.OPEN_ACTIONS:
+        if leg['Action'] in config.OPEN_ACTIONS:
           qty = leg['Quantity']
           break
     trade_dict['Quantity'] = qty
@@ -416,7 +415,7 @@ def submit_order(environment: str='SANDBOX',
 def get_quantity(best_position: positions.DiagonalPutSpread)->int:
   # calculate quantity based on fixed allocation.  
   #TODO: generalize this to lookup available capital t.get_account_balance().cash.cash_available
-  quantity = math.floor(server_config.ALLOCATION / best_position.margin) if best_position.margin > 0 else 0
+  quantity = math.floor(config.ALLOCATION / best_position.margin) if best_position.margin > 0 else 0
   quantity = 1 if config.TRADE_ONE else quantity
   return quantity
 
@@ -550,7 +549,7 @@ def save_manual_trade(environment: str,
     if manual_entry_state in (config.MANUAL_ENTRY_STATE_CLOSE, config.MANUAL_ENTRY_STATE_ROLL):
       trade_row = existing_trade_row
       if manual_entry_state == config.MANUAL_ENTRY_STATE_CLOSE:
-        existing_trade_row.update(Status=server_config.TRADE_ROW_STATUS_CLOSED, CloseDate=trade_date)    
+        existing_trade_row.update(Status=config.TRADE_ACTION_CLOSE, CloseDate=trade_date)    
       elif manual_entry_state == config.MANUAL_ENTRY_STATE_ROLL:
         existing_trade_row.update(TargetHarvestPrice=harvest_price)
     # Create new trade row for OPEN
@@ -559,7 +558,7 @@ def save_manual_trade(environment: str,
       trade_row = app_tables.trades.add_row(
         Underlying=underlying_symbol,
         Strategy=strategy,    # Strategy
-        Status=server_config.TRADE_ROW_STATUS_OPEN,
+        Status=config.TRADE_ACTION_OPEN,
         OpenDate=trade_date,
         Account=environment,
         Campaign=settings_row['current_campaign'],
@@ -667,7 +666,7 @@ def save_manual_trade(environment: str,
 
       # Update the parent trade row with the final numbers
       trade_row.update(
-        Status=server_config.TRADE_ROW_STATUS_CLOSED, 
+        Status=config.TRADE_ACTION_CLOSE, 
         CloseDate=trade_date,
         TotalPL=round(total_pl_dollars)
       )
@@ -705,7 +704,7 @@ def validate_manual_legs(environment: str, legs_data_list):
 @anvil.server.callable
 def get_roll_package_dto(environment: str, 
                          trade_row: Row, 
-                         margin_expansion_limit: float = server_config.LONG_STRIKE_DELTA_MAX
+                         margin_expansion_limit: float = config.LONG_STRIKE_DELTA_MAX
                         )->Dict:
   """
     Finds active legs, gets live prices, and calculates

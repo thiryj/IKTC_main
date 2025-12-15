@@ -6,7 +6,13 @@
 #    Module1.say_hello()
 #
 # - hello me at git
+# server side configs to port over
+ALLOCATION = 10000
+#MAX_DTE = 90
+LONG_STRIKE_DELTA_MAX = 25  # how much lower than short strike to search
+ASSIGNMENT_RISK_THRESHOLD = 0.1
 
+# Shared config
 # Environment
 ENV_SANDBOX = 'SANDBOX'
 ENV_PRODUCTION = 'PROD'
@@ -47,7 +53,7 @@ TRADE_ONE = True
 OPTION_TYPE_PUT = 'PUT'
 OPTION_TYPE_CALL = 'CALL'
 
-# Trade Actions
+# Trade Table
 TRADE_ACTION_OPEN = 'OPEN'
 TRADE_ACTION_CLOSE = 'CLOSE'
 
