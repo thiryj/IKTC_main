@@ -14,7 +14,8 @@ from tradier_python import TradierAPI, Position
 # personal lib section
 import server_helpers
 import positions
-from client_code.shared import config
+#from ..shared import config
+from shared import config
 
 # To allow anvil.server.call() to call functions here, we mark
 #  
@@ -412,7 +413,7 @@ def submit_order(environment: str='SANDBOX',
   return trade_response
   
 @anvil.server.callable
-def get_quantity(best_position: positions.DiagonalPutSpread)->int:
+def get_quantity(best_position: positions.PutSpread)->int:
   # calculate quantity based on fixed allocation.  
   #TODO: generalize this to lookup available capital t.get_account_balance().cash.cash_available
   quantity = math.floor(config.ALLOCATION / best_position.margin) if best_position.margin > 0 else 0
@@ -770,7 +771,7 @@ def get_roll_package_dto(environment: str,
   )
   
     # --- 2. Calculate Closing Cost & Build Closing Leg Dicts ---
-  current_spread = positions.DiagonalPutSpread(short_leg_quote, long_leg_quote)
+  current_spread = positions.PutSpread(short_leg_quote, long_leg_quote)
   closing_spread_dto = current_spread.get_dto()
   closing_spread_dto['spread_action'] = config.TRADE_ACTION_CLOSE
   total_close_cost = current_spread.calculate_cost_to_close()
@@ -958,7 +959,7 @@ def get_close_trade_dto(environment: str, trade_row: Row) -> Dict:
     long_quote = server_helpers.get_quote(t, long_occ)
 
     # 3. Build DTO (Position Object)
-    current_spread = positions.DiagonalPutSpread(short_quote, long_quote)
+    current_spread = positions.PutSpread(short_quote, long_quote)
     close_dto = current_spread.get_dto()
 
     # Calculate Debit (Cost to Close)

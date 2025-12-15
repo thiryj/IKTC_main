@@ -8,10 +8,10 @@ from typing import Dict
 from tradier_python.models import Quote
 import datetime
 
-class DiagonalPutSpread:    
+class PutSpread:    
   def __init__(self, short_put: Quote, long_put: Quote):
     """
-        Initializes a DiagonalPutSpread position from two option leg objects OR dictionaries (and converts them).
+        Initializes a PutSpread position from two option leg objects OR dictionaries (and converts them).
     """
     # Helper to convert dict to Quote if necessary
     def ensure_quote(item):

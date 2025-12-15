@@ -20,72 +20,361 @@ from tradier_python.models import Quote
 from itertools import groupby
 
 # Private libs
-from client_code.shared import config #client side / combined config
+from shared import config #client side / combined config
 import positions
 import ServerModule1
 
-# This is a server module. It runs on the Anvil server,
-# rather than in the user's browser.
-#
-# To allow anvil.server.call() to call functions here, we mark
-# them with @anvil.server.callable.
-# Here is an example - you can replace it with your own:
-#
-# @anvil.server.callable
-
 def get_tradier_client(environment: str)->Tuple[TradierAPI, str]:
   """
-    Gets an authenticated Tradier client.
-    Checks a module-level cache first. If not found, it creates, caches, and returns it.
+    Gets an authenticated Tradier client based on environment.
     """
 
   env_prefix = environment.upper() # e.g., 'PROD' or 'SANDBOX'
-  # Use square bracket dictionary-style access, not .get()
   api_key = anvil.secrets.get_secret(f'{env_prefix}_TRADIER_API_KEY')
   account_id = anvil.secrets.get_secret(f'{env_prefix}_TRADIER_ACCOUNT')
   endpoint_url = anvil.secrets.get_secret(f'{env_prefix}_ENDPOINT_URL')
 
-  # Create the authenticated client object
   t = TradierAPI(
     token=api_key, 
     default_account_id=account_id, 
     endpoint=endpoint_url)
   return t, endpoint_url
+  
+def get_quote(provider, symbol: str) -> dict:
+  """
+  Fetches a quote directly from the Tradier API, bypassing the buggy library wrapper.
+  Args:
+      provider: Can be an environment string (e.g., 'SANDBOX') OR an authenticated TradierAPI client.
+      symbol: The symbol to fetch (Equity, Index, or OCC Option)
+  Returns:
+      dict: The quote data dictionary, or None if not found/error.
+  """
+  # 1. Resolve the Client
+  if isinstance(provider, str):
+    tradier_client, _ = get_tradier_client(provider)
+  else:
+    tradier_client = provider
+
+  endpoint = '/v1/markets/quotes'
+  params = {'symbols': symbol, 'greeks': 'false'}
+
+  try:
+    data = tradier_client.get(endpoint, params=params)
+    quote = data.get('quotes', {}).get('quote')
+
+    # Handle list vs dict response
+    if isinstance(quote, list) and quote:
+      return quote[0]
+    return quote if isinstance(quote, dict) else None
+  except Exception as e:
+    print(f"Error fetching quote for {symbol}: {e}")
+    return None
     
+def fetch_option_chain_direct(
+  tradier_client: "TradierAPI",
+  symbol: str,
+  expiration: dt.date,
+  greeks: bool = False
+) -> List[Dict[str, Any]]:
+  """
+    Fetches an option chain directly from the Tradier API and parses it resiliently.
+    
+    This bypasses the tradier_python library's default parser, allowing 
+    the function to return all *valid* options from a chain, even if 
+    some individual options contain bad data (e.g., null bids or asks).
+    """
+  endpoint = '/v1/markets/options/chains'
+  params = {
+    'symbol': symbol,
+    'expiration': expiration.strftime('%Y-%m-%d'),
+    'greeks': greeks
+  }
+
+  good_options_data: List[Dict[str, Any]] = []
+
+  try:
+    # This now correctly assumes .get() returns a dict.
+    data = tradier_client.get(endpoint, params=params)
+
+    # 2. Check for API-level errors in the returned dictionary
+    if not isinstance(data, dict):
+      print(f"Tradier API call for {symbol} {expiration} returned non-dict: {type(data)}")
+      return []
+
+      # Check for common error key formats
+    if 'errors' in data or 'error' in data:
+      api_error = data.get('errors', data.get('error', 'Unknown API error'))
+      print(f"Tradier API returned an error for {symbol} {expiration}: {api_error}")
+      return []  # Return empty list on API error
+
+      # 3. Safely access the list of options
+      # Tradier's structure is {'options': {'option': [...]}}
+    options_list = data.get('options', {}).get('option', [])
+
+    # 4. Handle edge case: Tradier returns a dict if only one option exists
+    if options_list and not isinstance(options_list, list):
+      options_list = [options_list]
+
+    if not options_list:
+      # Check if API returned 'null' for the options key
+      if data.get('options') == 'null' or data.get('options') is None:
+        print(f"No options found for {symbol} on {expiration} (API returned null)")
+      else:
+        print(f"No options found for {symbol} on {expiration}")
+      return []
+
+      # 5. Resiliently parse each option in the list
+    for option_data in options_list:
+      try:
+        # --- This is the key validation block ---
+        bid = option_data.get('bid')
+        if bid is None or float(bid) <= 0:
+          #print(f"Skipping option (bad bid): {option_data.get('description', 'N/A')}")
+          continue 
+
+        ask = option_data.get('ask')
+        if ask is None or float(ask) <= 0:
+          #print(f"Skipping option (bad ask): {option_data.get('description', 'N/A')}")
+          continue
+
+        strike = option_data.get('strike')
+        if strike is None:
+          print(f"Skipping option (no strike): {option_data.get('description', 'N/A')}")
+          continue
+
+          # --- If it passes, add it to our list ---
+
+          # We also re-cast the values to ensure they are floats
+          # for consistent use downstream.
+        option_data['bid'] = float(bid)
+        option_data['ask'] = float(ask)
+        option_data['strike'] = float(strike)
+
+        good_options_data.append(option_data)
+
+      except (TypeError, ValueError, KeyError) as e:
+        # Catches float(None), float("bad_string"), or a missing key
+        print(f"Failed to parse one option for {symbol} {expiration}. Error: {e}. Data: {option_data}. Skipping.")
+        continue # Skip this bad option
+
+    return good_options_data
+
+  except Exception as e:
+    # Catch any other unexpected error (e.g., network, a different .get() failure)
+    # This is where your original error was caught.
+    print(f"An unexpected error occurred during API call for {symbol} {expiration}: {e}")
+    return []  # Return empty list on failure
+
+
 def get_near_term_expirations(tradier_client: TradierAPI, 
                               symbol: str, 
-                              max_days_out: int = 10
+                              max_days_out: int = 45
                              ) -> List[dt.date]:
   """
     Fetches all option expiration dates for a symbol and filters for near-term dates.
-
     Args:
         tradier_client (TradierAPI): An initialized tradier-python client object.
         symbol (str): The underlying stock symbol (e.g., "IWM").
         max_days_out (int, optional): The maximum number of days from today
                                       to include. Defaults to 30.
-
     Returns:
         List[dt.date]: A list of datetime.date objects representing the valid,
                     near-term expiration dates.
     """
+  try:
+    # 1. Get current time in ET to handle market close correctly
+    now_et = dt.datetime.now(pytz.timezone('US/Eastern'))
+    today = now_et.date()
+    min_days = 1 if now_et.time() >= dt.time(16, 0) else 0    # 2. If after 4:00 PM ET, minimum days out is 1 (tomorrow), else 0 (today)
+    all_expirations = tradier_client.get_option_expirations(symbol=symbol, include_all_roots=True)
+    near_term_expirations = [
+      exp for exp in all_expirations
+      if min_days <= (exp - today).days <= max_days_out
+    ]
+    return sorted(near_term_expirations)
+  except Exception:
+    return []
 
-  # 1. Get current time in ET to handle market close correctly
-  now_et = dt.datetime.now(pytz.timezone('US/Eastern'))
-
-  # 2. If after 4:00 PM ET, minimum days out is 1 (tomorrow), else 0 (today)
-  min_days = 1 if now_et.time() >= dt.time(16, 0) else 0
-
-  # 3. Use the ET date for accurate comparison
-  today = now_et.date()
+# ------------------------------------------------------------------
+#  CORE LOGIC: VERTICAL SPREAD (PutSpread)
+# ------------------------------------------------------------------
+def find_vertical_roll(t: TradierAPI, 
+                       underlying_symbol, 
+                       current_position: positions.PutSpread)-> positions.PutSpread:
+  """
+  Finds the best 'Roll Out and Down' candidate.
   
-  all_expirations = tradier_client.get_option_expirations(symbol=symbol, include_all_roots=True)
-  near_term_expirations = [
-    exp for exp in all_expirations
-    if min_days <= (exp - today).days <= max_days_out
+  PRIORITIES:
+  1. MINIMIZE DTE: Stop at the first (nearest) expiration date that offers a valid trade.
+  2. AGGRESSION: Within that expiration, pick the Lowest Strike (Max Distance) possible for Zero Debit.
+  """
+
+  # 1. Setup
+  current_short = current_position.short_put
+  cost_to_close = current_position.calculate_cost_to_close()
+  settings_row = app_tables.settings.get()
+  target_width = settings_row['default_width']
+  
+  print(f"Scanning Vertical Roll (Down & Out) for {underlying_symbol}.")
+  print(f"Cost to Close: ${cost_to_close:.2f} | Target Width: {target_width:.2f}")
+
+  # 2. Get Sorted Expirations (Out) 
+  expirations = get_near_term_expirations(t, underlying_symbol, max_days_out=config.MAX_DTE)
+  valid_expirations = [e for e in expirations if e > current_short.expiration_date]
+  #print(f"number of roll expirations inspected: {len(valid_expirations)}")
+  if not valid_expirations:
+    print("No valid future  expirations found")
+    return None
+
+  # 3. Iterate Expirations (Nearest -> Farthest)
+  for exp in valid_expirations:
+    chain = fetch_option_chain_direct(t, underlying_symbol, exp)
+    if not chain: continue
+
+    # Filter for Puts and Sort by Strike Descending (High -> Low)
+    puts = [o for o in chain if o['option_type'] == config.OPTION_TYPE_PUT.lower()]
+    puts.sort(key=lambda x: x['strike'], reverse=True)
+
+    best_for_this_exp = None
+    
+    # Scan Strikes Downward
+    for short_opt in puts:
+      # CONSTRAINT: Down (Strike must be lower than current)
+      if short_opt['strike'] >= current_short.strike:
+        continue
+
+      # Find matching Long Leg (maintain width)
+      target_long_strike = short_opt['strike'] - target_width
+      # fuzzy match for long strike (within 0.05)
+      long_opt = next((p for p in puts if abs(p['strike'] - target_long_strike) < 0.05), None)
+
+      if not long_opt:
+        continue
+
+      # Calculate Economics
+      credit_to_open = short_opt['bid'] - long_opt['ask']
+      net_roll_price = credit_to_open - cost_to_close
+
+      # CONSTRAINT: Zero Debit (Credit >= Cost)
+      if net_roll_price >= -0.01:
+
+        # Candidate found. 
+        # Since we iterate DOWN (High -> Low Strike), and premium drops as we go down,
+        # we keep overwriting 'best_for_this_exp' as long as we find valid trades.
+        # The last one we find will be the Lowest Strike (Max Distance) for this expiry.
+        best_for_this_exp = {
+          'short_leg': short_opt,
+          'long_leg': long_opt,
+          'expiration': exp,
+          'net_roll_price': net_roll_price
+        }
+      else:
+        # Net Roll became negative. Stop searching lower strikes for this expiry.
+        break
+
+    # PRIORITY CHECK: Did we find ANY valid candidate in this (nearest) expiration?
+    if best_for_this_exp:
+      print(f"Best Roll Found in Nearest Valid Expiry: {best_for_this_exp['expiration']}")
+      print(f"Strike: {best_for_this_exp['short_leg']['strike']} | Net Price: {best_for_this_exp['net_roll_price']:.2f}")
+
+      try:
+        new_short_obj = Quote(**best_for_this_exp['short_leg'])
+        new_long_obj = Quote(**best_for_this_exp['long_leg'])
+        return positions.PutSpread(new_short_obj, new_long_obj)
+      except Exception as e:
+        print(f"Error building best position object: {e}")
+        return None
+
+  # If loop finishes without returning, no valid rolls exist.
+  print("No valid roll candidates found (Zero Debit / Down & Out).")
+  return None
+
+def get_vertical_spread(t: TradierAPI, 
+                        symbol: str = config.DEFAULT_SYMBOL, 
+                        target_dte: int = 0,
+                        target_delta: float = config.DEFAULT_VERTICAL_DELTA, 
+                        width: float = None, 
+                        quantity: int = None,
+                        target_rroc: float = None)->Dict:
+  """
+    Finds a 0DTE (or nearest term) Vertical Put Spread based on Delta.
+  """
+
+  # 2. Find Expiration (Nearest valid date)
+  # We re-use your existing helper to find the first valid expiration (Today or Tomorrow)
+  expirations = get_near_term_expirations(t, symbol, max_days_out=5)
+  if not expirations:
+    return None
+    
+  # Find date closest to target_dte
+  target_date_obj = dt.date.today() + dt.timedelta(days=target_dte)
+  # min() logic: finds exp with smallest absolute difference in days
+  best_exp = min(expirations, key=lambda d: abs((d - target_date_obj).days))
+
+  # 3. Fetch Chain WITH GREEKS
+  chain = fetch_option_chain_direct(t, symbol, best_exp, greeks=True)
+  if not chain:
+    return None
+
+  # 4. Find Short Leg (Closest to Delta)
+  # Filter for Puts with valid Delta
+  puts = [
+    p for p in chain 
+    if p.get('option_type') == config.OPTION_TYPE_PUT.lower() 
+    and p.get('greeks') 
+    and p['greeks'].get('delta') is not None
   ]
-  return near_term_expirations
-  
+  if not puts:
+    return None
+
+    # Find put with delta closest to target (e.g., -0.20)
+    # Note: Put delta is negative, so we compare abs(delta)
+  def delta_distance(opt):
+    d = float(opt['greeks']['delta'])
+    return abs(abs(d) - abs(target_delta))
+
+  short_leg = min(puts, key=delta_distance)
+
+  # 5. Find Long Leg (Short Strike - Width)
+  target_long_strike = short_leg['strike'] - width
+
+  # Look for exact match first
+  long_leg = next((p for p in puts if abs(float(p['strike']) - target_long_strike) < 0.05), None)
+
+  # 5.2. Create Position Object
+  # Note: ensure keys like 'contract_size' exist or are defaulted if API omits them
+  short_leg.setdefault('contract_size', 100)
+  long_leg.setdefault('contract_size', 100)
+  position = positions.PutSpread(short_leg, long_leg)
+  #print(f"position is: {position.get_dto()}")
+  return position
+  """
+  # 6. Return Dict with Object
+  harvest_amt = (position.margin / 100) * target_rroc # adapting your margin logic to your harvest logic
+
+  #print(f"harvest_target: {target_rroc}, harvest_amt: {harvest_amt}")
+  return_dict = {
+    "status": "success",
+    "parameters": {
+      "symbol": symbol,
+      "expiration": target_date.strftime('%Y-%m-%d'),
+      "width": abs(short_leg['strike'] - long_leg['strike']),
+      "quantity": quantity,
+      "target_delta": target_delta
+    },
+    "legs": position,
+    "financials": {
+      "credit_per_contract": round(position.net_premium, 2),
+      "margin_per_contract": round(position.margin / 100, 2), # Class calculates total margin (width*100), normalizing for display if needed
+      "total_credit": round(position.net_premium * quantity * 100, 2),
+      "total_margin_risk": round(position.margin * quantity, 2),
+      "harvest_price": round(position.net_premium - harvest_amt, 2)
+    }
+  }
+  #print(f"return_dict: {return_dict}")
+  return return_dict
+  """
+
 def submit_spread_order(
                                 tradier_client: TradierAPI,
                                 endpoint_url: str,
@@ -235,7 +524,7 @@ def get_expiration_date(symbol: str) -> dt.date | None:
     # Handles cases where the symbol is malformed or too short
     return None
 
-def build_occ_symbol(underlying, expiration_date, option_type, strike):
+def build_occ_symbol(underlying, expiration_date, option_type, strike, root_override=None):
   """
     Builds a 21-character OCC option symbol from its parts.
     e.g., IWM, 2025-11-03, Put, 247 -> IWM251103P00247000
@@ -243,18 +532,21 @@ def build_occ_symbol(underlying, expiration_date, option_type, strike):
   # Format date to YYMMDD (e.g., '251103')
   exp_str = expiration_date.strftime('%y%m%d')
 
+  # Use override if provided ('SPXW'), otherwise default to underlying
+  root = root_override if root_override else underlying
+  
   # Format type to P or C
   type_char = 'P' if option_type.upper() == config.OPTION_TYPE_PUT else 'C'
   
   # Format strike to 8-digit string, (e.g., 247 -> '00247000')
   # This assumes strike is a number. We multiply by 1000 and pad with zeros.
-  strike_int = int(strike * 1000)
+  strike_int = int(float(strike) * 1000)
   strike_str = f"{strike_int:08d}"
 
   # Combine all parts
-  return f"{underlying}{exp_str}{type_char}{strike_str}"
+  return f"{root}{exp_str}{type_char}{strike_str}"
 
-def get_net_roll_rom_per_day(pos: positions.DiagonalPutSpread, cost_to_close: float, today: dt.date)-> float:
+def get_net_roll_rom_per_day(pos: positions.PutSpread, cost_to_close: float, today: dt.date)-> float:
   dte = (pos.short_put.expiration_date - today).days
 
   # Check for DTE and valid margin
@@ -332,222 +624,6 @@ def calculate_reference_margin(trade_row,
   # 5. Safety check: Margin cannot be less than zero
   return max(0, reference_margin)
 
-def fetch_option_chain_direct(
-  tradier_client: "TradierAPI",
-  symbol: str,
-  expiration: dt.date,
-  greeks: bool = False
-) -> List[Dict[str, Any]]:
-  """
-    Fetches an option chain directly from the Tradier API and parses it resiliently.
-    
-    This bypasses the tradier_python library's default parser, allowing 
-    the function to return all *valid* options from a chain, even if 
-    some individual options contain bad data (e.g., null bids or asks).
-    """
-  endpoint = '/v1/markets/options/chains'
-  params = {
-    'symbol': symbol,
-    'expiration': expiration.strftime('%Y-%m-%d'),
-    'greeks': greeks
-  }
-
-  good_options_data: List[Dict[str, Any]] = []
-
-  try:
-    # 1. Make the direct API call.
-    # This now correctly assumes .get() returns a dict.
-    data = tradier_client.get(endpoint, params=params)
-
-    # 2. Check for API-level errors in the returned dictionary
-    if not isinstance(data, dict):
-      print(f"Tradier API call for {symbol} {expiration} returned non-dict: {type(data)}")
-      return []
-
-      # Check for common error key formats
-    if 'errors' in data or 'error' in data:
-      api_error = data.get('errors', data.get('error', 'Unknown API error'))
-      print(f"Tradier API returned an error for {symbol} {expiration}: {api_error}")
-      return []  # Return empty list on API error
-
-      # 3. Safely access the list of options
-      # Tradier's structure is {'options': {'option': [...]}}
-    options_list = data.get('options', {}).get('option', [])
-
-    # 4. Handle edge case: Tradier returns a dict if only one option exists
-    if options_list and not isinstance(options_list, list):
-      options_list = [options_list]
-
-    if not options_list:
-      # Check if API returned 'null' for the options key
-      if data.get('options') == 'null' or data.get('options') is None:
-        print(f"No options found for {symbol} on {expiration} (API returned null)")
-      else:
-        print(f"No options found for {symbol} on {expiration}")
-      return []
-
-      # 5. Resiliently parse each option in the list
-    for option_data in options_list:
-      try:
-        # --- This is the key validation block ---
-        bid = option_data.get('bid')
-        if bid is None or float(bid) <= 0:
-          #print(f"Skipping option (bad bid): {option_data.get('description', 'N/A')}")
-          continue 
-
-        ask = option_data.get('ask')
-        if ask is None or float(ask) <= 0:
-          #print(f"Skipping option (bad ask): {option_data.get('description', 'N/A')}")
-          continue
-
-        strike = option_data.get('strike')
-        if strike is None:
-          print(f"Skipping option (no strike): {option_data.get('description', 'N/A')}")
-          continue
-
-          # --- If it passes, add it to our list ---
-
-          # We also re-cast the values to ensure they are floats
-          # for consistent use downstream.
-        option_data['bid'] = float(bid)
-        option_data['ask'] = float(ask)
-        option_data['strike'] = float(strike)
-
-        good_options_data.append(option_data)
-
-      except (TypeError, ValueError, KeyError) as e:
-        # Catches float(None), float("bad_string"), or a missing key
-        print(f"Failed to parse one option for {symbol} {expiration}. Error: {e}. Data: {option_data}. Skipping.")
-        continue # Skip this bad option
-
-    return good_options_data
-
-  except Exception as e:
-    # Catch any other unexpected error (e.g., network, a different .get() failure)
-    # This is where your original error was caught.
-    print(f"An unexpected error occurred during API call for {symbol} {expiration}: {e}")
-    return []  # Return empty list on failure
-
-def get_quote(provider, symbol: str) -> dict:
-  """
-  Fetches a quote directly from the Tradier API, bypassing the buggy library wrapper.
-  Args:
-      provider: Can be an environment string (e.g., 'SANDBOX') OR an authenticated TradierAPI client.
-      symbol: The symbol to fetch (Equity, Index, or OCC Option)
-  Returns:
-      dict: The quote data dictionary, or None if not found/error.
-  """
-  # 1. Resolve the Client
-  if isinstance(provider, str):
-    tradier_client, _ = get_tradier_client(provider)
-  else:
-    tradier_client = provider
-    
-  endpoint = '/v1/markets/quotes'
-  params = {'symbols': symbol, 'greeks': 'false'}
-
-  try:
-    # 2. Direct API Call
-    data = tradier_client.get(endpoint, params=params)
-
-    # 3. Validate Response Structure
-    if not isinstance(data, dict):
-      print(f"API call for {symbol} returned non-dictionary: {type(data)}")
-      return None
-
-    if 'errors' in data or 'error' in data:
-      # Use .get() to avoid crashing on structure mismatches
-      api_error = data.get('errors', data.get('error', 'Unknown API error'))
-      # Only print error if it's NOT just an unmatched symbol (which we handle via fallback)
-      if "unmatched" not in str(api_error).lower():
-        print(f"Tradier API returned an error for {symbol}: {api_error}")
-      return None
-
-    # 4. Parse 'quotes' -> 'quote'
-    # Tradier returns {'quote': {...}} for single, or {'quote': [{...}]} for multiple
-    quotes_container = data.get('quotes', {})
-    quote = None
-    if quotes_container:
-      quote_data = quotes_container.get('quote')
-      # Handle List vs Dict inconsistency
-      if isinstance(quote_data, list) and quote_data:
-        quote = quote_data[0]
-      elif isinstance(quote_data, dict):
-        quote = quote_data
-      else:
-        #print("in get_quote: quote_data: {quote_data} is empty or None, trying weekly 'w' suffix")
-        quote = None
-    else:
-      print("get_quote failed: quotes_container is None")
-      return None
-
-    # 5. Index Fallback Logic
-    # If we got no data, and it's an index symbol (but not already xxxW), try xxxW
-    if not quote:
-      for index_root in config.INDEX_SYMBOLS:
-        weekly_root = f"{index_root}W"
-        if symbol.startswith(index_root) and not symbol.startswith(weekly_root):   #don't keep looping if indexW fails too
-          #print(f"lookup failed for {symbol}. Retrying with {symbol}W fallback...")      
-          alt_symbol = symbol.replace(index_root, weekly_root, 1)
-          # Recursive call with the same client
-          return get_quote(tradier_client, alt_symbol)
-
-    if not quote:
-      print(f"No quote data returned for {symbol}.") # Optional noise reduction
-      return None
-
-    return quote
-
-  except Exception as e:
-    print(f"Critical parsing error for {symbol}: {e}")
-    return None
-'''
-def get_quote_direct(tradier_client: "TradierAPI",
-                                symbol: str) ->Dict:
-  """
-    Bypasses the tradier_python model validation to get the quote 
-    for both securities and indices.
-  """
-  
-  endpoint = '/v1/markets/quotes'
-  
-  # Define parameters (note: 'greeks' and 'include_all_roots' must be strings for the API)
-  params = {
-    'symbols': symbol, 
-    'greeks': 'false'
-  }
-
-  try:
-    # 1. Use the client's session to make the authenticated request
-    data = tradier_client.get(endpoint, params=params)
-    if not isinstance(data, dict):
-      print(f"API call for {symbol} returned non-dictionary: {type(data)}")
-      return 0.0
-    #print(f"data: {data}")
-    if 'errors' in data or 'error' in data:
-      api_error = data.get('errors', data.get('error', 'Unknown API error'))
-      print(f"Tradier API returned an error for {symbol}: {api_error}")
-      return 0.0
-
-    # 3. Safely access the quote (quotes -> quote -> [0])
-    # Use .get() with default values to prevent KeyErrors if the structure is missing
-    quotes = data.get('quotes', {})
-    #print(f"quotes: {quotes}")
-    quote = quotes.get('quote', [])
-    #print(f"quote: {quote}")
-    if not quote:
-      print(f"No quote data returned for {symbol}.")
-      return 0.0
-    return quote
-
-  except requests.exceptions.RequestException as e:
-    print(f"Network error fetching quote for {symbol}: {e}")
-    return 0.0
-  except Exception as e:
-    # Catch errors from missing keys or failed float conversion
-    print(f"Critical parsing error for {symbol}: {e}")
-    return 0.0
-'''
 
 def lookup_option_symbol(tradier_client, underlying, expiration, option_type, strike):
   """
@@ -604,10 +680,6 @@ def lookup_option_symbol(tradier_client, underlying, expiration, option_type, st
           return symbol
 
     print(f"No matching symbol found in lookup for suffix {expected_suffix}")
-    return None
-
-  except Exception as e:
-    print(f"Error looking up option symbol: {e}")
     return None
 
   except Exception as e:
@@ -685,179 +757,3 @@ def fetch_strikes_direct(tradier_client, symbol, expiration):
   except Exception as e:
     print(f"Error fetching strikes for {symbol}: {e}")
     return []
-
-def find_vertical_roll(t: TradierAPI, 
-                       underlying_symbol, 
-                       current_position: positions.DiagonalPutSpread, 
-                       original_credit: float = 0.0,
-                       margin_expansion_limit_ticks: int = 0):
-  """
-  Finds the best 'Roll Out and Down' candidate.
-  
-  PRIORITIES:
-  1. MINIMIZE DTE: Stop at the first (nearest) expiration date that offers a valid trade.
-  2. AGGRESSION: Within that expiration, pick the Lowest Strike (Max Distance) possible for Zero Debit.
-  """
-
-  # 1. Setup
-  current_short = current_position.short_put
-  current_long = current_position.long_put
-  cost_to_close = current_position.calculate_cost_to_close()
-  target_width = current_short.strike - current_long.strike
-
-  print(f"Scanning Vertical Roll (Down & Out) for {underlying_symbol}.")
-  print(f"Cost to Close: ${cost_to_close:.2f} | Target Width: {target_width:.2f}")
-
-  # 2. Get Expirations (Out) and Sort by Date (Nearest First)
-  expirations = get_near_term_expirations(t, underlying_symbol, max_days_out=config.MAX_DTE)
-  valid_expirations = sorted([e for e in expirations if e > current_short.expiration_date])
-  print(f"number of roll expirations inspected: {len(valid_expirations)}")
-
-  # 3. Iterate Expirations (Nearest -> Farthest)
-  for exp in valid_expirations:
-    chain = fetch_option_chain_direct(t, underlying_symbol, exp)
-    if not chain: continue
-
-    # Filter for Puts and Sort by Strike Descending (High -> Low)
-    puts = [o for o in chain if o['option_type'] == 'put']
-    puts.sort(key=lambda x: x['strike'], reverse=True)
-
-    best_for_this_exp = None
-
-    for short_opt in puts:
-      # CONSTRAINT: Down (Strike must be lower than current)
-      if short_opt['strike'] >= current_short.strike:
-        continue
-
-      # Find matching Long Leg (maintain width)
-      target_long_strike = short_opt['strike'] - target_width
-      # fuzzy match for long strike (within 0.05)
-      long_opt = next((p for p in puts if abs(p['strike'] - target_long_strike) < 0.05), None)
-
-      if not long_opt:
-        continue
-
-      # Calculate Economics
-      credit_to_open = short_opt['bid'] - long_opt['ask']
-      net_roll_price = credit_to_open - cost_to_close
-
-      # CONSTRAINT: Zero Debit (Credit >= 0)
-      if net_roll_price >= 0.00:
-
-        # Candidate found. 
-        # Since we iterate DOWN (High -> Low Strike), and premium drops as we go down,
-        # we keep overwriting 'best_for_this_exp' as long as we find valid trades.
-        # The last one we find will be the Lowest Strike (Max Distance) for this expiry.
-        best_for_this_exp = {
-          'short_leg': short_opt,
-          'long_leg': long_opt,
-          'expiration': exp,
-          'net_roll_price': net_roll_price,
-          'new_margin': (short_opt['strike'] - long_opt['strike']) * 100,
-          'width': short_opt['strike'] - long_opt['strike']
-        }
-      else:
-        # Net Roll became negative. Stop searching lower strikes for this expiry.
-        break
-
-    # PRIORITY CHECK: Did we find ANY valid candidate in this (nearest) expiration?
-    if best_for_this_exp:
-      print(f"Best Roll Found in Nearest Valid Expiry: {best_for_this_exp['expiration']}")
-      print(f"Strike: {best_for_this_exp['short_leg']['strike']} | Net Price: {best_for_this_exp['net_roll_price']:.2f}")
-
-      try:
-        new_short_obj = Quote(**best_for_this_exp['short_leg'])
-        new_long_obj = Quote(**best_for_this_exp['long_leg'])
-        return positions.DiagonalPutSpread(new_short_obj, new_long_obj)
-      except Exception as e:
-        print(f"Error building best position object: {e}")
-        return None
-
-  # If loop finishes without returning, no valid rolls exist.
-  print("No valid roll candidates found (Zero Debit / Down & Out).")
-  return None
-  
-def get_vertical_spread(t: TradierAPI, 
-                        symbol: str = config.DEFAULT_SYMBOL, 
-                        target_delta: float = config.DEFAULT_VERTICAL_DELTA, 
-                        width: float = None, 
-                        quantity: int = None,
-                        target_rroc: float = None)->Dict:
-  """
-    Finds a 0DTE (or nearest term) Vertical Put Spread based on Delta.
-  """
-  
-  # 2. Find Expiration (Nearest valid date)
-  # We re-use your existing helper to find the first valid expiration (Today or Tomorrow)
-  expirations = get_near_term_expirations(t, symbol, max_days_out=3)
-  if not expirations:
-    return {"error": f"No expirations found for {symbol}"}
-  target_date = expirations[0] # Pick the nearest one (0DTE logic)
-  
-  # 3. Fetch Chain WITH GREEKS
-  chain = fetch_option_chain_direct(t, symbol, target_date, greeks=True)
-  if not chain:
-    return {"error": "API Error fetching chain or no valid options found."}
-
-  # 4. Find Short Leg (Closest to Delta)
-  # Filter for Puts with valid Delta
-  puts = [
-    p for p in chain 
-    if p.get('option_type') == 'put' 
-    and p.get('greeks') 
-    and p['greeks'].get('delta') is not None
-  ]
-  if not puts:
-    return {"error": "No puts with greeks found."}
-
-    # Find put with delta closest to target (e.g., -0.20)
-    # Note: Put delta is negative, so we compare abs(delta)
-  def delta_distance(opt):
-    d = float(opt['greeks']['delta'])
-    return abs(abs(d) - abs(target_delta))
-
-  short_leg = min(puts, key=delta_distance)
-  
-  # 5. Find Long Leg (Short Strike - Width)
-  target_long_strike = short_leg['strike'] - width
-
-  # Look for exact match first
-  long_leg = next((p for p in puts if abs(float(p['strike']) - target_long_strike) < 0.01), None)
-  if not long_leg:
-    def strike_distance(opt):
-      return abs(float(opt['strike']) - target_long_strike)
-      # Filter to only strikes BELOW short strike
-    lower_puts = [p for p in puts if float(p['strike']) < short_leg['strike']]
-    if not lower_puts:
-      return {"error": "No valid long legs found below short strike."}
-    long_leg = min(lower_puts, key=strike_distance)
-  # 5.2. Create Position Object
-  # Note: ensure keys like 'contract_size' exist or are defaulted if API omits them
-  short_leg.setdefault('contract_size', 100)
-  long_leg.setdefault('contract_size', 100)
-  position = positions.DiagonalPutSpread(short_leg, long_leg)
-  #print(f"position is: {position.get_dto()}")
-  # 6. Return Dict with Object
-  harvest_amt = (position.margin / 100) * target_rroc # adapting your margin logic to your harvest logic
-  
-  #print(f"harvest_target: {target_rroc}, harvest_amt: {harvest_amt}")
-  return_dict = {
-    "status": "success",
-    "parameters": {
-      "symbol": symbol,
-      "expiration": target_date.strftime('%Y-%m-%d'),
-      "width": abs(short_leg['strike'] - long_leg['strike']),
-      "quantity": quantity,
-      "target_delta": target_delta
-    },
-    "legs": position,
-    "financials": {
-      "credit_per_contract": round(position.net_premium, 2),
-      "margin_per_contract": round(position.margin / 100, 2), # Class calculates total margin (width*100), normalizing for display if needed
-      "total_credit": round(position.net_premium * quantity * 100, 2),
-      "total_margin_risk": round(position.margin * quantity, 2),
-      "harvest_price": round(position.net_premium - harvest_amt, 2)
-    }
-  }
-  #print(f"return_dict: {return_dict}")
-  return return_dict
