@@ -19,10 +19,8 @@ from .Form_ManualLegEntry import Form_ManualLegEntry
 class Form1(Form1Template):
   def __init__(self, **properties):
     # populate settings components first
-        
     # get the settings row (one row of data) and pass it to helper class
     row = anvil.server.call('get_settings')
-    
     # this trick allows dot notation
     self.my_settings = client_helpers.LiveSettings(row)
     
@@ -43,7 +41,7 @@ class Form1(Form1Template):
 
     # **************Timers
     self.timer_order_status.interval = 0 # disabled for now
-    self.timer_risk_refresh.interval = config.REFRESH_TIMER_INTERVAL if self.my_settings.refresh_timer_on else 0
+    self.timer_risk_refresh.interval = config.REFRESH_TIMER_INTERVAL if config.REFRESH_TIMER_ON else 0
 
     # ***************Events
     # Open Positions edit event broadcast
@@ -71,7 +69,8 @@ class Form1(Form1Template):
           
     # Populate misc components
     self.dropdown_strategy_picker.items = config.POSITION_TYPES_ACTIVE
-    self.textbox_symbol.text = self.my_settings.default_symbol
+    self.textbox_symbol.text = config.DEFAULT_SYMBOL
+    self.dropdown_environment.items = [config.ENV_SANDBOX, config.ENV_PRODUCTION]
     
     # Trade history grid
     #self.load_trade_history() # don't load until needed, save startup time
@@ -88,6 +87,9 @@ class Form1(Form1Template):
 
     # Log into default environment as displayed in the dropdown
     self.dropdown_environment_change()
+    @property
+    def current_env(self):
+      return self.dropdown_environment.selected_value
 
   # --- EVENT HANDLER WRAPPER METHODS ---
   def on_manual_qty_change(self, **event_args):
@@ -142,7 +144,7 @@ class Form1(Form1Template):
       return
     self.label_symbol.text = symbol
     self.label_quote_status.text = "Getting underlying price..."
-    underlying_price = anvil.server.call('get_price', self.environment, symbol) 
+    underlying_price = anvil.server.call('get_price', symbol, self.environment ) 
     if underlying_price is None:
       alert("unable to get underlying price")
     else:
@@ -228,7 +230,8 @@ class Form1(Form1Template):
       self.label_trade_ticket_title.text = f"{self.label_trade_ticket_title.text} - Close {trade['Strategy']}"
 
       # 1. Fetch Close Package
-      close_dto = anvil.server.call('get_close_trade_dto', self.environment, trade)
+      trade_env = trade['Account']
+      close_dto = anvil.server.call('get_close_trade_dto', trade_env, trade)
 
       if not close_dto:
         alert("Could not calculate closing trade details.")
@@ -276,7 +279,8 @@ class Form1(Form1Template):
     print(f"Handling roll request for trade: {trade['Underlying']} {trade['Strategy']}")
     try:      
       self.label_symbol.text = trade['Underlying']  
-      underlying_price = anvil.server.call('get_price', self.environment, self.label_symbol.text) 
+      trade_env = trade['Account']
+      underlying_price = anvil.server.call('get_price', trade['Underlying'],trade_env) 
       if underlying_price is None:
         alert("unable to get underlying price")
       else:
@@ -290,11 +294,9 @@ class Form1(Form1Template):
       #current_spread_width = closing_short
       # get margin setting
       
-      print(f" margin expansion limit setting: {self.my_settings.margin_expansion_limit}")
+      #print(f" margin expansion limit setting: {self.my_settings.margin_expansion_limit}")
       roll_package = anvil.server.call('get_roll_package_dto', 
-                                       self.environment, 
-                                       trade, 
-                                       self.my_settings.margin_expansion_limit
+                                       trade_id=trade.get_id() 
                                       )
   
       if not roll_package:
@@ -302,6 +304,7 @@ class Form1(Form1Template):
         return
   
         # 3. Store the 4-leg DTO list. We'll need this when we submit.
+      #print(f"roll package is: {roll_package}")
       current_roll_dto_list = roll_package['legs_to_populate']
       self.trade_dto_list = [roll_package.get('new_spread_dto'), roll_package.get('closing_spread_dto')]
       #print(f"handle_roll_trade_request: self.trade_dto_list:{self.trade_dto_list}")
@@ -616,10 +619,11 @@ class Form1(Form1Template):
   def refresh_open_positions_grid(self, refresh_risk: bool=True):
     #print("Refreshing open positions with live risk data...") if refresh_risk else print("...Updating positions")     
     # Call the new "smart" function and pass the environment
-    open_trades_data = anvil.server.call('get_open_trades_with_risk', self.environment, refresh_risk)
+    open_trades_data = anvil.server.call('get_open_trades_with_risk', self.environment)
   
     self.repeatingpanel_open_positions.items = open_trades_data
-    print(f"...RROC/Risk data loaded for {len(open_trades_data)} positions") if refresh_risk else print(f"...{len(open_trades_data)} Positions updated")
+    if open_trades_data:
+      print(f"...RROC/Risk data loaded for {len(open_trades_data)} positions") if refresh_risk else print(f"...{len(open_trades_data)} Positions updated")
 
   def dropdown_manual_existing_trade_change(self, **event_args):
     """
@@ -708,7 +712,7 @@ class Form1(Form1Template):
     self.dropdown_manual_transaction_type.visible = False
     self.dropdown_manual_existing_trade.selected_value = None
     self.dropdown_manual_existing_trade.visible = False
-    self.textbox_manual_underlying.text = self.my_settings.default_symbol
+    self.textbox_manual_underlying.text = config.DEFAULT_SYMBOL
     self.textbox_manual_credit_debit.text = None
     self.textbox_manual_underlying.visible = False
     self.checkbox_manual_entry_roll.checked=False
@@ -722,7 +726,7 @@ class Form1(Form1Template):
       Resets all input components on the manual entry card to a default state.
     """
     self.label_trade_ticket_title.text = 'Trade Ticket'
-    self.textbox_trade_entry_quantity.text = self.my_settings.default_qty
+    self.textbox_trade_entry_quantity.text = config.DEFAULT_QUANTITY
     self.label_margin.text = None
     self.textbox_overide_price.text = None
     self.trade_ticket_state = None
@@ -772,7 +776,7 @@ class Form1(Form1Template):
     
   def checkbox_refresh_timer_on_change(self, **event_args):
     """This method is called when this checkbox is checked or unchecked"""
-    self.timer_risk_refresh.interval = config.REFRESH_TIMER_INTERVAL if self.my_settings.refresh_timer_on else 0
+    self.timer_risk_refresh.interval = config.REFRESH_TIMER_INTERVAL if config.REFRESH_TIMER_ON else 0
 
   def checkbox_manual_entry_roll_change(self, **event_args):
     """This method is called when this checkbox is checked or unchecked"""

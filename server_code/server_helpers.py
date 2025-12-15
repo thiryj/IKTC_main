@@ -1,65 +1,43 @@
-# Anvil libs
 import anvil.secrets
-import anvil.tables as tables
-import anvil.tables.query as q
-from anvil.tables import app_tables
 import anvil.server
-
-# Public libs
-import requests
-import math
-import logging
-import sys
-import pytz
-from urllib.parse import urljoin
-from typing import Dict, List, Tuple, Any, TYPE_CHECKING
 import datetime as dt
-from pydantic_core import ValidationError
+import pytz
+import math
+from typing import Dict, List, Tuple, Any
+from urllib.parse import urljoin
+
+# External Libs
+import requests
 from tradier_python import TradierAPI
 from tradier_python.models import Quote
-from itertools import groupby
 
-# Private libs
-from shared import config #client side / combined config
+# Internal Libs
+from shared import config 
 import positions
-import ServerModule1
 
-def get_tradier_client(environment: str)->Tuple[TradierAPI, str]:
-  """
-    Gets an authenticated Tradier client based on environment.
-    """
+# ------------------------------------------------------------------
+#  INFRASTRUCTURE & API CLIENTS
+# ------------------------------------------------------------------
 
-  env_prefix = environment.upper() # e.g., 'PROD' or 'SANDBOX'
+def get_tradier_client(environment: str) -> Tuple[TradierAPI, str]:
+  """Gets an authenticated Tradier client based on environment."""
+  env_prefix = environment.upper()
   api_key = anvil.secrets.get_secret(f'{env_prefix}_TRADIER_API_KEY')
   account_id = anvil.secrets.get_secret(f'{env_prefix}_TRADIER_ACCOUNT')
   endpoint_url = anvil.secrets.get_secret(f'{env_prefix}_ENDPOINT_URL')
 
-  t = TradierAPI(
-    token=api_key, 
-    default_account_id=account_id, 
-    endpoint=endpoint_url)
+  t = TradierAPI(token=api_key, default_account_id=account_id, endpoint=endpoint_url)
   return t, endpoint_url
-  
+
 def get_quote(provider, symbol: str) -> dict:
-  """
-  Fetches a quote directly from the Tradier API, bypassing the buggy library wrapper.
-  Args:
-      provider: Can be an environment string (e.g., 'SANDBOX') OR an authenticated TradierAPI client.
-      symbol: The symbol to fetch (Equity, Index, or OCC Option)
-  Returns:
-      dict: The quote data dictionary, or None if not found/error.
-  """
-  # 1. Resolve the Client
+  """Reliable fetch of a single quote dict."""
   if isinstance(provider, str):
     tradier_client, _ = get_tradier_client(provider)
   else:
     tradier_client = provider
 
-  endpoint = '/v1/markets/quotes'
-  params = {'symbols': symbol, 'greeks': 'false'}
-
   try:
-    data = tradier_client.get(endpoint, params=params)
+    data = tradier_client.get('/v1/markets/quotes', params={'symbols': symbol, 'greeks': 'false'})
     quote = data.get('quotes', {}).get('quote')
 
     # Handle list vs dict response
@@ -69,161 +47,81 @@ def get_quote(provider, symbol: str) -> dict:
   except Exception as e:
     print(f"Error fetching quote for {symbol}: {e}")
     return None
-    
-def fetch_option_chain_direct(
-  tradier_client: "TradierAPI",
-  symbol: str,
-  expiration: dt.date,
-  greeks: bool = False
-) -> List[Dict[str, Any]]:
+
+def fetch_option_chain_direct(tradier_client: TradierAPI, symbol: str, expiration: dt.date) -> List[Dict]:
   """
-    Fetches an option chain directly from the Tradier API and parses it resiliently.
-    
-    This bypasses the tradier_python library's default parser, allowing 
-    the function to return all *valid* options from a chain, even if 
-    some individual options contain bad data (e.g., null bids or asks).
-    """
-  endpoint = '/v1/markets/options/chains'
+  Robust fetch of option chain, filtering out bad data.
+  """
   params = {
     'symbol': symbol,
     'expiration': expiration.strftime('%Y-%m-%d'),
-    'greeks': greeks
+    'greeks': 'true'
   }
 
-  good_options_data: List[Dict[str, Any]] = []
-
   try:
-    # This now correctly assumes .get() returns a dict.
-    data = tradier_client.get(endpoint, params=params)
-
-    # 2. Check for API-level errors in the returned dictionary
-    if not isinstance(data, dict):
-      print(f"Tradier API call for {symbol} {expiration} returned non-dict: {type(data)}")
-      return []
-
-      # Check for common error key formats
-    if 'errors' in data or 'error' in data:
-      api_error = data.get('errors', data.get('error', 'Unknown API error'))
-      print(f"Tradier API returned an error for {symbol} {expiration}: {api_error}")
-      return []  # Return empty list on API error
-
-      # 3. Safely access the list of options
-      # Tradier's structure is {'options': {'option': [...]}}
+    data = tradier_client.get('/v1/markets/options/chains', params=params)
     options_list = data.get('options', {}).get('option', [])
 
-    # 4. Handle edge case: Tradier returns a dict if only one option exists
-    if options_list and not isinstance(options_list, list):
+    if isinstance(options_list, dict): 
       options_list = [options_list]
 
-    if not options_list:
-      # Check if API returned 'null' for the options key
-      if data.get('options') == 'null' or data.get('options') is None:
-        print(f"No options found for {symbol} on {expiration} (API returned null)")
-      else:
-        print(f"No options found for {symbol} on {expiration}")
-      return []
+    valid_options = []
+    for opt in options_list:
+      # Filter bad data
+      if not opt.get('strike') or not opt.get('bid') or not opt.get('ask'):
+        continue
 
-      # 5. Resiliently parse each option in the list
-    for option_data in options_list:
-      try:
-        # --- This is the key validation block ---
-        bid = option_data.get('bid')
-        if bid is None or float(bid) <= 0:
-          #print(f"Skipping option (bad bid): {option_data.get('description', 'N/A')}")
-          continue 
+      # Cast to correct types
+      opt['strike'] = float(opt['strike'])
+      opt['bid'] = float(opt['bid'])
+      opt['ask'] = float(opt['ask'])
+      valid_options.append(opt)
 
-        ask = option_data.get('ask')
-        if ask is None or float(ask) <= 0:
-          #print(f"Skipping option (bad ask): {option_data.get('description', 'N/A')}")
-          continue
-
-        strike = option_data.get('strike')
-        if strike is None:
-          print(f"Skipping option (no strike): {option_data.get('description', 'N/A')}")
-          continue
-
-          # --- If it passes, add it to our list ---
-
-          # We also re-cast the values to ensure they are floats
-          # for consistent use downstream.
-        option_data['bid'] = float(bid)
-        option_data['ask'] = float(ask)
-        option_data['strike'] = float(strike)
-
-        good_options_data.append(option_data)
-
-      except (TypeError, ValueError, KeyError) as e:
-        # Catches float(None), float("bad_string"), or a missing key
-        print(f"Failed to parse one option for {symbol} {expiration}. Error: {e}. Data: {option_data}. Skipping.")
-        continue # Skip this bad option
-
-    return good_options_data
-
+    return valid_options
   except Exception as e:
-    # Catch any other unexpected error (e.g., network, a different .get() failure)
-    # This is where your original error was caught.
-    print(f"An unexpected error occurred during API call for {symbol} {expiration}: {e}")
-    return []  # Return empty list on failure
+    print(f"Error fetching chain: {e}")
+    return []
 
-
-def get_near_term_expirations(tradier_client: TradierAPI, 
-                              symbol: str, 
-                              max_days_out: int = 45
-                             ) -> List[dt.date]:
-  """
-    Fetches all option expiration dates for a symbol and filters for near-term dates.
-    Args:
-        tradier_client (TradierAPI): An initialized tradier-python client object.
-        symbol (str): The underlying stock symbol (e.g., "IWM").
-        max_days_out (int, optional): The maximum number of days from today
-                                      to include. Defaults to 30.
-    Returns:
-        List[dt.date]: A list of datetime.date objects representing the valid,
-                    near-term expiration dates.
-    """
+def get_near_term_expirations(tradier_client: TradierAPI, symbol: str, max_days_out: int = 45) -> List[dt.date]:
+  """Returns sorted list of valid expiration dates."""
   try:
-    # 1. Get current time in ET to handle market close correctly
     now_et = dt.datetime.now(pytz.timezone('US/Eastern'))
     today = now_et.date()
-    min_days = 1 if now_et.time() >= dt.time(16, 0) else 0    # 2. If after 4:00 PM ET, minimum days out is 1 (tomorrow), else 0 (today)
-    all_expirations = tradier_client.get_option_expirations(symbol=symbol, include_all_roots=True)
-    near_term_expirations = [
-      exp for exp in all_expirations
-      if min_days <= (exp - today).days <= max_days_out
-    ]
-    return sorted(near_term_expirations)
+    # If after 4pm ET, don't include today
+    min_days = 1 if now_et.time() >= dt.time(16, 0) else 0
+
+    all_exps = tradier_client.get_option_expirations(symbol=symbol, include_all_roots=True)
+    return sorted([e for e in all_exps if min_days <= (e - today).days <= max_days_out])
   except Exception:
     return []
 
 # ------------------------------------------------------------------
 #  CORE LOGIC: VERTICAL SPREAD (PutSpread)
 # ------------------------------------------------------------------
+
 def find_vertical_roll(t: TradierAPI, 
-                       underlying_symbol, 
-                       current_position: positions.PutSpread)-> positions.PutSpread:
+                       underlying_symbol: str, 
+                       current_position: positions.PutSpread) -> positions.PutSpread:
   """
   Finds the best 'Roll Out and Down' candidate.
-  
-  PRIORITIES:
-  1. MINIMIZE DTE: Stop at the first (nearest) expiration date that offers a valid trade.
-  2. AGGRESSION: Within that expiration, pick the Lowest Strike (Max Distance) possible for Zero Debit.
   """
 
   # 1. Setup
   current_short = current_position.short_put
   cost_to_close = current_position.calculate_cost_to_close()
-  settings_row = app_tables.settings.get()
-  target_width = settings_row['default_width']
-  
-  print(f"Scanning Vertical Roll (Down & Out) for {underlying_symbol}.")
-  print(f"Cost to Close: ${cost_to_close:.2f} | Target Width: {target_width:.2f}")
+  # We enforce the default width from config for the NEW spread, 
+  # regardless of old width, to standardize the cycle.
+  target_width = config.DEFAULT_WIDTH 
 
-  # 2. Get Sorted Expirations (Out) 
-  expirations = get_near_term_expirations(t, underlying_symbol, max_days_out=config.MAX_DTE)
+  print(f"Scanning Roll for {underlying_symbol}. Cost to Close: ${cost_to_close:.2f}")
+
+  # 2. Get Expirations (Out)
+  # Look out up to 90 days
+  expirations = get_near_term_expirations(t, underlying_symbol, max_days_out=90)
   valid_expirations = [e for e in expirations if e > current_short.expiration_date]
-  #print(f"number of roll expirations inspected: {len(valid_expirations)}")
+
   if not valid_expirations:
-    print("No valid future  expirations found")
+    print("No valid future expirations found.")
     return None
 
   # 3. Iterate Expirations (Nearest -> Farthest)
@@ -231,21 +129,22 @@ def find_vertical_roll(t: TradierAPI,
     chain = fetch_option_chain_direct(t, underlying_symbol, exp)
     if not chain: continue
 
-    # Filter for Puts and Sort by Strike Descending (High -> Low)
+    # Filter for Puts
     puts = [o for o in chain if o['option_type'] == config.OPTION_TYPE_PUT.lower()]
+    # Sort High Strike -> Low Strike
     puts.sort(key=lambda x: x['strike'], reverse=True)
 
     best_for_this_exp = None
-    
+
     # Scan Strikes Downward
     for short_opt in puts:
       # CONSTRAINT: Down (Strike must be lower than current)
       if short_opt['strike'] >= current_short.strike:
         continue
 
-      # Find matching Long Leg (maintain width)
+      # Find matching Long Leg
       target_long_strike = short_opt['strike'] - target_width
-      # fuzzy match for long strike (within 0.05)
+      # Fuzzy match long leg (within 0.05)
       long_opt = next((p for p in puts if abs(p['strike'] - target_long_strike) < 0.05), None)
 
       if not long_opt:
@@ -256,12 +155,9 @@ def find_vertical_roll(t: TradierAPI,
       net_roll_price = credit_to_open - cost_to_close
 
       # CONSTRAINT: Zero Debit (Credit >= Cost)
+      # using -0.01 tolerance to handle floating point noise
       if net_roll_price >= -0.01:
-
-        # Candidate found. 
-        # Since we iterate DOWN (High -> Low Strike), and premium drops as we go down,
-        # we keep overwriting 'best_for_this_exp' as long as we find valid trades.
-        # The last one we find will be the Lowest Strike (Max Distance) for this expiry.
+        # We found a valid candidate.
         best_for_this_exp = {
           'short_leg': short_opt,
           'long_leg': long_opt,
@@ -269,491 +165,193 @@ def find_vertical_roll(t: TradierAPI,
           'net_roll_price': net_roll_price
         }
       else:
-        # Net Roll became negative. Stop searching lower strikes for this expiry.
+        # If we hit a negative roll price, going lower will only get worse.
         break
 
-    # PRIORITY CHECK: Did we find ANY valid candidate in this (nearest) expiration?
+    # PRIORITY: If we found ANY candidate in this Nearest Expiration, take it.
     if best_for_this_exp:
-      print(f"Best Roll Found in Nearest Valid Expiry: {best_for_this_exp['expiration']}")
-      print(f"Strike: {best_for_this_exp['short_leg']['strike']} | Net Price: {best_for_this_exp['net_roll_price']:.2f}")
+      print(f"Target found in {best_for_this_exp['expiration']}. "
+            f"Strikes: {best_for_this_exp['short_leg']['strike']} / {best_for_this_exp['long_leg']['strike']}. "
+            f"Net: {best_for_this_exp['net_roll_price']:.2f}")
 
       try:
+        # Convert dicts back to Quote objects for the wrapper
         new_short_obj = Quote(**best_for_this_exp['short_leg'])
         new_long_obj = Quote(**best_for_this_exp['long_leg'])
         return positions.PutSpread(new_short_obj, new_long_obj)
       except Exception as e:
-        print(f"Error building best position object: {e}")
+        print(f"Error building position object: {e}")
         return None
 
-  # If loop finishes without returning, no valid rolls exist.
-  print("No valid roll candidates found (Zero Debit / Down & Out).")
+  print("No valid zero-debit roll found in any term.")
   return None
 
 def get_vertical_spread(t: TradierAPI, 
-                        symbol: str = config.DEFAULT_SYMBOL, 
-                        target_dte: int = 0,
-                        target_delta: float = config.DEFAULT_VERTICAL_DELTA, 
-                        width: float = None, 
-                        quantity: int = None,
-                        target_rroc: float = None)->Dict:
+                        symbol: str, 
+                        target_dte: int = 45) -> positions.PutSpread:
   """
-    Finds a 0DTE (or nearest term) Vertical Put Spread based on Delta.
+  Finds a new Vertical Put Spread based on config defaults.
   """
 
-  # 2. Find Expiration (Nearest valid date)
-  # We re-use your existing helper to find the first valid expiration (Today or Tomorrow)
-  expirations = get_near_term_expirations(t, symbol, max_days_out=5)
+  # 1. Find Expiration
+  expirations = get_near_term_expirations(t, symbol, max_days_out=90)
   if not expirations:
     return None
-    
+
   # Find date closest to target_dte
   target_date_obj = dt.date.today() + dt.timedelta(days=target_dte)
   # min() logic: finds exp with smallest absolute difference in days
   best_exp = min(expirations, key=lambda d: abs((d - target_date_obj).days))
 
-  # 3. Fetch Chain WITH GREEKS
-  chain = fetch_option_chain_direct(t, symbol, best_exp, greeks=True)
+  # 2. Get Chain
+  chain = fetch_option_chain_direct(t, symbol, best_exp)
   if not chain:
     return None
 
-  # 4. Find Short Leg (Closest to Delta)
-  # Filter for Puts with valid Delta
-  puts = [
-    p for p in chain 
-    if p.get('option_type') == config.OPTION_TYPE_PUT.lower() 
-    and p.get('greeks') 
-    and p['greeks'].get('delta') is not None
-  ]
-  if not puts:
+  puts = [o for o in chain if o['option_type'] == config.OPTION_TYPE_PUT.lower()]
+
+  # 3. Find Short Leg (Closest to Delta)
+  target_delta = abs(config.DEFAULT_VERTICAL_DELTA)
+
+  # Filter for puts that actually have delta data
+  puts_with_delta = [p for p in puts if p.get('greeks') and p['greeks'].get('delta')]
+
+  if not puts_with_delta:
     return None
 
-    # Find put with delta closest to target (e.g., -0.20)
-    # Note: Put delta is negative, so we compare abs(delta)
-  def delta_distance(opt):
-    d = float(opt['greeks']['delta'])
-    return abs(abs(d) - abs(target_delta))
+  # Sort by distance to target delta
+  puts_with_delta.sort(key=lambda x: abs(abs(float(x['greeks']['delta'])) - target_delta))
 
-  short_leg = min(puts, key=delta_distance)
+  # 4. Find valid spread
+  for short_leg in puts_with_delta:
+    target_long_strike = short_leg['strike'] - config.DEFAULT_WIDTH
 
-  # 5. Find Long Leg (Short Strike - Width)
-  target_long_strike = short_leg['strike'] - width
+    long_leg = next((p for p in puts if abs(p['strike'] - target_long_strike) < 0.05), None)
 
-  # Look for exact match first
-  long_leg = next((p for p in puts if abs(float(p['strike']) - target_long_strike) < 0.05), None)
+    if long_leg:
+      return positions.PutSpread(Quote(**short_leg), Quote(**long_leg))
 
-  # 5.2. Create Position Object
-  # Note: ensure keys like 'contract_size' exist or are defaulted if API omits them
-  short_leg.setdefault('contract_size', 100)
-  long_leg.setdefault('contract_size', 100)
-  position = positions.PutSpread(short_leg, long_leg)
-  #print(f"position is: {position.get_dto()}")
-  return position
-  """
-  # 6. Return Dict with Object
-  harvest_amt = (position.margin / 100) * target_rroc # adapting your margin logic to your harvest logic
+  return None
 
-  #print(f"harvest_target: {target_rroc}, harvest_amt: {harvest_amt}")
-  return_dict = {
-    "status": "success",
-    "parameters": {
-      "symbol": symbol,
-      "expiration": target_date.strftime('%Y-%m-%d'),
-      "width": abs(short_leg['strike'] - long_leg['strike']),
-      "quantity": quantity,
-      "target_delta": target_delta
-    },
-    "legs": position,
-    "financials": {
-      "credit_per_contract": round(position.net_premium, 2),
-      "margin_per_contract": round(position.margin / 100, 2), # Class calculates total margin (width*100), normalizing for display if needed
-      "total_credit": round(position.net_premium * quantity * 100, 2),
-      "total_margin_risk": round(position.margin * quantity, 2),
-      "harvest_price": round(position.net_premium - harvest_amt, 2)
-    }
-  }
-  #print(f"return_dict: {return_dict}")
-  return return_dict
-  """
+# ------------------------------------------------------------------
+#  ORDER SUBMISSION (Preserved)
+# ------------------------------------------------------------------
 
-def submit_spread_order(
-                                tradier_client: TradierAPI,
-                                endpoint_url: str,
-                                underlying_symbol: str,
-                                quantity: int,
-                                trade_dto_list: List, # list of dicts with {spread meta..., 'short_put', 'long_put'}
-                                preview: bool = True,
-                                limit_price: float = None
-) -> Dict:
-  """
-  Submits a multi-leg option order directly using the session,
-  bypassing the buggy library helper functions. Can be used for previews.
-
-  Args:
-      tradier_client (TradierAPI): The initialized API client.
-      endpoint_url (str): The endpoint url
-      underlying_symbol (str)
-      quantity (int): The number of contracts for each leg.
-      trade_dto_list: # list of dicts with {spread meta..., 'short_put', 'long_put'}
-      preview (bool, optional): If True, submits as a preview order.
-                                Defaults to False.
-
-  Returns:
-      Dict: The JSON response from the API as a dictionary, or None if an
-            error occurred.
-  """
-  #api_url = f"{endpoint_url}/accounts/{tradier_client.default_account_id}/orders"
-  path = f"accounts/{tradier_client.default_account_id}/orders"
-  #print(f"endpoint_url: {endpoint_url}")
-  api_url = urljoin(endpoint_url, path)
-
-  payload = build_multileg_payload(tradier_client, underlying_symbol, quantity, trade_dto_list)
-
-  # override price if limit_price sent in
-  if limit_price is not None:
-    payload['price'] = f"{limit_price:.2f}"
-
-  # Conditionally add the 'preview' or 'type' parameter based on the flag
-  if preview:
-    payload['preview'] = 'true'
-
-  try:
-    #print(f"payload is: {payload}")
-    #print(f"api_url is: {api_url}")
-    response = tradier_client.session.post(api_url, data=payload, headers={'accept': 'application/json'})
-    #print(f"response is: {response.text}")
-    response.raise_for_status()  # Raise HTTPError for bad responses (4xx or 5xx)
-    return response.json()
-  except requests.exceptions.HTTPError as e:  # <-- Catch the specific HTTP error
-    print(f"An HTTP error occurred submitting the order: {e}")
-    # --- THIS IS THE KEY ---
-    # Print the detailed error message from the API response body
-    print(f"API Response Details: {e.response.text}")
-    return None
-  except Exception as e:
-    print(f"An error occurred submitting the order: {e}")
-    return None
-
-def build_multileg_payload(
-  tradier_client: TradierAPI,
-  underlying_symbol: str, 
-  quantity: int,
-  trade_dto_list: List # list of nested dicts with {spread meta..., 'short_put', 'long_put'}
-)->Dict:
-  """
-    Builds the API payload for a multileg order from a list of spreads.
-    - A list with 1 spread is treated as an 'open' [open] or a 'close' [close].
-    - A list with 2 spreads is treated as a 'roll' [open, close].
-    """
+def build_multileg_payload(tradier_client, underlying_symbol, quantity, trade_dto_list):
+  """Builds 4-leg roll or 2-leg open/close payloads."""
   legs = []
-  # --- Build the common payload keys --- don't change the key names, they are set by API
   payload = {
     'class': 'multileg',
     'symbol': underlying_symbol,
     'duration': 'day'    
   }
 
-  #print(f"trade_dto_list is: {trade_dto_list}")
   position_original_dto = trade_dto_list[0]
-  if len(trade_dto_list) == 1:  # this is an open or close    
-    # determine if it is a spread open or spread close order
-    if position_original_dto['spread_action'] == config.TRADE_ACTION_OPEN:
-      legs.append({'symbol': position_original_dto.get('short_put',{}).get('symbol'), 'side': 'sell_to_open'})
-      legs.append({'symbol': position_original_dto.get('long_put', {}).get('symbol'), 'side': 'buy_to_open'})
-      payload['type']='credit'
-    else:
-      legs.append({'symbol': position_original_dto.get('short_put',{}).get('symbol'), 'side': 'buy_to_close'})
-      legs.append({'symbol': position_original_dto.get('long_put', {}).get('symbol'), 'side': 'sell_to_close'})
-      payload['type']='debit'
-      
-    payload['price'] = f"{position_original_dto.get('net_premium'):.2f}"
 
-    # --- Case 2: Roll a 4-leg position ---
-    # TODO:  following line is a hack.  need to deal with 4 legged trade_dto
-  elif len(trade_dto_list) == 2:    # this is a roll
-    # Convention: The first position is to open, the second is to close.
-    position_to_close_dto = trade_dto_list[1]
-    short_position_to_close_symbol = position_to_close_dto.get('short_put',{}).get('symbol')
-    long_position_to_close_symbol = position_to_close_dto.get('long_put',  {}).get('symbol')
-    # Add legs to CLOSE the existing position
-    legs.append({'symbol': short_position_to_close_symbol, 'side': 'buy_to_close'})
-    legs.append({'symbol': long_position_to_close_symbol, 'side': 'sell_to_close'})
+  # --- CASE 1: Open or Close (2 Legs) ---
+  if len(trade_dto_list) == 1:
+    action = position_original_dto.get('spread_action')
+
+    if action == config.TRADE_ACTION_OPEN:
+      legs.append({'symbol': position_original_dto['short_put']['symbol'], 'side': 'sell_to_open'})
+      legs.append({'symbol': position_original_dto['long_put']['symbol'], 'side': 'buy_to_open'})
+      payload['type'] = 'credit'
+      payload['price'] = f"{position_original_dto['net_premium']:.2f}"
+    else: # Close
+      legs.append({'symbol': position_original_dto['short_put']['symbol'], 'side': 'buy_to_close'})
+      legs.append({'symbol': position_original_dto['long_put']['symbol'], 'side': 'sell_to_close'})
+      payload['type'] = 'debit'
+      # Cost to close is Debit
+      payload['price'] = f"{position_original_dto['cost_to_close']:.2f}"
+
+  # --- CASE 2: Roll (4 Legs) ---
+  elif len(trade_dto_list) == 2:
+    open_dto = trade_dto_list[0]
+    close_dto = trade_dto_list[1]
     
-    credit_to_open = position_original_dto.get('net_premium')
-
-    #print(f"build multi leg: credit to open: {credit_to_open}")
-    # get fresh cost to close
-    short_position_to_close_quote = get_quote(tradier_client, short_position_to_close_symbol)
-    long_position_to_close_quote =  get_quote(tradier_client, long_position_to_close_symbol)
-    cost_to_close = short_position_to_close_quote.get('ask',0) - long_position_to_close_quote.get('bid',0)
-    roll_value = credit_to_open - cost_to_close
-    #print(f"build multi leg: roll credit: {roll_value}")
-    payload['price'] = f"{abs(roll_value):.2f}"
-    payload['type'] = 'credit' if roll_value >= 0 else 'debit'
+    legs.append({'symbol': open_dto['short_put']['symbol'], 'side': 'sell_to_open'})
+    legs.append({'symbol': open_dto['long_put']['symbol'], 'side': 'buy_to_open'})
+    legs.append({'symbol': close_dto['short_put']['symbol'], 'side': 'buy_to_close'})
+    legs.append({'symbol': close_dto['long_put']['symbol'], 'side': 'sell_to_close'})
+    
+    net_price = open_dto['net_premium'] - close_dto['cost_to_close']
+    payload['type'] = 'credit' if net_price >= 0 else 'debit'
+    payload['price'] = f"{abs(net_price):.2f}"
 
   else:
-    # Handle invalid input
     print("Error: trade_list must contain 1 or 2 positions.")
     return None
 
-  # Dynamically add each leg and its quantity to the payload
   for i, leg in enumerate(legs):
     payload[f'option_symbol[{i}]'] = leg['symbol']
     payload[f'side[{i}]'] = leg['side']
-    payload[f'quantity[{i}]'] = quantity # Assumes same quantity for all new/closing legs
+    payload[f'quantity[{i}]'] = quantity
     
-  #print(f"build_multi_leg_payload: payload: {payload}")
   return payload
 
-def get_strike(symbol:str) -> float:
-  """
-    Extracts the strike price from an OCC option symbol and returns it as a float.
-    """
-  strike_price = int(symbol[-8:]) / 1000
-  return strike_price
+def submit_spread_order(tradier_client, endpoint_url, underlying_symbol, quantity, 
+                       trade_dto_list, preview=True, limit_price=None):
+  path = f"accounts/{tradier_client.default_account_id}/orders"
+  api_url = urljoin(endpoint_url, path)
 
-def get_expiration_date(symbol: str) -> dt.date | None:
-  """
-    Extracts the expiration date from an OCC option symbol and returns it as a date object.
-    """
+  payload = build_multileg_payload(tradier_client, underlying_symbol, quantity, trade_dto_list)
+  if not payload: return {'error': 'Failed to build payload'}
+
+  if limit_price is not None:
+    payload['price'] = f"{float(limit_price):.2f}"
+
+  if preview:
+    payload['preview'] = 'true'
+
   try:
-    # The date is always the 6 characters before the last 9 characters (type + strike)
-    date_str = symbol[-15:-9]
-    # '%y%m%d' tells strptime to parse a 2-digit year, month, and day
-    return dt.datetime.strptime(date_str, '%y%m%d').date()
-  except (ValueError, IndexError):
-    # Handles cases where the symbol is malformed or too short
-    return None
+    response = tradier_client.session.post(api_url, data=payload, headers={'accept': 'application/json'})
+    response.raise_for_status()
+    return response.json()
+  except requests.exceptions.HTTPError as e:
+    print(f"API Error: {e.response.text}")
+    return {'order': {'status': 'error', 'errors': {'error': [e.response.text]}}}
+  except Exception as e:
+    print(f"Submission Error: {e}")
+    return {'order': {'status': 'error', 'errors': {'error': [str(e)]}}}
+
+# ------------------------------------------------------------------
+#  HELPER UTILS
+# ------------------------------------------------------------------
 
 def build_occ_symbol(underlying, expiration_date, option_type, strike, root_override=None):
-  """
-    Builds a 21-character OCC option symbol from its parts.
-    e.g., IWM, 2025-11-03, Put, 247 -> IWM251103P00247000
-    """
-  # Format date to YYMMDD (e.g., '251103')
-  exp_str = expiration_date.strftime('%y%m%d')
-
-  # Use override if provided ('SPXW'), otherwise default to underlying
+  """Builds OCC symbol string."""
+  if isinstance(expiration_date, str):
+      expiration_date = dt.datetime.strptime(expiration_date, "%Y-%m-%d").date()
+      
+  # Use override if provided (e.g. 'SPXW'), otherwise default to underlying
   root = root_override if root_override else underlying
   
-  # Format type to P or C
-  type_char = 'P' if option_type.upper() == config.OPTION_TYPE_PUT else 'C'
-  
-  # Format strike to 8-digit string, (e.g., 247 -> '00247000')
-  # This assumes strike is a number. We multiply by 1000 and pad with zeros.
+  exp_str = expiration_date.strftime('%y%m%d')
+  type_char = 'P' if str(option_type).upper() == 'PUT' else 'C'
   strike_int = int(float(strike) * 1000)
-  strike_str = f"{strike_int:08d}"
+  return f"{root}{exp_str}{type_char}{strike_int:08d}"
 
-  # Combine all parts
-  return f"{root}{exp_str}{type_char}{strike_str}"
-
-def get_net_roll_rom_per_day(pos: positions.PutSpread, cost_to_close: float, today: dt.date)-> float:
-  dte = (pos.short_put.expiration_date - today).days
-
-  # Check for DTE and valid margin
-  if dte <= 0 or not pos.margin or pos.margin <= 0:
-    return -float('inf')
-
-  net_roll_credit = pos.net_premium - cost_to_close
-  return_on_margin = net_roll_credit / pos.margin 
-
-  return return_on_margin / dte
-
-def build_leg_dto(spread_dto: Dict, option_index)->Dict:
-  """
-  NOT USED - needs work.  Delete?
-  takes a spread dto and return a leg dto
-  """
-  selected_leg = spread_dto[option_index]
-  leg_dto = {
-    'action': 'Sell to Open',
-    'type': selected_leg['option_type'],
-    'strike': selected_leg['strike'],
-    'expiration': selected_leg['expiration_date'],
-    'quantity': None # filled in later
-  }
-  return leg_dto
-
-"""
-opening_leg_1 = {
-    'action': 'Sell to Open',
-    'type': new_short_leg_dto['option_type'],
-    'strike': new_short_leg_dto['strike'],
-    'expiration': new_short_leg_dto['expiration_date'],
-    'quantity': 1 # Assuming quantity 1
-  }
-  """
-# Make sure app_tables is available (from anvil.tables import app_tables)
-def calculate_reference_margin(trade_row, 
-                               current_short_strike: float, 
-                               current_long_strike: float
-                              ) -> float:
-  """
-    Calculates the true margin requirement of the current open spread by
-    subtracting cumulative collected credits from the maximum loss.
-
-    Args:
-        trade_row: The Trades table Row object being analyzed.
-        current_short_strike (float): The strike of the currently active short leg.
-        current_long_strike (float): The strike of the currently active long leg.
-
-    Returns:
-        float: The calculated margin requirement (the capital at risk).
-    """
-
-  # 1. Get all transactions linked to this trade.
-  # This includes the Open transaction and all prior Roll transactions.
-  all_transactions = app_tables.transactions.search(Trade=trade_row)
-
-  # 2. Calculate the Cumulative Net Credit/Debit
-  # This is the total cash buffer you have received.
-  cumulative_credit = sum(
-    t['CreditDebit'] 
-    for t in all_transactions 
-    if t['CreditDebit'] is not None
-  )
-
-  # 3. Calculate the Max Loss of the CURRENT spread
-  # Max Loss = Spread Width * Multiplier (100)
-  spread_width = abs(current_short_strike - current_long_strike)
-  initial_max_loss = spread_width * 100
-
-  # 4. Calculate the Reference Margin (what the broker holds)
-  # This is the capital at risk.
-  reference_margin = initial_max_loss - cumulative_credit
-
-  # 5. Safety check: Margin cannot be less than zero
-  return max(0, reference_margin)
-
-
-def lookup_option_symbol(tradier_client, underlying, expiration, option_type, strike):
-  """
-  Queries Tradier to find the correct OCC symbol for the given parameters.
-  Useful for indices (SPX vs SPXW) where the root symbol varies.
-  """
-  endpoint = '/v1/markets/options/lookup'
-
-  # 1. Format Parameters
-  if isinstance(expiration, dt.date):
-    exp_str = expiration.strftime('%Y-%m-%d')
-    # Suffix Date Format: YYMMDD
-    suffix_date = expiration.strftime('%y%m%d')
-  else:
-    exp_str = expiration
-    # Try to parse string to get YYMMDD, or assume user passed date obj usually
-    try:
-      d = dt.datetime.strptime(expiration, '%Y-%m-%d')
-      suffix_date = d.strftime('%y%m%d')
-    except:
-      suffix_date = ""
-
-  params = {
-    'underlying': underlying,
-    'expiration': exp_str,
-    'type': option_type.lower(), # API expects 'put' or 'call'
-    'strike': str(strike)
-  }
-
-  try:
-    # 2. Call API
-    response = tradier_client.get(endpoint, params=params)
-    # Debug print to confirm structure if needed
-    # print(f"Lookup response: {response}") 
-
-    # 3. Build Expected Suffix (e.g., 251231P04200000)
-    # This allows us to pick the right symbol from the list regardless of the Root
-    type_char = 'P' if option_type.lower() == 'put' else 'C'
-    strike_int = int(float(strike) * 1000)
-    strike_str = f"{strike_int:08d}"
-    expected_suffix = f"{suffix_date}{type_char}{strike_str}"
-
-    # 4. Parse Response: {'symbols': [{'rootSymbol': 'SPXW', 'options': [...]}]}
-    symbols_data = response.get('symbols', [])
-
-    # Handle case where it might be a single dict instead of list
-    if isinstance(symbols_data, dict):
-      symbols_data = [symbols_data]
-
-    for root_entry in symbols_data:
-      options_list = root_entry.get('options', [])
-      for symbol in options_list:
-        if symbol.endswith(expected_suffix):
-          return symbol
-
-    print(f"No matching symbol found in lookup for suffix {expected_suffix}")
-    return None
-
-  except Exception as e:
-    print(f"Error looking up option symbol: {e}")
-    return None
+def get_underlying_price(tradier_client, symbol):
+  q = get_quote(tradier_client, symbol)
+  return q.get('last') if q else 0.0
 
 def fetch_leg_quote(tradier_client, underlying, leg_row):
-  """Helper to resolve OCC symbol and fetch quote for any leg."""
-  if not leg_row: 
-    return None
-
-  if underlying in config.INDEX_SYMBOLS:
-    occ = lookup_option_symbol(
-      tradier_client, underlying, leg_row['Expiration'], 
-      leg_row['OptionType'], leg_row['Strike']
-    )
-  else:
-    occ = build_occ_symbol(
-      underlying, leg_row['Expiration'], 
-      leg_row['OptionType'], leg_row['Strike']
-    )
-
-  if not occ:
-    return None
-
-  return get_quote(tradier_client, occ)
-
-def get_underlying_price(tradier_client: TradierAPI, symbol: str) ->float:
-  # get underlying price and thus short strike
-  underlying_quote = get_quote(tradier_client, symbol)
-  #print(f"quote: {underlying_quote}")
-  # Extract price: Use 'last' or fallback to 'close' 
-  underlying_price = underlying_quote.get('last')
-  if underlying_price is None:
-    underlying_price = underlying_quote.get('close') 
-
-  if underlying_price is None:
-    raise ValueError(f"Price not available in API response for {symbol}")
-  #print(f"underlying_price: {underlying_price}")
-  return underlying_price
-
-# In server_code/server_helpers.py
-
-def fetch_strikes_direct(tradier_client, symbol, expiration):
   """
-  Lightweight fetch of ONLY the strike prices for a given expiration.
-  Returns a sorted list of floats: [100.0, 105.0, 110.0]
+  Helper to fetch quote for a DB leg row.
+  Handles the SPX vs SPXW fallback logic.
   """
-  endpoint = '/v1/markets/options/strikes'
+  # 1. Fast Path: If DB has the exact symbol, use it.
+  if leg_row.get('Symbol'):
+    q = get_quote(tradier_client, leg_row['Symbol'])
+    if q: return q
 
-  if isinstance(expiration, dt.date):
-    exp_str = expiration.strftime('%Y-%m-%d')
-  else:
-    exp_str = expiration
-
-  params = {'symbol': symbol, 'expiration': exp_str}
-
-  try:
-    response = tradier_client.get(endpoint, params=params)
-    # Structure: {'strikes': {'strike': [100.0, 105.0...]}}
-
-    strikes_container = response.get('strikes', {})
-    if not strikes_container:
-      return []
-
-    strikes_data = strikes_container.get('strike', [])
-
-    # Handle single item vs list
-    if isinstance(strikes_data, (float, int)):
-      return [float(strikes_data)]
-
-    # Ensure they are floats and sorted (Tradier usually sorts, but be safe)
-    return sorted([float(s) for s in strikes_data])
-
-  except Exception as e:
-    print(f"Error fetching strikes for {symbol}: {e}")
-    return []
+  # 2. Build Symbol (Try Standard first)
+  occ = build_occ_symbol(underlying, leg_row['Expiration'], leg_row['OptionType'], leg_row['Strike'])
+  q = get_quote(tradier_client, occ)
+  
+  # 3. Fallback: If SPX standard failed, try SPXW
+  if not q and underlying == 'SPX':
+    occ_weekly = build_occ_symbol(underlying, leg_row['Expiration'], leg_row['OptionType'], leg_row['Strike'], root_override='SPXW')
+    q = get_quote(tradier_client, occ_weekly)
+    
+  return q

@@ -1,40 +1,352 @@
-# anvil section
-import anvil.server
 import anvil.secrets
-import anvil.tables.query as q
-from anvil.tables import app_tables, Row
-
-# public lib sectoin
-import math
-from typing import Dict, Tuple, List
+import anvil.server
+from anvil.tables import app_tables
 import datetime as dt
-import json
-from tradier_python import TradierAPI, Position
 
-# personal lib section
-import server_helpers
-import positions
-#from ..shared import config
+# Internal Libs
 from shared import config
+import positions
+import server_helpers
 
-# To allow anvil.server.call() to call functions here, we mark
-#  
+# Helper classes
+class MockOptionType:
+  def __init__(self, name):
+    self.name = name    # Allows .name access (fixes the crash)
+
+  def __str__(self):
+    return self.name    # Allows string comparison/printing
+
+  def __eq__(self, other):
+    # Allow comparison against string 'put' OR another Enum
+    return self.name == str(other)
+    
+class ZombieQuote:
+  """A safe default object for trades with missing/invalid API data."""
+  def __init__(self, leg_data):
+    self.symbol = leg_data.get('Symbol', 'UNKNOWN')
+    self.bid = 0.0
+    self.ask = 0.0
+    self.last = 0.0
+    self.strike = leg_data.get('Strike', 0.0)
+    self.expiration_date = leg_data.get('Expiration', dt.date.today())
+    self.contract_size = config.DEFAULT_MULTIPLIER
+    self.option_type = config.OPTION_TYPE_PUT
+    raw_type = leg_data.get('OptionType', 'put') # Default to put if missing
+    self.option_type = MockOptionType(raw_type)
+
+# ------------------------------------------------------------------
+#  READ ACTIONS (UI Data Fetching)
+# ------------------------------------------------------------------
 @anvil.server.callable
 def get_settings():
-  # Attempt to get the first row
-  settings_row = app_tables.settings.get()
+  """
+    Returns app defaults to populate the UI.
+    """
+  return {
+    'symbol': config.DEFAULT_SYMBOL,
+    'quantity': config.DEFAULT_QUANTITY,
+    'width': config.DEFAULT_WIDTH,
+    'target_delta': config.DEFAULT_VERTICAL_DELTA,
+    'harvest_target': config.DEFAULT_HARVEST_TARGET
+  }
 
-  # If table is empty, initialize it with your preferred defaults
-  if not settings_row:
-    settings_row = app_tables.settings.add_row(
-      default_symbol=config.DEFAULT_SYMBOL,
-      defualt_qty=1, 
-      use_max_qty=False, 
-      refresh_timer_on=True
-    )
-  return settings_row
-  
 @anvil.server.callable
+def get_new_open_trade_dto(target_dte=45, env=config.ENV_SANDBOX):
+  """
+    Finds a new opening position and converts it to a DTO for the UI.
+    """
+  t, _ = server_helpers.get_tradier_client(env) 
+
+  # 1. Get the Logic Object
+  spread_obj = server_helpers.get_vertical_spread(t, config.DEFAULT_SYMBOL, target_dte)
+
+  # 2. Serialize for UI
+  if spread_obj:
+    return {
+      'spread_dto': spread_obj.get_dto(),
+      'target_date': spread_obj.short_put.expiration_date.strftime('%Y-%m-%d'),
+      'message': 'Optimal vertical spread found.'
+    }
+  else:
+    return {'message': 'No valid spread found matching criteria.'}
+
+@anvil.server.callable
+def get_roll_package_dto(trade_id):
+  trade_row = app_tables.trades.get_by_id(trade_id)
+  if not trade_row: return None
+
+    # --- SANITY CHECK ---
+  raw_env = trade_row['Account']
+  trade_env = raw_env if raw_env in [config.ENV_PRODUCTION, config.ENV_SANDBOX] else config.ENV_SANDBOX
+  t, _ = server_helpers.get_tradier_client(trade_env)
+
+  # 1. Find Active Legs
+  transactions = app_tables.transactions.search(Trade=trade_row)
+  active_legs = []
+  for txn in transactions:
+    legs = app_tables.legs.search(Transaction=txn, active=True)
+    active_legs.extend(legs)
+
+  short_leg_row = next((l for l in active_legs if l['Action'].startswith('Sell')), None)
+  long_leg_row = next((l for l in active_legs if l['Action'].startswith('Buy')), None)
+
+  if not short_leg_row or not long_leg_row:
+    return {'error': 'Database error: No active legs found.'}
+
+    # 2. Convert to Dict & Quote (Current Position)
+  short_leg_data = dict(short_leg_row)
+  short_leg_data['Symbol'] = trade_row['Underlying']
+  long_leg_data = dict(long_leg_row)
+  long_leg_data['Symbol'] = trade_row['Underlying']
+
+  short_quote = server_helpers.fetch_leg_quote(t, trade_row['Underlying'], short_leg_data)
+  long_quote = server_helpers.fetch_leg_quote(t, trade_row['Underlying'], long_leg_data)
+
+  # Zombie Patch
+  if isinstance(short_quote, dict) or short_quote is None: short_quote = ZombieQuote(short_leg_data)
+  if isinstance(long_quote, dict) or long_quote is None: long_quote = ZombieQuote(long_leg_data)
+
+    # Fix Option Types if they are strings (Safety)
+  if isinstance(short_quote.option_type, str): short_quote.option_type = MockOptionType(short_quote.option_type)
+  if isinstance(long_quote.option_type, str): long_quote.option_type = MockOptionType(long_quote.option_type)
+
+  current_pos = positions.PutSpread(short_quote, long_quote)
+
+  # 3. Find New Position (Target)
+  new_pos = server_helpers.find_vertical_roll(t, trade_row['Underlying'], current_pos)
+
+  if not new_pos:
+    return {'message': 'No valid zero-debit roll found.'}
+
+    # 4. CONSTRUCT THE 4 LEGS (The "legs_to_populate" list)
+    # We need to map Quote objects to the dict schema the UI grid expects.
+    # IMPORTANT: "Closing" legs reverse the action (Sell->Buy, Buy->Sell).
+
+  qty = int(short_leg_row['Quantity'])
+
+  # Leg 1: Close the Old Short (Buy to Close)
+  leg1 = {
+    'symbol': short_quote.symbol,
+    'quantity': qty,
+    'action': config.ACTION_BUY_TO_CLOSE, 
+    'option_symbol': short_quote.symbol, # Tradier quotes use symbol as the option identifier
+    'strike': short_quote.strike,
+    'expiration': short_quote.expiration_date
+  }
+
+  # Leg 2: Close the Old Long (Sell to Close)
+  leg2 = {
+    'symbol': long_quote.symbol,
+    'quantity': qty,
+    'action': config.ACTION_SELL_TO_CLOSE,
+    'option_symbol': long_quote.symbol,
+    'strike': long_quote.strike,
+    'expiration': long_quote.expiration_date
+  }
+
+  # Leg 3: Open New Short (Sell to Open)
+  leg3 = {
+    'symbol': new_pos.short_put.symbol,
+    'quantity': qty,
+    'action': config.ACTION_SELL_TO_OPEN,
+    'option_symbol': new_pos.short_put.symbol,
+    'strike': new_pos.short_put.strike,
+    'expiration': new_pos.short_put.expiration_date
+  }
+
+  # Leg 4: Open New Long (Buy to Open)
+  leg4 = {
+    'symbol': new_pos.long_put.symbol,
+    'quantity': qty,
+    'action': config.ACTION_BUY_TO_OPEN,
+    'option_symbol': new_pos.long_put.symbol,
+    'strike': new_pos.long_put.strike,
+    'expiration': new_pos.long_put.expiration_date
+  }
+
+  all_4_legs = [leg1, leg2, leg3, leg4]
+
+  closing_dto = current_pos.get_dto()
+  closing_dto['cost_to_close'] = current_pos.calculate_cost_to_close()
+  total_roll_credit = new_pos.net_premium - current_pos.calculate_cost_to_close()
+  
+  # 5. Return the EXACT Schema required
+  return {
+    'legs_to_populate': all_4_legs,
+    'total_roll_credit': total_roll_credit,
+    'new_spread_dto': new_pos.get_dto(),      # New Target
+    'closing_spread_dto': closing_dto, # Old Position
+    'spread_action': config.MANUAL_ENTRY_STATE_ROLL,
+    'message': f"Roll found: Credit ${total_roll_credit:.2f}"
+  }
+# ------------------------------------------------------------------
+#  WRITE ACTIONS (Execution & DB)
+# ------------------------------------------------------------------
+
+@anvil.server.callable
+def submit_order(env, symbol, trade_dto_list, quantity, limit_price=None, preview=True):
+  """
+    Submits the order to Tradier.
+    """
+  t, url = server_helpers.get_tradier_client(env)
+
+  result = server_helpers.submit_spread_order(
+    t, url, config.DEFAULT_SYMBOL, quantity, trade_dto_list, 
+    preview=preview, limit_price=limit_price
+  )
+  return result
+
+@anvil.server.callable
+def save_trade_to_db(trade_dto, quantity):
+  # 1. Create Trade
+  trade_row = app_tables.trades.add_row(
+    Symbol=config.DEFAULT_SYMBOL,
+    Status=config.TRADE_ACTION_OPEN, 
+    OpenedAt=dt.datetime.now(),
+    Strategy=config.POSITION_TYPE_VERTICAL,
+    Quantity=quantity
+  )
+
+  # 2. Create Transaction (Link to Trade)
+  txn_row = app_tables.transactions.add_row(
+    Trade=trade_row,
+    Date=dt.datetime.now(),
+    Type=config.TRADE_ACTION_OPEN,
+    Description=f"Opening Vertical Spread {quantity}x"
+  )
+
+  # 3. Create Legs (Link to Transaction)
+  short_leg_data = trade_dto['short_put']
+  long_leg_data = trade_dto['long_put']
+
+  app_tables.legs.add_row(
+    Transaction=txn_row,
+    Symbol=short_leg_data['symbol'],
+    Strike=short_leg_data['strike'],
+    Expiration=dt.datetime.strptime(short_leg_data['expiration_date'], "%Y-%m-%d").date(),
+    OptionType=config.OPTION_TYPE_PUT,
+    Side='Sell'
+  )
+
+  app_tables.legs.add_row(
+    Transaction=txn_row,
+    Symbol=long_leg_data['symbol'],
+    Strike=long_leg_data['strike'],
+    Expiration=dt.datetime.strptime(long_leg_data['expiration_date'], "%Y-%m-%d").date(),
+    OptionType=config.OPTION_TYPE_PUT,
+    Side='Buy'
+  )
+
+  return f"Trade saved with ID: {trade_row.get_id()}"
+
+@anvil.server.callable
+def get_open_trades_with_risk(env=config.ENV_SANDBOX):
+  # MATCH SCHEMAS: Status='OPEN' AND Account matches env
+  open_trades_rows = app_tables.trades.search(Status=config.TRADE_ACTION_OPEN, Account=env)
+  t, _ = server_helpers.get_tradier_client(env)
+
+  trade_list = []
+
+  for trade_row in open_trades_rows:
+    try:
+      # 1. Find ALL Transactions for this trade
+      transactions = app_tables.transactions.search(Trade=trade_row)
+      if not any(transactions): continue
+
+        # 2. Find ACTIVE Legs across ALL transactions
+        # We don't care which transaction came last, we care which legs are active.
+      active_legs = []
+      for txn in transactions:
+        # Assuming 'active' is a number (1) or boolean (True)
+        # We search for active=1 based on your schema snippet.
+        legs = app_tables.legs.search(Transaction=txn, active=True)
+        active_legs.extend(legs)
+
+        # Filter specifically for the Short and Long leg from the active bunch
+      short_leg_row = next((l for l in active_legs if l['Action'].startswith('Sell')), None)
+      long_leg_row = next((l for l in active_legs if l['Action'].startswith('Buy')), None)
+
+      # If we rolled, the old legs should be active=0 and won't appear here.
+      # If we don't find a pair, something is wrong with the 'active' flags.
+      if not short_leg_row or not long_leg_row: 
+        # Optional: Print warning if we have open trade but no active legs
+        # print(f"Warning: Trade {trade_row.get_id()} is OPEN but has missing active legs.")
+        continue
+
+        # 3. CONVERT TO DICT & INJECT SYMBOL
+      short_leg_data = dict(short_leg_row)
+      short_leg_data['Symbol'] = trade_row['Underlying']
+
+      long_leg_data = dict(long_leg_row)
+      long_leg_data['Symbol'] = trade_row['Underlying']
+
+      # 4. Get Quotes with SAFETY CHECKS
+      short_quote = server_helpers.fetch_leg_quote(t, trade_row['Underlying'], short_leg_data)
+      long_quote = server_helpers.fetch_leg_quote(t, trade_row['Underlying'], long_leg_data)
+
+      # --- ZOMBIE PATCH START ---
+      if isinstance(short_quote, dict) or short_quote is None:
+        short_quote = ZombieQuote(short_leg_data)
+      if isinstance(long_quote, dict) or long_quote is None:
+        long_quote = ZombieQuote(long_leg_data)
+        # --- ZOMBIE PATCH END ---
+
+        # CHECK C: Handle None values in Bid/Ask
+      if getattr(short_quote, 'bid', None) is None: short_quote.bid = 0.0
+      if getattr(short_quote, 'ask', None) is None: short_quote.ask = 0.0
+      if getattr(long_quote, 'bid', None) is None: long_quote.bid = 0.0
+      if getattr(long_quote, 'ask', None) is None: long_quote.ask = 0.0
+
+        # 5. Create Position Object & Calc Metrics
+      pos = positions.PutSpread(short_quote, long_quote)
+      cost_to_close = pos.calculate_cost_to_close()
+
+      width = abs(short_leg_row['Strike'] - long_leg_row['Strike'])
+      max_loss = width * 100
+
+      # 6. Specific Metrics for UI
+      underlying_price = short_quote.last if hasattr(short_quote, 'last') else 0
+      intrinsic_val = max(0, short_leg_row['Strike'] - underlying_price)
+      short_leg_price = (short_quote.bid + short_quote.ask) / 2
+      extrinsic_val = max(0, short_leg_price - intrinsic_val)
+
+      is_itm = underlying_price < short_leg_row['Strike']
+      is_at_risk = is_itm and (extrinsic_val < 0.15)
+
+      target_price = trade_row['TargetHarvestPrice'] or 0.0
+      is_harvestable = (cost_to_close <= target_price) if target_price > 0 else False
+      roi_display = f"{(cost_to_close / max_loss * 100):.1f}% Risk" if max_loss > 0 else "0%"
+
+      # 7. BUILD THE UI-COMPATIBLE DICT
+      trade_list.append({
+        'trade_id': trade_row.get_id(),
+        'trade_row': trade_row, 
+        'Account': trade_row['Account'],
+
+        'Underlying': trade_row['Underlying'],
+        'Strategy': trade_row['Strategy'],
+        'Quantity': f"{int(short_leg_row['Quantity'])}",
+        'OpenDate': trade_row['OpenDate'],
+        'short_expiry': short_leg_row['Expiration'],
+        'short_strike': short_leg_row['Strike'],
+        'long_strike': long_leg_row['Strike'],
+
+        'harvest_price': f"${target_price:.2f}",
+        'cost_to_close': cost_to_close,
+        'rroc': roi_display,
+
+        'extrinsic_value': extrinsic_val,
+        'is_at_risk': is_at_risk,
+        'is_harvestable': is_harvestable
+      })
+
+    except Exception as e:
+      print(f"Error processing trade {trade_row.get_id()}: {e}")
+      continue
+
+  return trade_list
+  
+@anvil.server.callable  
 def get_tradier_profile(environment: str):
   try:
     tradier_client, endpoint_url = server_helpers.get_tradier_client(environment)
@@ -48,7 +360,7 @@ def get_tradier_profile(environment: str):
   except Exception as e:
     print(f"Error retrieving Tradier profile: {e}")
     raise e
-
+    
 @anvil.server.callable
 def get_account_nickname(account_number_to_check):
   # Assumes you have secrets named 'PROD_ACCOUNT' and 'IRA_ACCOUNT'
@@ -60,921 +372,55 @@ def get_account_nickname(account_number_to_check):
   return nicknames.get(account_number_to_check, "account nickname not found")
 
 @anvil.server.callable
-def get_open_trades_for_dropdown(environment: str=config.ENV_SANDBOX):
-  """
-    Fetches all open trades and formats them as a list
-    of (display_text, item) tuples for a DropDown.
-    """
-  open_trades = app_tables.trades.search(
-                                          Status='Open',
-                                          Account=environment
-  )
-  dropdown_items = []
-
-  for trade in open_trades:
-    short_strike = "N/A"
-    long_strike = "N/A"
-
-    try:
-      # 1. Find all transactions for this trade
-      trade_transactions = app_tables.transactions.search(Trade=trade)
-
-      # 2. Find all active legs for these transactions
-      active_legs = app_tables.legs.search(
-        Transaction=q.any_of(*trade_transactions),
-        active=True
-      )
-
-      # 3. Find the short and long strikes from the active legs
-      # (This assumes a simple 2-leg spread for the display)
-      for leg in active_legs:
-        if leg['Action'] in config.OPEN_ACTIONS: # e.g., 'Sell to Open'
-          short_strike = leg['Strike']
-        elif leg['Action'] in config.OPEN_ACTIONS: # e.g., 'Buy to Open'
-          # This logic assumes the first 'Open' is short, the next is long
-          # A more robust way is to check the action text precisely
-          if leg['Strike'] != short_strike:
-            long_strike = leg['Strike']
-
-            # This is a cleaner, more direct query if your actions are distinct
-      short_leg = app_tables.legs.search(Transaction=q.any_of(*trade_transactions), active=True, Action='Sell to Open')
-      long_leg = app_tables.legs.search(Transaction=q.any_of(*trade_transactions), active=True, Action='Buy to Open')
-
-      if short_leg:
-        short_strike = short_leg[0]['Strike']
-      if long_leg:
-        long_strike = long_leg[0]['Strike']
-
-    except Exception as e:
-      print(f"Error finding legs for dropdown: {e}")
-      pass # Will just display N/A for strikes
-
-      # 4. Format the new display text
-    open_date_str = trade['OpenDate'].strftime('%Y-%m-%d')
-    display_text = (
-      f"{trade['Underlying']} ({short_strike} / {long_strike}) "
-      f"Opened: {open_date_str}"
-    )
-
-    dropdown_items.append( (display_text, trade) )
-
-  return dropdown_items
-  
-@anvil.server.callable
-def get_tradier_positions(environment: str):
-  """
-  Gets an authenticated client, fetches positions, and returns the data.
-  This function CAN be called by the client.
-  """
+def get_price(symbol,env=config.ENV_SANDBOX):
+  """Simple helper to get current stock price for the UI."""
+  t, _ = server_helpers.get_tradier_client(env)
   try:
-    # Step 1: Get the authenticated client object
-    tradier_client, endpoint_url = server_helpers.get_tradier_client(environment)
+    quote = t.get_quotes(symbol)
+    # return last price, or close if market is closed/pre-market
+    return quote.get('last') or quote.get('close') or 0.0
+  except Exception:
+    return 0.0
 
-    # Step 2: Use the client to make an API call
-    positions_data = tradier_client.get_positions() # Assuming a method like this exists
-
-    # Step 3: Return only the JSON-serializable data to the client
-    print(f"Retrived {len(positions_data)} positions")
-    return positions_data
-
-  except Exception as e:
-    # It's good practice to handle potential errors
-    print(f"An error occurred: {e}")
-    return e
-
-@anvil.server.callable
-def get_open_trades(environment: str=config.ENV_SANDBOX):
-  """Fetches all trades with a status of 'Open'."""
-  open_trades_list = list(app_tables.trades.search(Status=q.full_text_match('Open'),Account=environment))
-  #print(f"Found {len(open_trades_list)} open trades.")
-  return open_trades_list
-
-@anvil.server.callable
-def get_open_trades_with_risk(environment: str=config.ENV_SANDBOX, 
-                              refresh_risk: bool=True)->Dict:
-  """
-    Fetches all open trades, then enriches them with live
-    pricing and assignment risk data from the Tradier API and RROC.
-    """
-
-  #NOTE:  this only works for 2 leg spreads - need different logic for CSP or covered calls
-  open_trades = app_tables.trades.search(Status='Open', Account=environment)
-  #print(f"Found {len(open_trades)} open trades for {environment}")
-  tradier_client, endpoint_url = server_helpers.get_tradier_client(environment)
-
-  settings = app_tables.settings.get()
-  target_daily_rroc = settings['default_target_rroc'] if settings and settings['default_target_rroc'] else 0.001
-  enriched_trades_list = []
-  
-  for trade in open_trades:
-    trade_dto = {
-      'trade_row': trade,
-      'Underlying': trade['Underlying'],
-      'Strategy': trade['Strategy'],
-      'Quantity': None,
-      'OpenDate': trade['OpenDate'],
-      'extrinsic_value': None, # Placeholder
-      'is_at_risk': False,       # Placeholder
-      'short_strike': None,
-      'long_strike': None,
-      'short_expiry': None,
-      'rroc': "N/A",
-      'harvest_price': "N/A",
-      'is_harvestable': False
-    }
-    
-    try:
-      # 1. Find the active short leg (your existing query)
-      trade_transactions = list(app_tables.transactions.search(Trade=trade))
-      active_legs = list(app_tables.legs.search(
-        Transaction=q.any_of(*trade_transactions), # Find legs for any of these transactions
-        active=True                               # That is flagged as 'active'
-      ))
-
-      current_short_leg = None
-      current_long_leg = None
-      
-      #print(f"Active legs found: {active_legs}")
-      if trade['Strategy'] in config.POSITION_TYPES_ACTIVE:
-        current_short_leg = next((leg for leg in active_legs if leg['Action'] == config.ACTION_SELL_TO_OPEN), None)
-        
-        if trade['Strategy'] == config.POSITION_TYPE_VERTICAL:
-          #print(f"trade strategy: {trade['Strategy']} is identified: as position type:{config.POSITION_TYPE_VERTICAL}")
-          current_long_leg =  next((leg for leg in active_legs if leg['Action'] == config.ACTION_BUY_TO_OPEN), None)
-          if current_long_leg:
-            trade_dto['long_strike'] = current_long_leg['Strike']
-          else:
-            print("missing long leg of the spread")
-            continue
-          
-        else:
-          #print(f"trade strategy: {trade['Strategy']} is identified: as position type:{config.POSITION_TYPE_COVERED_CALL}")
-          pass
-        if not current_short_leg:
-          print("missing short leg for the spread or CSP")
-          continue
-        #print(f"current_short_leg is: {current_short_leg}")
-        quantity = current_short_leg['Quantity']
-        trade_dto['Quantity'] = quantity
-        short_strike_price = current_short_leg['Strike']
-        trade_dto['short_strike'] = current_short_leg['Strike']
-        trade_dto['short_expiry'] = current_short_leg['Expiration']
-      else:
-        print(f"trade strategy: {trade['Strategy']} is not identified: as position type: {config.POSITION_TYPE_DIAGONAL} or position type: {config.POSITION_TYPE_COVERED_CALL} ")
-        
-      if refresh_risk and current_short_leg:
-        try:
-          # A. Get Margin from latest transaction
-          # Sort transactions by date to get the most recent margin entry
-          sorted_trans = sorted(trade_transactions, key=lambda x: x['TransactionDate'])
-          latest_margin = sorted_trans[-1]['ResultingMargin'] if sorted_trans else 0
-
-          # B. Get Days in Trade
-          days_in_trade = (dt.date.today() - trade['OpenDate']).days
-          days_in_trade = 1 if days_in_trade < 1 else days_in_trade
-          
-          # Get live underlying price
-          underlying_symbol = trade['Underlying']
-          underlying_price = server_helpers.get_underlying_price(tradier_client, underlying_symbol)
-          
-          # 3. Fetch Quotes for Both Legs
-          short_quote = server_helpers.fetch_leg_quote(tradier_client, trade['Underlying'], current_short_leg)
-          long_quote = server_helpers.fetch_leg_quote(tradier_client, trade['Underlying'], current_long_leg)  
-
-          # D. Calculate Current P/L
-          # Sum collected credit (per share)
-          total_credit_per_share = sum(t['CreditDebit'] for t in trade_transactions if t['CreditDebit'] is not None)
-
-          # Calculate Cost to Close (per share)
-          # Short: Buy to close (Ask) | Long: Sell to close (Bid)
-          short_ask = short_quote.get('ask', 0) if short_quote else 0
-          long_bid = long_quote.get('bid', 0) if long_quote else 0
-
-          # Cost to close is Debit (buying back short) - Credits (selling long)
-          cost_to_close_per_share = short_ask - long_bid
-
-          # Net P/L Dollar Amount
-          # (Total Credit - Cost to Close) * Quantity * 100
-
-          current_pl_dollars = (total_credit_per_share - cost_to_close_per_share) * quantity * config.DEFAULT_MULTIPLIER
-
-          # E. Final RROC Calculation
-          # Avoid division by zero
-          if latest_margin and latest_margin > 0:
-            daily_rroc = (current_pl_dollars / latest_margin) / days_in_trade
-            trade_dto['rroc'] = f"{daily_rroc:.2%}" # Format as percentage
-            # flag if ready to harvest
-            trade_dto['is_harvestable'] = True if daily_rroc >= config.DEFAULT_RROC_HARVEST_TARGET else False
-
-            # Target Profit = Target Rate * Margin * Days
-            target_profit_total = target_daily_rroc * latest_margin * days_in_trade
-            target_profit_per_share = target_profit_total / (quantity * config.DEFAULT_MULTIPLIER)
-
-            # Harvest Price = Credit Received - Target Profit
-            harvest_price = total_credit_per_share - target_profit_per_share
-            trade_dto['harvest_price'] = f"{harvest_price:.2f}"
-          else:
-            trade_dto['rroc'] = "0.00%"
-
-          # do the assignment risk part
-          option_price = short_quote.get('bid') # Use bid for risk calc
-          intrinsic_value = 0
-          if current_short_leg['OptionType'] == config.OPTION_TYPE_PUT:
-            intrinsic_value = max(0, short_strike_price - underlying_price)
-            #print(f"in put: intrinsic: {intrinsic_value}, extrinsic: {extrinsic_value}")
-          elif current_short_leg['OptionType'] == config.OPTION_TYPE_CALL: 
-            intrinsic_value = max(0, underlying_price - short_strike_price)
-            #print(f"in call: intrinsic: {intrinsic_value}, extrinsic: {extrinsic_value}")
-          else:
-            print("bad option type in get open trades with risk")
-          extrinsic_value = option_price - intrinsic_value
-          trade_dto['extrinsic_value'] = extrinsic_value
-    
-          # Our risk rule: ITM and extrinsic is less than $0.10
-          if intrinsic_value > 0 and extrinsic_value < config.ASSIGNMENT_RISK_THRESHOLD:
-            trade_dto['is_at_risk'] = True
-          
-        except Exception as e:
-          print(f"Error calculating RROC/Risk for {trade['Underlying']}: {repr(e)}")
-          pass # do not return risk field
-
-    except Exception as e:
-      print(f"Could not load legs for {trade['Underlying']}: {repr(e)}")
-      pass # This trade will be skipped
-    #print(f"dto is: {trade_dto}")  
-    enriched_trades_list.append(trade_dto)
-    # get live quotes, and do the risk calculation.
-    # 3. Return the new list of DTOs
-  return enriched_trades_list
-
-@anvil.server.callable
-def get_closed_trades(environment: str=config.ENV_SANDBOX, campaign_filter: str=None)->Dict: 
-  search_kwargs = {'Campaign': campaign_filter} if campaign_filter else {}
-  
-  closed_trades = app_tables.trades.search(Status='Closed', Account=environment, **search_kwargs)
-  enriched_trades = []
-  
-  # Trade level accumulators
-  total_pl_sum = 0.0
-  trade_rroc_sum = 0.0
-  trade_count = 0
-  
-  # Portfolio level accumulators
-  total_margin_days = 0.0
-  earliest_open_date = min((t['OpenDate'] for t in closed_trades), default=dt.date.today())
-  has_trades = False
-  
-  for trade in closed_trades:
-    has_trades = True
-    trade_dict = dict(trade)
-
-    #--Date data--
-    open_date = trade['OpenDate'] or dt.date.today()
-    close_date = trade['CloseDate'] or dt.date.today()
-    dit = max(1, (close_date - open_date).days)
-    
-    # 1. Trade level max margin
-    trans = app_tables.transactions.search(Trade=trade)
-    max_margin = max([t['ResultingMargin'] for t in trans if t['ResultingMargin'] is not None], default=0)
-
-    # get qty
-    qty = 0
-    if trans:
-      trade_legs = app_tables.legs.search(Transaction=q.any_of(*trans))
-      for leg in trade_legs:
-        # We assume the quantity of the 'Open' leg represents the trade size
-        if leg['Action'] in config.OPEN_ACTIONS:
-          qty = leg['Quantity']
-          break
-    trade_dict['Quantity'] = qty
-    
-    # 2. Calc P/L & RROC
-    pl = trade['TotalPL'] or 0.0
-    total_pl_sum += pl
-
-    # Trade level RROC
-    if max_margin > 0:
-      trade_daily_rroc = (pl / max_margin) / dit
-      trade_dict['rroc'] = f"{trade_daily_rroc:.2%}"
-      trade_rroc_sum += trade_daily_rroc
-      trade_count += 1
-
-      # Portfolio level margin-days
-      total_margin_days += (max_margin * dit)
-    else:
-      trade_dict['rroc'] = "0.00%"
-  
-    enriched_trades.append(trade_dict)
-
-  # Trade level rroc average
-  avg_trade_rroc = (trade_rroc_sum / trade_count) if trade_count else 0.0
-
-  # Portfolio level rroc performance
-  portfolio_daily_rroc = 0.0
-  if total_margin_days > 0:
-    portfolio_daily_rroc = total_pl_sum / total_margin_days
-
-  # 3. Sort & Return
-  enriched_trades.sort(key=lambda x: x['OpenDate'] or dt.date.min, reverse=True)
-  
-  return {
-    'trades': enriched_trades,
-    'total_pl': total_pl_sum,
-    'trade_rroc_avg': avg_trade_rroc,
-    'portfolio_rroc_cum': portfolio_daily_rroc
-  }
-
-@anvil.server.callable
-def submit_order(environment: str='SANDBOX', 
-                           underlying_symbol: str=None,
-                           trade_dto_list: List=[], # list of dicts with {spread meta..., 'short_put', 'long_put'}
-                           quantity: int=1,
-                           preview: bool=True,
-                           limit_price: float=None
-                           )->Dict:
-    
-  # verify symbol and positions are present
-  if underlying_symbol is None or trade_dto_list is None:
-    print("no symbol or position in submit_preview_order")
-  # get client and endpoint
-  t, endpoint_url = server_helpers.get_tradier_client(environment)
-
-  #print(f"submit order: trade_dto_list: {trade_dto_list}")
-  # submit order
-  trade_response = server_helpers.submit_spread_order(t, 
-                                                              endpoint_url, 
-                                                              underlying_symbol, 
-                                                              quantity, 
-                                                              trade_dto_list, # list of dicts with {spread meta..., 'short_put', 'long_put'}
-                                                              preview,
-                                                              limit_price
-                                                            )
-  #print(f"trade response: {trade_response}")
-  return trade_response
-  
-@anvil.server.callable
-def get_quantity(best_position: positions.PutSpread)->int:
-  # calculate quantity based on fixed allocation.  
-  #TODO: generalize this to lookup available capital t.get_account_balance().cash.cash_available
-  quantity = math.floor(config.ALLOCATION / best_position.margin) if best_position.margin > 0 else 0
-  quantity = 1 if config.TRADE_ONE else quantity
-  return quantity
-
-@anvil.server.callable
-def get_order_status(environment: str, order_id: int):
-  """
-    Checks the status of a specific order ID.
-    """
-  try:
-    # Get your authenticated Tradier client
-    tradier_client, endpoint = server_helpers.get_tradier_client(environment)
-
-    # Make the API call to check the order
-    # NOTE: The method name 'get_order' is an example. 
-    # Use the actual method from your TradierAPI class.
-    order_details = tradier_client.get_order(order_id)
-
-    print(f"Status for order {order_id}: {order_details}")
-
-    # Return the status part of the response
-    if order_details:
-      return order_details.status
-    return "unknown"
-
-  except Exception as e:
-    print(f"Error getting order status: {e}")
-    return "error"
-
-@anvil.server.callable
-def cancel_order(environment: str, order_id: int):
-  """
-  Cancels a specific pending order.
-  """
-  try:
-    tradier_client = server_helpers.get_tradier_client(environment)
-    cancel_response_object = tradier_client.cancel_order(order_id)
-    print(f"Cancel response for order {order_id}: {cancel_response_object}")
-
-    if cancel_response_object:
-      # You'll need to adjust this to access the status
-      # e.g., return cancel_response_object.status
-      print(f"cancel response: {cancel_response_object}")
-      return "Order canceled" 
-    return "Unknown"
-
-  except Exception as e:
-    print(f"Error canceling order: {e}")
-    return "Error"
+import anvil.tables.query as q  # Ensure this is imported at the top
 
 @anvil.server.callable
 def get_active_legs_for_trade(trade_row, direction:str=None):
   """
     Finds all 'active' leg rows associated with a single trade.
     Args:
-    direction (str): 'short', 'long', or None (returns all)
+        trade_row: Row object or Trade ID string
+        direction (str): 'short', 'long', or None (returns all)
     """
-  try:
-    # 1. Find all transactions for this trade
-    trade_transactions = app_tables.transactions.search(Trade=trade_row)
+  # 1. Handle Input (Allow passing ID string or Row object)
+  if isinstance(trade_row, str):
+    trade_row = app_tables.trades.get_by_id(trade_row)
 
-    action_filter = None
-    if direction:
-      if direction.lower() == 'short':
-        action_filter = config.ACTION_SELL_TO_OPEN
-      elif direction.lower() == 'long':
-        action_filter = config.ACTION_BUY_TO_OPEN
-    if action_filter:    
-      active_legs = app_tables.legs.search(
-        Transaction=q.any_of(*trade_transactions),
-        active=True, Action=action_filter
-      )
-    else:
-      # 2. Find all legs for those transactions that are 'active'
-      active_legs = app_tables.legs.search(
-        Transaction=q.any_of(*trade_transactions),
-        active=True
-      )
-
-    # 3. Return the list of leg rows
-    return list(active_legs)
-
-  except Exception as e:
-    print(f"Error getting active legs: {e}")
+  if not trade_row: 
     return []
 
-@anvil.server.callable
-def save_manual_trade(environment: str, 
-                      strategy: str, #Strategy: Diagonal, Covered Call
-                      manual_entry_state: str, # OPEN or CLOSE or ROLL 
-                      trade_date, 
-                      net_price: float, 
-                      legs_data_list,            # list of leg data entries.  may be 1 (CSP) or 2 (diag open/close) or 4 (roll)                    
-                      existing_trade_row=None,
-                      open_spread_credit: float=None):  #CLOSE or ROLL: exising Trade row.  OPEN: None
+    # 2. Find all transactions for this trade
+  trade_transactions = list(app_tables.transactions.search(Trade=trade_row))
+  if not trade_transactions: 
+    return []
 
-  print(f"Server saving to environment {environment}: {strategy}")
-  # --- 0. NEW: Safety Validation for Diagonals ---
-  if strategy == config.POSITION_TYPE_DIAGONAL or config.POSITION_TYPE_VERTICAL:
-    try:
-      # Filter for opening legs
-      short_legs = [l for l in legs_data_list if l['action'] == config.ACTION_SELL_TO_OPEN]
-      long_legs = [l for l in legs_data_list if l['action'] == config.ACTION_BUY_TO_OPEN]
-
-      # If we have both (opening a new spread or rolling), check quantities
-      if short_legs and long_legs:
-        short_qty = short_legs[0]['quantity']
-        long_qty = long_legs[0]['quantity']
-        # calculate net credit here for harvest calculation
-        
-        if short_qty != long_qty:
-          print(f"WARNING: Mismatched quantities detected (Short: {short_qty}, Long: {long_qty}). Normalizing to Short qty.")
-          # Force the long leg to match the short leg
-          long_legs[0]['quantity'] = short_qty
-          # Update the main list reference if needed (dictionaries are mutable, so this should stick)
-
-    except Exception as e:
-      print(f"Validation warning: {e}")
-  underlying_symbol = legs_data_list[0]['underlying_symbol']  # can use any leg as they should all be the same underlying
-  trade_row = None
-  resulting_margin = 0.0
-  
-  try:
-    # --- 1. Find or Create the Trade (Your existing logic) ---
-    settings_row = app_tables.settings.get()
-    harvest_fraction = settings_row['harvest_fraction']
-    # If it's a Roll but we have no DTO, we fallback to net_price (flawed but necessary fallback).
-    basis_price = open_spread_credit if open_spread_credit is not None else net_price
-    
-    harvest_price = basis_price *  harvest_fraction if basis_price > 0 else 0
-    # update trade row Status for CLOSE/ROLL  
-    if manual_entry_state in (config.MANUAL_ENTRY_STATE_CLOSE, config.MANUAL_ENTRY_STATE_ROLL):
-      trade_row = existing_trade_row
-      if manual_entry_state == config.MANUAL_ENTRY_STATE_CLOSE:
-        existing_trade_row.update(Status=config.TRADE_ACTION_CLOSE, CloseDate=trade_date)    
-      elif manual_entry_state == config.MANUAL_ENTRY_STATE_ROLL:
-        existing_trade_row.update(TargetHarvestPrice=harvest_price)
-    # Create new trade row for OPEN
-    elif manual_entry_state == config.MANUAL_ENTRY_STATE_OPEN:
-      harvest_price = net_price * harvest_fraction
-      trade_row = app_tables.trades.add_row(
-        Underlying=underlying_symbol,
-        Strategy=strategy,    # Strategy
-        Status=config.TRADE_ACTION_OPEN,
-        OpenDate=trade_date,
-        Account=environment,
-        Campaign=settings_row['current_campaign'],
-        TargetHarvestPrice=harvest_price
-      )
-    else:
-      raise ValueError("Manual Transaction Card State unknown")
-
-    # --- 2. Calculate Margin ---
-    # Logic: If we are OPENING or ROLLING, we need to find the NEW short and long legs 
-    # to calculate the new margin requirement.
-    if manual_entry_state != config.MANUAL_ENTRY_STATE_CLOSE:
-      try:
-        sell_to_open_dto_list = [leg for leg in legs_data_list if leg['action'] == config.ACTION_SELL_TO_OPEN]
-        buy_to_open_dto_list = [leg for leg in legs_data_list if leg['action'] == config.ACTION_BUY_TO_OPEN]
-        if sell_to_open_dto_list and buy_to_open_dto_list:
-          short_strike = sell_to_open_dto_list[0]['strike']
-          long_strike = buy_to_open_dto_list[0]['strike']
-          quantity = sell_to_open_dto_list[0]['quantity']
-          resulting_margin = abs(short_strike - long_strike) * quantity * config.DEFAULT_MULTIPLIER
-      except Exception as e:
-        resulting_margin = 0
-        print(f"failed to get margin for open action: {e}")
-    else:
-      resulting_margin = 0
-      
-      # --- Create the Transaction  ---
-    new_transaction = app_tables.transactions.add_row(
-      Trade=trade_row,
-      TransactionDate=trade_date,
-      TransactionType=strategy,  # Strategy: Diagonal, Coverd Call, CSP, Stock, Misc
-      CreditDebit=net_price,
-      ResultingMargin=resulting_margin
-    )
-
-    # --- 3. Loop through legs & UPDATE ACTIVE FLAGS ---
-    for leg in legs_data_list:
-      action_string = leg['action']   # sell to open, etc
-      is_open_action_flag = action_string in config.OPEN_ACTIONS   # setf flag to Ture if an open leg action, False if a closing leg action
-
-      # Handle close action legs, open legs fall through to the leg row adder below
-      if not is_open_action_flag:
-        # This is a closing action (e.g., "Buy to Close").
-        # We must find the corresponding 'active' leg and deactivate it.
-        # Starting with the closing legs, Determine the opposite 'open' action 
-        # wait:  aren't the original legs that are currently open passed in with the legs_data_list?  No, they are not, so we must deduce them from the new closing legs
-        old_leg_open_action = None
-        if action_string == config.ACTION_BUY_TO_CLOSE:
-         old_leg_open_action  = config.ACTION_SELL_TO_OPEN
-        elif action_string == config.ACTION_SELL_TO_CLOSE:
-         old_leg_open_action = config.ACTION_BUY_TO_OPEN 
-
-        if old_leg_open_action:
-          # Find all original existing transactions for this trade that need to be marked as active=False
-          trade_transactions = app_tables.transactions.search(Trade=trade_row)
-
-          try:
-            # Find the active leg that matches
-            leg_to_deactivate = app_tables.legs.search(
-              Transaction=q.any_of(*trade_transactions),
-              active=True,
-              Action=old_leg_open_action,
-              Strike=leg['strike'],
-              Expiration=leg['expiration']
-            )[0] # Find the first match
-            # Finally - Deactivate the original leg and repeat through rest of legs_data_list
-            leg_to_deactivate.update(active=False)
-          except Exception as e:
-            print(f"Warning: Could not find matching active leg to close: {e}")
-
-      # 4. Add the new leg row (for this transaction)    
-      # runs for all legs in legs_data_list
-      app_tables.legs.add_row(
-        Transaction=new_transaction,
-        Action=action_string,
-        Quantity=leg['quantity'],
-        OptionType=leg['option_type'],
-        Expiration=leg['expiration'],
-        Strike=leg['strike'],
-        active=is_open_action_flag # This will be False for "Close" actions
-      )
-    print("starting pl update")  
-    #if strategy and 'Close:' in strategy:
-    #*************************UPDATE this*****************************************************************
-    if manual_entry_state == config.MANUAL_ENTRY_STATE_CLOSE:
-      # Now that the closing transaction is saved, sum the P/L
-      # Find all transactions for this trade
-      all_transactions = app_tables.transactions.search(Trade=trade_row)
-      #print(f"all transactions: {all_transactions}")
-      total_pl_dollars = 0
-      
-      for t in all_transactions:
-        price = t['CreditDebit']
-        if price is not None:
-          # find legs for this transaction
-          trans_legs = app_tables.legs.search(Transaction=t)
-          quantity =1 # default
-          if len(trans_legs) > 0:
-            quantity = trans_legs[0]['Quantity']
-
-          transaction_cash_value = price * quantity * config.DEFAULT_MULTIPLIER
-          
-          total_pl_dollars += transaction_cash_value
-          #print(f"total PL: {transaction_cash_value}")
-
-      # Update the parent trade row with the final numbers
-      trade_row.update(
-        Status=config.TRADE_ACTION_CLOSE, 
-        CloseDate=trade_date,
-        TotalPL=round(total_pl_dollars)
-      )
-
-    return "Trade saved successfully!"
-
-  except Exception as e:
-    print(f"Error saving manual trade: {e}")
-    return f"Error: {e}"
-
-@anvil.server.callable
-def validate_manual_legs(environment: str, legs_data_list):
-  """
-    Checks if all legs in a list are valid tradable options.
-    Returns True if all are valid, or an error string if one fails.
-    """
-  t, _ = server_helpers.get_tradier_client(environment)
-  
-  for leg in legs_data_list:
-    # Build the OCC symbol just like your risk function does
-    occ_symbol = server_helpers.build_occ_symbol(
-      underlying=leg['underlying_symbol'], # You'll need to pass this in
-      expiration_date=leg['expiration'],
-      option_type=leg['option_type'],
-      strike=leg['strike']
-    )
-
-    quote = server_helpers.get_quote(t, occ_symbol)
-
-    if quote is None:
-      return f"Invalid leg: {occ_symbol}"
-
-  return True
-
-@anvil.server.callable
-def get_roll_package_dto(environment: str, 
-                         trade_row: Row, 
-                         margin_expansion_limit: float = config.LONG_STRIKE_DELTA_MAX
-                        )->Dict:
-  """
-    Finds active legs, gets live prices, and calculates
-    a full 4-leg roll package with standardized keys.
-    It calls the main engine and returns a Dict with:
-    {
-    'legs_to_populate': None,
-    'total_roll_credit': None,
-    'new_spread_dto': best_position_object_dto,
-    'closing_spread_dto': existing spread to close dto
-    }
-    'new_spread_dto' is a nested dict with {meta..., 'short_put', 'long_put'}
-    """
-  t, _ = server_helpers.get_tradier_client(environment)
-  
-  # --- 1. Get Live Quotes for CURRENT Active Legs ---
-  short_leg_quote = None
-  long_leg_quote = None
-  short_leg_db = None
-  long_leg_db = None
-
-  try:
-    trade_transactions = app_tables.transactions.search(Trade=trade_row)
-    short_leg_db = app_tables.legs.search(
-      Transaction=q.any_of(*trade_transactions),
-      active=True, Action='Sell to Open'
-    )[0]
-    long_leg_db = app_tables.legs.search(
-      Transaction=q.any_of(*trade_transactions),
-      active=True, Action='Buy to Open'
-    )[0]
-
-    short_occ = server_helpers.build_occ_symbol(
-      underlying=trade_row['Underlying'],
-      expiration_date=short_leg_db['Expiration'],
-      option_type=short_leg_db['OptionType'],
-      strike=short_leg_db['Strike']
-    )
-    long_occ = server_helpers.build_occ_symbol(
-      underlying=trade_row['Underlying'],
-      expiration_date=long_leg_db['Expiration'],
-      option_type=long_leg_db['OptionType'],
-      strike=long_leg_db['Strike']
-    )
-
-    short_leg_quote = server_helpers.get_quote(t, short_occ)
-    long_leg_quote = server_helpers.get_quote(t, long_occ)
-
-    if not short_leg_quote or not long_leg_quote:
-      raise Exception("Could not get live quotes for active legs.")
-
-  except Exception as e:
-    raise Exception(f"Error finding active legs: {e}")
-
-  # --- NEW: Calculate Total Original Credit ---
-  # Sum of all credits collected so far (Open + previous Rolls)
-  # We use this to determine the "10% Pain Threshold"
-  trade_transactions = app_tables.transactions.search(Trade=trade_row)
-  original_credit = sum(
-    t['CreditDebit'] 
-    for t in trade_transactions 
-    if t['CreditDebit'] is not None
-  )
-  
-    # --- 2. Calculate Closing Cost & Build Closing Leg Dicts ---
-  current_spread = positions.PutSpread(short_leg_quote, long_leg_quote)
-  closing_spread_dto = current_spread.get_dto()
-  closing_spread_dto['spread_action'] = config.TRADE_ACTION_CLOSE
-  total_close_cost = current_spread.calculate_cost_to_close()
-
-  # Build standardized dicts for the closing legs
-  closing_leg_1 = {
-    'action': config.ACTION_BUY_TO_CLOSE,
-    'type': short_leg_db['OptionType'],
-    'strike': short_leg_db['Strike'],
-    'expiration': short_leg_db['Expiration'],
-    'quantity': short_leg_db['Quantity']
-  }
-  closing_leg_2 = {
-    'action': config.ACTION_SELL_TO_CLOSE,
-    'type': long_leg_db['OptionType'],
-    'strike': long_leg_db['Strike'],
-    'expiration': long_leg_db['Expiration'],
-    'quantity': long_leg_db['Quantity']
-  }
-  closing_legs_list = [closing_leg_1, closing_leg_2]
-
-  # --- 3.  Find NEW Legs ---
-  limit_ticks = int(margin_expansion_limit)
-  new_spread_object = server_helpers.find_vertical_roll(
-    t,
-    trade_row['Underlying'],
-    current_spread,
-    original_credit=original_credit,
-    margin_expansion_limit_ticks=limit_ticks
-  )
-  
-  #print(f"new spread is: {new_spread}")
-  if not new_spread_object or isinstance(new_spread_object, int):
-    print(f"No valid roll configuration found for {trade_row['Underlying']}")
-    return None
-  # --- 4. Calculate Opening Credit & Build Opening Leg Dicts (FIXED) ---
-  total_open_credit = new_spread_object.calculate_net_premium()
-  #print(f"open credit of roll to: {total_open_credit}")
-  
-  # prepare for serialization
-  new_spread_dto = new_spread_object.get_dto()
-  new_short_leg_dto = new_spread_dto['short_put']
-  new_long_leg_dto = new_spread_dto['long_put']
-  new_spread_dto['spread_action'] = config.TRADE_ACTION_OPEN
-  
-  # Build standardized dicts for the opening legs
-  opening_leg_1 = {
-    'action': config.ACTION_SELL_TO_OPEN,
-    'type': new_short_leg_dto['option_type'],
-    'strike': new_short_leg_dto['strike'],
-    'expiration': new_short_leg_dto['expiration_date'],
-    'quantity': 1 # Assuming quantity 1
-  }
-  opening_leg_2 = {
-    'action': config.ACTION_BUY_TO_OPEN,
-    'type': new_long_leg_dto['option_type'],
-    'strike': new_long_leg_dto['strike'],
-    'expiration': new_long_leg_dto['expiration_date'],
-    'quantity': 1 # Assuming quantity 1
-  }
-  opening_legs_list = [opening_leg_1, opening_leg_2]
-  #print(f" open leg list: {opening_legs_list}")
-
-  # --- 5. Package and Return ---
-  all_4_legs = closing_legs_list + opening_legs_list
-  total_roll_credit = total_open_credit - total_close_cost
-
-  #print(f"in get_roll: roll legs:{all_4_legs}, roll credit: {total_roll_credit}")
-  print(f" in get_roll: new_spread_dto['net_premium']: {new_spread_dto['net_premium']}")
-  return {
-    'legs_to_populate': all_4_legs, # list of leg_dto [{leg1}, {leg2}, etc] closing-short, closing-long, opening-short, opening-long
-    'total_roll_credit': total_roll_credit,
-    'new_spread_dto': new_spread_dto,  # full nested { meta, 'short_put', 'long_put'} position dto
-    'closing_spread_dto': closing_spread_dto # full nested { meta, 'short_put', 'long_put'} position dto
+    # 3. Build Query Filters
+    # Base filter: Must belong to these transactions AND be active
+  query_kwargs = {
+    'Transaction': q.any_of(*trade_transactions),
+    'active': True
   }
 
-@anvil.server.callable
-def get_new_open_trade_dto(environment: str, 
-                           symbol: str=None, 
-                           strategy_type: str=None
-                          ) -> Dict:
-  """
-  Unified wrapper for 'Find New Trade'.
-  Dispatches to the correct logic (Vertical vs Diagonal) and normalizes the output 
-  so the UI receives a consistent DTO with:
-    {
-    'legs_to_populate': None,
-    'total_roll_credit': None,
-    'new_spread_dto': best_position_object_dto
-  }
-    """
-  t, _ = server_helpers.get_tradier_client(environment)
+  # 4. Apply Direction Filter
+  if direction:
+    d = direction.lower()
+    if d == 'short':
+      # Robust match: matches "Sell to Open", "Sell To Open", etc.
+      query_kwargs['Action'] = q.ilike('Sell%') 
+    elif d == 'long':
+      query_kwargs['Action'] = q.ilike('Buy%')
 
-  # 1. Resolve Settings
-  settings_row = app_tables.settings.get() or {} # Assumes single-row settings table
-  target_rroc = settings_row['default_target_rroc'] if settings_row and settings_row['default_target_rroc'] else config.DEFAULT_RROC_HARVEST_TARGET
-  width = settings_row['default_width'] if settings_row and settings_row['default_width'] else config.DEFAULT_WIDTH
-  qty = settings_row['default_qty'] if settings_row and settings_row['default_qty'] else config.DEFAULT_QUANTITY
-  
-  best_spread_object = None
-  if strategy_type == config.POSITION_TYPE_VERTICAL:
-    # This helper returns a Dictionary result that now contains a position object in the 'legs' key
-    result = server_helpers.get_vertical_spread(t, 
-                                                symbol=symbol, 
-                                                target_delta=config.DEFAULT_VERTICAL_DELTA, 
-                                                width=width, 
-                                                quantity=qty, 
-                                                target_rroc=target_rroc)
-    if result and not result.get('error'):
-      best_spread_object = result['legs']
-      qty = result['parameters']['quantity'] # Capture quantity before discarding result dict
-  elif strategy_type == config.POSITION_TYPE_DIAGONAL:
-    # deprecated, can remove
-    best_spread_object = server_helpers.find_new_diagonal_trade(t,
-                                                                  underlying_symbol=symbol,
-                                                                  position_to_roll=None  # We pass None to trigger 'open' logic
-    )
-  else:
-    anvil.alert(f"Strategy: {strategy_type} is not implemented")
-    return
-  
-  if not best_spread_object:
-    print("find new trade for {strategy_type} on {symbol} did not return a best trade object")
-    return None # Or return an error string
-    
-  best_spread_dto = best_spread_object.get_dto()
-  # inject qty into return and mark as a spread open action
-  best_spread_dto['quantity'] = qty
-  best_spread_dto['spread_action'] = config.TRADE_ACTION_OPEN
-    
-  return {
-    'legs_to_populate': None,
-    'total_roll_credit': None,
-    'new_spread_dto': best_spread_dto
-  }
+    # 5. Execute Search
+  active_legs = app_tables.legs.search(**query_kwargs)
 
-@anvil.server.callable
-def delete_trade(trade_row):
-  """
-  Deletes a trade row and all associated transactions and legs.
-  """
-  if not trade_row:
-    raise ValueError("No trade provided to delete")
-
-  print(f"Deleting trade {trade_row.get_id()} and associated records...")
-
-  try:
-    # 1. Find all transactions for this trade
-    transactions = app_tables.transactions.search(Trade=trade_row)
-
-    # 2. For each transaction, delete its legs, then the transaction itself
-    for t in transactions:
-      # Delete legs associated with this transaction
-      # Iterate and delete manually
-      legs = app_tables.legs.search(Transaction=t)
-      for leg in legs:
-        leg.delete()
-      # Delete the transaction
-      t.delete()
-
-    # 3. Finally, delete the trade row
-    trade_row.delete()
-    return "Trade deleted successfully."
-
-  except Exception as e:
-    print(f"Error deleting trade: {e}")
-    raise e
-    
-@anvil.server.callable
-def get_close_trade_dto(environment: str, trade_row: Row) -> Dict:
-  """Calculates the closing trade package for an active position."""
-  t, _ = server_helpers.get_tradier_client(environment)
-  
-  try:
-    # 1. Get Active Legs from DB
-    trade_transactions = app_tables.transactions.search(Trade=trade_row)
-    short_leg_db = app_tables.legs.search(Transaction=q.any_of(*trade_transactions), active=True, Action='Sell to Open')[0]
-    long_leg_db = app_tables.legs.search(Transaction=q.any_of(*trade_transactions), active=True, Action='Buy to Open')[0]
-
-    # 2. Build OCC Symbols & Get Live Quotes
-    short_occ = server_helpers.build_occ_symbol(trade_row['Underlying'], short_leg_db['Expiration'], short_leg_db['OptionType'], short_leg_db['Strike'])
-    long_occ = server_helpers.build_occ_symbol(trade_row['Underlying'], long_leg_db['Expiration'], long_leg_db['OptionType'], long_leg_db['Strike'])
-
-    short_quote = server_helpers.get_quote(t, short_occ)
-    long_quote = server_helpers.get_quote(t, long_occ)
-
-    # 3. Build DTO (Position Object)
-    current_spread = positions.PutSpread(short_quote, long_quote)
-    close_dto = current_spread.get_dto()
-
-    # Calculate Debit (Cost to Close)
-    close_dto['cost_to_close'] = current_spread.calculate_cost_to_close()
-
-    # mark as a spread closing action
-    close_dto['spread_action'] = config.TRADE_ACTION_CLOSE
-
-    return close_dto
-  except Exception as e:
-    print(f"Error getting close package: {e}")
-    return None
-
-@anvil.server.callable
-def get_price(environment: str, symbol: str, price_type: str=None)->float:
-  t, _ = server_helpers.get_tradier_client(environment)
-  return server_helpers.get_underlying_price(t, symbol)
-
+  return list(active_legs)

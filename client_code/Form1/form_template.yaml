@@ -21,7 +21,7 @@ components:
     properties:
       align: center
       include_placeholder: false
-      items: [SANDBOX, PROD]
+      items: []
       placeholder: ''
     type: DropDown
   - layout_properties: {grid_position: 'JBMXBM,LFYHRU VWIUDN,UFVBST'}
