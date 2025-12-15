@@ -5,7 +5,7 @@ from anvil.tables import app_tables
 from anvil import alert
 
 # Private libs
-from .. import config
+from ..shared import config
 
 # This is a module.
 # You can define variables and functions here, and use them from any form. For example, in a top-level form:

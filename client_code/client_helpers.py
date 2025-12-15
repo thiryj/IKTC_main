@@ -9,7 +9,7 @@ from anvil.tables import app_tables
 #
 #    Module1.say_hello()
 
-from shared import config
+from .shared import config
 
 class LiveSettings:
   def __init__(self, row):

@@ -10,7 +10,7 @@ from anvil.tables import app_tables, Row
 import datetime as dt
 
 # Private libs
-from shared import config
+from ..shared import config
 from .. import client_helpers
 from . import manual_trade
 from .Form_ConfirmTrade import Form_ConfirmTrade # Import your custom form

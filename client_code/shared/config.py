@@ -1,11 +1,4 @@
-# This is a module.
-# You can define variables and functions here, and use them from any form. For example, in a top-level form:
-#
-#    from .. import Module1
-#
-#    Module1.say_hello()
-#
-# - hello me at git
+
 # server side configs to port over
 ALLOCATION = 10000
 #MAX_DTE = 90
