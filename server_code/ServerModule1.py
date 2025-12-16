@@ -87,8 +87,8 @@ def get_roll_package_dto(trade_id):
     legs = app_tables.legs.search(Transaction=txn, active=True)
     active_legs.extend(legs)
 
-  short_leg_row = next((l for l in active_legs if l['Action'].startswith('Sell')), None)
-  long_leg_row = next((l for l in active_legs if l['Action'].startswith('Buy')), None)
+  short_leg_row = next((leg for leg in active_legs if leg['Action'].startswith('Sell')), None)
+  long_leg_row = next((leg for leg in active_legs if leg['Action'].startswith('Buy')), None)
 
   if not short_leg_row or not long_leg_row:
     return {'error': 'Database error: No active legs found.'}
@@ -99,6 +99,8 @@ def get_roll_package_dto(trade_id):
   
   short_quote = server_helpers.fetch_leg_quote(t, trade_row['Underlying'], short_leg_data)
   long_quote = server_helpers.fetch_leg_quote(t, trade_row['Underlying'], long_leg_data)
+  print(f"short_leg_data: {short_leg_data}")
+  print(f"short_quote: {short_quote}")
 
   # Zombie Patch
   if isinstance(short_quote, dict) or short_quote is None: short_quote = ZombieQuote(short_leg_data)
@@ -109,6 +111,7 @@ def get_roll_package_dto(trade_id):
   if isinstance(long_quote.option_type, str): long_quote.option_type = MockOptionType(long_quote.option_type)
 
   current_pos = positions.PutSpread(short_quote, long_quote)
+  print(f"current_pos: {current_pos.print_leg_details()}")
 
   # 3. Find New Position (Target)
   new_pos = server_helpers.find_vertical_roll(t, trade_row['Underlying'], current_pos)
