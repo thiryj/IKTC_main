@@ -39,7 +39,7 @@ def get_quote(provider, symbol: str) -> dict:
   try:
     data = tradier_client.get('/v1/markets/quotes', params={'symbols': symbol, 'greeks': 'false'})
     quote = data.get('quotes', {}).get('quote')
-
+    print(f"in s.h.get_quote, quote: {quote}")
     # Handle list vs dict response
     if isinstance(quote, list) and quote:
       return quote[0]
@@ -335,21 +335,21 @@ def build_occ_symbol(underlying, expiration_date, option_type, strike, root_over
   exp_str = expiration_date.strftime('%y%m%d')
   type_char = 'P' if str(option_type).upper() == 'PUT' else 'C'
   strike_int = int(float(strike) * 1000)
-  return f"{root}{exp_str}{type_char}{strike_int:08d}"
+  symbol = f"{root}{exp_str}{type_char}{strike_int:08d}"
+  print(f"build_occ_symbol: {symbol}")
+  return symbol
 
 def get_underlying_price(tradier_client, symbol):
   q = get_quote(tradier_client, symbol)
   return q.get('last') if q else 0.0
 
-def fetch_leg_quote(tradier_client, underlying, leg_row):
+def fetch_leg_quote(tradier_client, underlying, leg_row)->Dict:
   """
   Helper to fetch quote for a DB leg row.
   Handles the SPX vs SPXW fallback logic.
   """
-  # 1. Fast Path: If DB has the exact symbol, use it.
-  if leg_row.get('Symbol'):
-    q = get_quote(tradier_client, leg_row['Symbol'])
-    if q: return q
+  if not leg_row:
+    return None
 
   # 2. Build Symbol (Try Standard first)
   occ = build_occ_symbol(underlying, leg_row['Expiration'], leg_row['OptionType'], leg_row['Strike'])

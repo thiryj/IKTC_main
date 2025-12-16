@@ -2,6 +2,7 @@ import anvil.secrets
 import anvil.server
 from anvil.tables import app_tables
 import datetime as dt
+import anvil.tables.query as q  # Ensure this is imported at the top
 
 # Internal Libs
 from shared import config
@@ -99,25 +100,26 @@ def get_roll_package_dto(trade_id):
   
   short_quote = server_helpers.fetch_leg_quote(t, trade_row['Underlying'], short_leg_data)
   long_quote = server_helpers.fetch_leg_quote(t, trade_row['Underlying'], long_leg_data)
-  print(f"short_leg_data: {short_leg_data}")
-  print(f"short_quote: {short_quote}")
+  #print(f"short_leg_data: {short_leg_data}")
+  #print(f"short_quote: {short_quote}")
 
   # Zombie Patch
-  if isinstance(short_quote, dict) or short_quote is None: short_quote = ZombieQuote(short_leg_data)
-  if isinstance(long_quote, dict) or long_quote is None: long_quote = ZombieQuote(long_leg_data)
+  #if isinstance(short_quote, dict) or short_quote is None: short_quote = ZombieQuote(short_leg_data)
+  #if isinstance(long_quote, dict) or long_quote is None: long_quote = ZombieQuote(long_leg_data)
 
     # Fix Option Types if they are strings (Safety)
-  if isinstance(short_quote.option_type, str): short_quote.option_type = MockOptionType(short_quote.option_type)
-  if isinstance(long_quote.option_type, str): long_quote.option_type = MockOptionType(long_quote.option_type)
+  #if isinstance(short_quote.option_type, str): short_quote.option_type = MockOptionType(short_quote.option_type)
+  #if isinstance(long_quote.option_type, str): long_quote.option_type = MockOptionType(long_quote.option_type)
 
   current_pos = positions.PutSpread(short_quote, long_quote)
-  print(f"current_pos: {current_pos.print_leg_details()}")
+  current_pos.describe()
+  current_pos.print_leg_details()
 
   # 3. Find New Position (Target)
   new_pos = server_helpers.find_vertical_roll(t, trade_row['Underlying'], current_pos)
-
+  print(f"in s.get_roll_package_dto.  new_pos: {new_pos}")
   if not new_pos:
-    return {'message': 'No valid zero-debit roll found.'}
+    return None
 
     # 4. CONSTRUCT THE 4 LEGS (The "legs_to_populate" list)
     # We need to map Quote objects to the dict schema the UI grid expects.
@@ -127,42 +129,43 @@ def get_roll_package_dto(trade_id):
 
   # Leg 1: Close the Old Short (Buy to Close)
   leg1 = {
-    'symbol': short_quote.symbol,
     'quantity': qty,
     'action': config.ACTION_BUY_TO_CLOSE, 
-    'option_symbol': short_quote.symbol, # Tradier quotes use symbol as the option identifier
-    'strike': short_quote.strike,
-    'expiration': short_quote.expiration_date
+    'strike': short_leg_row['Strike'],
+    'expiration': short_leg_row['Expiration'],
+    'type': short_leg_row['OptionType']
   }
 
   # Leg 2: Close the Old Long (Sell to Close)
   leg2 = {
-    'symbol': long_quote.symbol,
     'quantity': qty,
-    'action': config.ACTION_SELL_TO_CLOSE,
-    'option_symbol': long_quote.symbol,
-    'strike': long_quote.strike,
-    'expiration': long_quote.expiration_date
+    'action': config.ACTION_SELL_TO_CLOSE, 
+    'strike': long_leg_row['Strike'],
+    'expiration': long_leg_row['Expiration'],
+    'type': long_leg_row['OptionType']
   }
 
   # Leg 3: Open New Short (Sell to Open)
+  # prepare for serialization
+  new_spread_dto = new_pos.get_dto()
+  new_short_leg_dto = new_spread_dto['short_put']
+  new_long_leg_dto = new_spread_dto['long_put']
+  new_spread_dto['spread_action'] = config.TRADE_ACTION_OPEN
   leg3 = {
-    'symbol': new_pos.short_put.symbol,
-    'quantity': qty,
     'action': config.ACTION_SELL_TO_OPEN,
-    'option_symbol': new_pos.short_put.symbol,
-    'strike': new_pos.short_put.strike,
-    'expiration': new_pos.short_put.expiration_date
+    'type': new_short_leg_dto['option_type'],
+    'strike': new_short_leg_dto['strike'],
+    'expiration': new_short_leg_dto['expiration_date'],
+    'quantity': qty
   }
 
   # Leg 4: Open New Long (Buy to Open)
   leg4 = {
-    'symbol': new_pos.long_put.symbol,
-    'quantity': qty,
     'action': config.ACTION_BUY_TO_OPEN,
-    'option_symbol': new_pos.long_put.symbol,
-    'strike': new_pos.long_put.strike,
-    'expiration': new_pos.long_put.expiration_date
+    'type': new_long_leg_dto['option_type'],
+    'strike': new_long_leg_dto['strike'],
+    'expiration': new_long_leg_dto['expiration_date'],
+    'quantity': qty
   }
 
   all_4_legs = [leg1, leg2, leg3, leg4]
@@ -172,7 +175,7 @@ def get_roll_package_dto(trade_id):
   total_roll_credit = new_pos.net_premium - current_pos.calculate_cost_to_close()
   
   # 5. Return the EXACT Schema required
-  return {
+  return_dict = {
     'legs_to_populate': all_4_legs,
     'total_roll_credit': total_roll_credit,
     'new_spread_dto': new_pos.get_dto(),      # New Target
@@ -180,6 +183,8 @@ def get_roll_package_dto(trade_id):
     'spread_action': config.MANUAL_ENTRY_STATE_ROLL,
     'message': f"Roll found: Credit ${total_roll_credit:.2f}"
   }
+  print(f"in get_roll_package_dto.  return_dict: {return_dict}")
+  return return_dict
 # ------------------------------------------------------------------
 #  WRITE ACTIONS (Execution & DB)
 # ------------------------------------------------------------------
@@ -197,7 +202,7 @@ def submit_order(env, symbol, trade_dto_list, quantity, limit_price=None, previe
     # 2. Tradier rejects 0.00. If we calculated $0.00 (even), ask for $0.01.
     if limit_price < 0.01:
       print("Warning: Price was 0.00. Bumping to 0.01 to satisfy API.")
-      limit_price = 0.01
+      limit_price = 0.05
 
   result = server_helpers.submit_spread_order(
     t, url, config.DEFAULT_SYMBOL, quantity, trade_dto_list, 
@@ -385,13 +390,15 @@ def get_price(symbol,env=config.ENV_SANDBOX):
   """Simple helper to get current stock price for the UI."""
   t, _ = server_helpers.get_tradier_client(env)
   try:
-    quote = t.get_quotes(symbol)
+    print(f"pre s.h.get_quote on :{symbol} in {env}")
+    # quote = t.get_quotes(symbol) # buggy, do not use
+    quote = server_helpers.get_quote(t, symbol)
     # return last price, or close if market is closed/pre-market
+    print(f"in s.get_price. quote: {quote}")
     return quote.get('last') or quote.get('close') or 0.0
-  except Exception:
+  except Exception as e:
+    print(f"get_quote threw: {e}")
     return 0.0
-
-import anvil.tables.query as q  # Ensure this is imported at the top
 
 @anvil.server.callable
 def get_active_legs_for_trade(trade_row, direction:str=None):
