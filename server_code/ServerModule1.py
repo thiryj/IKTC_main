@@ -65,7 +65,7 @@ def get_open_trades_for_dropdown(environment: str=config.ENV_SANDBOX):
     of (display_text, item) tuples for a DropDown.
     """
   open_trades = app_tables.trades.search(
-                                          Status='Open',
+                                          Status=config.TRADE_ACTION_OPEN,
                                           Account=environment
   )
   dropdown_items = []
@@ -142,13 +142,6 @@ def get_tradier_positions(environment: str):
     return e
 
 @anvil.server.callable
-def get_open_trades(environment: str=config.ENV_SANDBOX):
-  """Fetches all trades with a status of 'Open'."""
-  open_trades_list = list(app_tables.trades.search(Status=q.full_text_match('Open'),Account=environment))
-  #print(f"Found {len(open_trades_list)} open trades.")
-  return open_trades_list
-
-@anvil.server.callable
 def get_open_trades_with_risk(environment: str=config.ENV_SANDBOX, 
                               refresh_risk: bool=True)->Dict:
   """
@@ -161,8 +154,6 @@ def get_open_trades_with_risk(environment: str=config.ENV_SANDBOX,
   print(f"Found {len(open_trades)} open trades for {environment}")
   tradier_client, endpoint_url = server_helpers.get_tradier_client(environment)
 
-  settings = app_tables.settings.get()
-  target_daily_rroc = settings['default_target_rroc'] if settings and settings['default_target_rroc'] else 0.001
   enriched_trades_list = []
   
   for trade in open_trades:
@@ -201,7 +192,6 @@ def get_open_trades_with_risk(environment: str=config.ENV_SANDBOX,
           #print(f"current_short_leg is: {current_short_leg}")
           quantity = current_short_leg['Quantity']
           trade_dto['Quantity'] = quantity
-          short_strike_price = current_short_leg['Strike']
           trade_dto['short_strike'] = current_short_leg['Strike']
           trade_dto['short_expiry'] = current_short_leg['Expiration']
         else:
@@ -270,26 +260,7 @@ def get_open_trades_with_risk(environment: str=config.ENV_SANDBOX,
           # Is harvestable?
           # flag if ready to harvest
           trade_dto['is_harvestable'] = True if cost_to_close_per_share >= harvest_price else False
-
-          # skip assignment risk part - no longer trading american
-          """
-          option_price = short_quote.get('bid') # Use bid for risk calc
-          intrinsic_value = 0
-          if current_short_leg['OptionType'] == config.OPTION_TYPE_PUT:
-            intrinsic_value = max(0, short_strike_price - underlying_price)
-            #print(f"in put: intrinsic: {intrinsic_value}, extrinsic: {extrinsic_value}")
-          elif current_short_leg['OptionType'] == config.OPTION_TYPE_CALL: 
-            intrinsic_value = max(0, underlying_price - short_strike_price)
-            #print(f"in call: intrinsic: {intrinsic_value}, extrinsic: {extrinsic_value}")
-          else:
-            print("bad option type in get open trades with risk")
-          extrinsic_value = option_price - intrinsic_value
-          trade_dto['extrinsic_value'] = extrinsic_value
-    
-          # Our risk rule: ITM and extrinsic is less than $0.10
-          if intrinsic_value > 0 and extrinsic_value < config.ASSIGNMENT_RISK_THRESHOLD:
-            trade_dto['is_at_risk'] = True
-        """  
+          
         except Exception as e:
           print(f"Error calculating RROC/Risk for {trade['Underlying']}: {repr(e)}")
           pass # do not return risk field
@@ -509,8 +480,8 @@ def save_manual_trade(environment: str,
                       open_spread_credit: float=None):  #CLOSE or ROLL: exising Trade row.  OPEN: None
 
   print(f"Server saving to environment {environment}: {strategy}")
-  # --- 0. NEW: Safety Validation for Diagonals ---
-  if strategy == config.POSITION_TYPE_DIAGONAL or config.POSITION_TYPE_VERTICAL:
+  # --- 0. NEW: Safety Validation for Vertical Spreads ---
+  if strategy == config.POSITION_TYPE_VERTICAL:
     try:
       # Filter for opening legs
       short_legs = [l for l in legs_data_list if l['action'] == config.ACTION_SELL_TO_OPEN]
