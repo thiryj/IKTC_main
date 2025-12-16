@@ -289,13 +289,19 @@ def build_multileg_payload(tradier_client, underlying_symbol, quantity, trade_dt
     
   return payload
 
-def submit_spread_order(tradier_client, endpoint_url, underlying_symbol, quantity, 
-                       trade_dto_list, preview=True, limit_price=None):
+def submit_spread_order(tradier_client, 
+                        endpoint_url, 
+                        underlying_symbol, 
+                        quantity, 
+                        trade_dto_list, 
+                        preview=True, 
+                        limit_price=None):
   path = f"accounts/{tradier_client.default_account_id}/orders"
   api_url = urljoin(endpoint_url, path)
 
   payload = build_multileg_payload(tradier_client, underlying_symbol, quantity, trade_dto_list)
   if not payload: return {'error': 'Failed to build payload'}
+  print(f"payload: {payload}")
 
   if limit_price is not None:
     payload['price'] = f"{float(limit_price):.2f}"

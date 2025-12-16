@@ -95,10 +95,8 @@ def get_roll_package_dto(trade_id):
 
     # 2. Convert to Dict & Quote (Current Position)
   short_leg_data = dict(short_leg_row)
-  short_leg_data['Symbol'] = trade_row['Underlying']
   long_leg_data = dict(long_leg_row)
-  long_leg_data['Symbol'] = trade_row['Underlying']
-
+  
   short_quote = server_helpers.fetch_leg_quote(t, trade_row['Underlying'], short_leg_data)
   long_quote = server_helpers.fetch_leg_quote(t, trade_row['Underlying'], long_leg_data)
 
@@ -189,6 +187,14 @@ def submit_order(env, symbol, trade_dto_list, quantity, limit_price=None, previe
     Submits the order to Tradier.
     """
   t, url = server_helpers.get_tradier_client(env)
+  
+  if limit_price is not None:
+    limit_price = abs(float(limit_price))
+
+    # 2. Tradier rejects 0.00. If we calculated $0.00 (even), ask for $0.01.
+    if limit_price < 0.01:
+      print("Warning: Price was 0.00. Bumping to 0.01 to satisfy API.")
+      limit_price = 0.01
 
   result = server_helpers.submit_spread_order(
     t, url, config.DEFAULT_SYMBOL, quantity, trade_dto_list, 
