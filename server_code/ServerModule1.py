@@ -20,16 +20,18 @@ from shared import config
 #  
 @anvil.server.callable
 def get_settings():
-  # Attempt to get the first row
   settings_row = app_tables.settings.get()
-
-  # If table is empty, initialize it with your preferred defaults
   if not settings_row:
     settings_row = app_tables.settings.add_row(
       default_symbol=config.DEFAULT_SYMBOL,
       defualt_qty=1, 
       use_max_qty=False, 
-      refresh_timer_on=True
+      refresh_timer_on=True,
+      allow_diagonals=False,
+      margin_expansion_limit=0,
+      default_width=config.DEFTAULT_WIDTH,
+      harvest_fraction=config.DEFAULT_HARVEST_TARGET,
+      automation_enabled=False
     )
   return settings_row
   
@@ -143,7 +145,7 @@ def get_tradier_positions(environment: str):
 
 @anvil.server.callable
 def get_open_trades_with_risk(environment: str=config.ENV_SANDBOX, 
-                              refresh_risk: bool=True)->Dict:
+                              refresh_risk: bool=True)->List[Dict]:
   """
     Fetches all open trades, then enriches them with live
     pricing and assignment risk data from the Tradier API and RROC.
@@ -816,7 +818,7 @@ def get_new_open_trade_dto(environment: str,
                           ) -> Dict:
   """
   Unified wrapper for 'Find New Trade'.
-  Dispatches to the correct logic (Vertical vs Diagonal) and normalizes the output 
+  Dispatches to the find new Vertical and normalizes the output 
   so the UI receives a consistent DTO with:
     {
     'legs_to_populate': None,
@@ -828,7 +830,6 @@ def get_new_open_trade_dto(environment: str,
 
   # 1. Resolve Settings
   settings_row = app_tables.settings.get() or {} # Assumes single-row settings table
-  target_rroc = settings_row['default_target_rroc'] if settings_row and settings_row['default_target_rroc'] else config.DEFAULT_RROC_HARVEST_TARGET
   width = settings_row['default_width'] if settings_row and settings_row['default_width'] else config.DEFAULT_WIDTH
   qty = settings_row['default_qty'] if settings_row and settings_row['default_qty'] else config.DEFAULT_QUANTITY
   
@@ -839,23 +840,18 @@ def get_new_open_trade_dto(environment: str,
                                                 symbol=symbol, 
                                                 target_delta=config.DEFAULT_VERTICAL_DELTA, 
                                                 width=width, 
-                                                quantity=qty, 
-                                                target_rroc=target_rroc)
+                                                quantity=qty
+                                                )
     if result and not result.get('error'):
+      #print(f"get_new_open_trade_dto.  result: {result}")
       best_spread_object = result['legs']
       qty = result['parameters']['quantity'] # Capture quantity before discarding result dict
-  elif strategy_type == config.POSITION_TYPE_DIAGONAL:
-    # deprecated, can remove
-    best_spread_object = server_helpers.find_new_diagonal_trade(t,
-                                                                  underlying_symbol=symbol,
-                                                                  position_to_roll=None  # We pass None to trigger 'open' logic
-    )
   else:
     anvil.alert(f"Strategy: {strategy_type} is not implemented")
     return
   
   if not best_spread_object:
-    print("find new trade for {strategy_type} on {symbol} did not return a best trade object")
+    print(f"find new trade for {strategy_type} on {symbol} did not return a best trade object")
     return None # Or return an error string
     
   best_spread_dto = best_spread_object.get_dto()
@@ -939,3 +935,11 @@ def get_price(environment: str, symbol: str, price_type: str=None)->float:
   t, _ = server_helpers.get_tradier_client(environment)
   return server_helpers.get_underlying_price(t, symbol)
 
+@anvil.server.callable
+def set_automation_status(enabled: bool):
+  app_tables.settings.get().update(automation_enabled=enabled)
+
+@anvil.server.callable
+def is_automation_live():
+  # The Headless Bot calls this first. If False, it terminates immediately.
+  return app_tables.settings.get()['automation_enabled']

@@ -10,7 +10,12 @@ components:
     name: column_panel_1
     properties: {}
     type: ColumnPanel
-  - components: []
+  - components:
+    - event_bindings: {change: checkbox_automation_change}
+      layout_properties: {grid_position: 'DVXVAM,NJWDCI'}
+      name: checkbox_automation
+      properties: {text: Automation Status}
+      type: CheckBox
     layout_properties: {grid_position: 'JBMXBM,CUYQLX'}
     name: column_panel_2
     properties: {}
@@ -68,7 +73,7 @@ components:
         type: TextBox
       - layout_properties: {col_xs: 0, row: RXEBHO, width_xs: 2}
         name: label_17
-        properties: {text: Verticals Only}
+        properties: {text: Allow Diagonals}
         type: Label
       - data_bindings:
         - {code: 'self.my_settings[''allow_diagonals'']', property: checked, writeback: true}
@@ -97,23 +102,13 @@ components:
         name: checkbox_use_max_qty
         properties: {text: ''}
         type: CheckBox
-      - layout_properties: {col_xs: 0, row: JWQWNJ, width_xs: 2}
-        name: label_21
-        properties: {text: Def. Target RROC}
-        type: Label
-      - data_bindings:
-        - {code: 'self.my_settings[''default_target_rroc'']', property: text, writeback: true}
-        layout_properties: {col_xs: 2, row: JWQWNJ, width_xs: 2}
-        name: textbox_settings_default_target_rroc
-        properties: {text: 'self.my_settings[''default_target_rroc'']', type: number}
-        type: TextBox
-      - layout_properties: {col_xs: 7, row: JWQWNJ, width_xs: 2}
+      - layout_properties: {col_xs: 4, row: JWQWNJ, width_xs: 2}
         name: label_23
         properties: {text: Default Sp. Width}
         type: Label
       - data_bindings:
         - {code: 'self.my_settings[''default_width'']', property: text, writeback: true}
-        layout_properties: {col_xs: 9, row: JWQWNJ, width_xs: 2}
+        layout_properties: {col_xs: 6, row: JWQWNJ, width_xs: 2}
         name: textbox_default_width
         properties: {placeholder: '25', type: number}
         type: TextBox

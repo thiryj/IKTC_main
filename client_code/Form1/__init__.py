@@ -70,6 +70,8 @@ class Form1(Form1Template):
     )
           
     # Populate misc components
+    self.checkbox_automation.checked = self.my_settings['automation_enabled']
+    self.checkbox_automation_change()
     self.dropdown_strategy_picker.items = config.POSITION_TYPES_ACTIVE
     self.textbox_symbol.text = self.my_settings.default_symbol
     
@@ -169,13 +171,10 @@ class Form1(Form1Template):
       
       # 2. Populate UI (Standard Logic)
       self.trade_dto = best_trade_dto
-      self.trade_dto_list = [self.trade_dto]
-            
-      print(f"best {trade_strategy} DTO is: {best_trade_dto}")
+      self.trade_dto_list = [self.trade_dto]            
+      #print(f"best {trade_strategy} DTO is: {best_trade_dto}")
 
-      # 5. Populate strategy leg fields
-    
-      # Short Leg
+      # 5. Populate strategy leg fields    
       short_leg = best_trade_dto['short_put']
       self.label_leg1_action.text = config.ACTION_SELL_TO_OPEN
       short_expiry = short_leg['expiration_date']
@@ -187,7 +186,6 @@ class Form1(Form1Template):
         f"DTE: {short_dte.days}"
       )
 
-      # Long Leg
       long_leg = best_trade_dto['long_put']
       self.label_leg2_action.text = "buy to open"
       long_expiry = long_leg['expiration_date']
@@ -891,3 +889,16 @@ class Form1(Form1Template):
   def dropdown_campaign_change(self, **event_args):
     """This method is called when an item is selected"""
     self.load_trade_history()
+
+  def checkbox_automation_change(self, **event_args):
+    """This method is called when this checkbox is checked or unchecked"""
+    is_enabled = self.checkbox_automation.checked
+    anvil.server.call('set_automation_status', is_enabled)
+
+    # Visual feedback
+    if is_enabled:
+      self.checkbox_automation.foreground = "green"
+      self.checkbox_automation.text = "AUTOMATION LIVE"
+    else:
+      self.checkbox_automation.foreground = "red"
+      self.checkbox_automation.text = "Automation Safed"
