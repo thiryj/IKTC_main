@@ -278,7 +278,7 @@ def get_open_trades_with_risk(environment: str=config.ENV_SANDBOX,
 def get_closed_trades(environment: str=config.ENV_SANDBOX, campaign_filter: str=None)->Dict: 
   search_kwargs = {'Campaign': campaign_filter} if campaign_filter else {}
   
-  closed_trades = app_tables.trades.search(Status='Closed', Account=environment, **search_kwargs)
+  closed_trades = app_tables.trades.search(Status=config.TRADE_ACTION_CLOSE, Account=environment, **search_kwargs)
   enriched_trades = []
   
   # Trade level accumulators
