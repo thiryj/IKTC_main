@@ -151,7 +151,7 @@ def get_open_trades_with_risk(environment: str=config.ENV_SANDBOX,
 
   #NOTE:  this only works for 2 leg spreads - need different logic for CSP or covered calls
   open_trades = app_tables.trades.search(Status=config.TRADE_ACTION_OPEN, Account=environment)
-  print(f"Found {len(open_trades)} open trades for {environment}")
+  #print(f"Found {len(open_trades)} open trades for {environment}")
   tradier_client, endpoint_url = server_helpers.get_tradier_client(environment)
 
   enriched_trades_list = []
@@ -163,8 +163,6 @@ def get_open_trades_with_risk(environment: str=config.ENV_SANDBOX,
       'Strategy': trade['Strategy'],
       'Quantity': None,
       'OpenDate': trade['OpenDate'],
-      'extrinsic_value': None, # Placeholder
-      'is_at_risk': False,       # Placeholder
       'short_strike': None,
       'long_strike': None,
       'short_expiry': None,
@@ -221,10 +219,6 @@ def get_open_trades_with_risk(environment: str=config.ENV_SANDBOX,
           # B. Get Days in Trade
           days_in_trade = (dt.date.today() - trade['OpenDate']).days
           days_in_trade = 1 if days_in_trade < 1 else days_in_trade
-          
-          # Get live underlying price
-          #underlying_symbol = trade['Underlying']
-          #underlying_price = server_helpers.get_underlying_price(tradier_client, underlying_symbol)
           
           # 3. Fetch Quotes for Both Legs
           short_quote = server_helpers.fetch_leg_quote(tradier_client, trade['Underlying'], current_short_leg)

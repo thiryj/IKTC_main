@@ -22,28 +22,6 @@ class RowTemplate_OpenPositions(RowTemplate_OpenPositionsTemplate):
         se_str = f"{se:%d-%b}" if se else "-"
         self.label_open_date.text = f"{self.item['OpenDate']:%d-%b} / {se_str}"
 
-    # --- 2. NEW RISK INDICATOR LOGIC ---
-      extrinsic_val = self.item.get('extrinsic_value')
-      is_at_risk = self.item.get('is_at_risk', False) # Default to False
-
-      if extrinsic_val is not None:
-        # Show the label and set its text
-        self.label_assignment_risk.visible = True
-        self.label_assignment_risk.text = f"Extrinsic: ${extrinsic_val:.2f}"
-      else:
-        # Hide the label if we don't have data
-        self.label_assignment_risk.visible = False
-
-        # --- 3. This is your "Flashing Red Button" idea ---
-      if is_at_risk:
-        # Set the label's color to red
-        self.label_assignment_risk.foreground = 'red'
-        self.button_roll_live.background = 'theme:Error'
-      else:
-        # Reset to default colors
-        self.label_assignment_risk.foreground = None
-        self.button_roll_live.background = None
-
       # RROC portion
       rroc = self.item.get('rroc')
       self.label_open_rroc.text = rroc
