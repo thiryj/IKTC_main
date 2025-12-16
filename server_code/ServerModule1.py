@@ -157,8 +157,8 @@ def get_open_trades_with_risk(environment: str=config.ENV_SANDBOX,
     """
 
   #NOTE:  this only works for 2 leg spreads - need different logic for CSP or covered calls
-  open_trades = app_tables.trades.search(Status='Open', Account=environment)
-  #print(f"Found {len(open_trades)} open trades for {environment}")
+  open_trades = app_tables.trades.search(Status=config.TRADE_ACTION_OPEN, Account=environment)
+  print(f"Found {len(open_trades)} open trades for {environment}")
   tradier_client, endpoint_url = server_helpers.get_tradier_client(environment)
 
   settings = app_tables.settings.get()
@@ -195,37 +195,37 @@ def get_open_trades_with_risk(environment: str=config.ENV_SANDBOX,
       
       #print(f"Active legs found: {active_legs}")
       if trade['Strategy'] in config.POSITION_TYPES_ACTIVE:
+        #print(f"trade strategy: {trade['Strategy']} is in:{config.POSITION_TYPES_ACTIVE}")
         current_short_leg = next((leg for leg in active_legs if leg['Action'] == config.ACTION_SELL_TO_OPEN), None)
-        
-        if trade['Strategy'] == config.POSITION_TYPE_VERTICAL:
-          #print(f"trade strategy: {trade['Strategy']} is identified: as position type:{config.POSITION_TYPE_VERTICAL}")
-          current_long_leg =  next((leg for leg in active_legs if leg['Action'] == config.ACTION_BUY_TO_OPEN), None)
-          if current_long_leg:
-            trade_dto['long_strike'] = current_long_leg['Strike']
-          else:
-            print("missing long leg of the spread")
-            continue
-          
+        if current_short_leg:
+          #print(f"current_short_leg is: {current_short_leg}")
+          quantity = current_short_leg['Quantity']
+          trade_dto['Quantity'] = quantity
+          short_strike_price = current_short_leg['Strike']
+          trade_dto['short_strike'] = current_short_leg['Strike']
+          trade_dto['short_expiry'] = current_short_leg['Expiration']
         else:
-          #print(f"trade strategy: {trade['Strategy']} is identified: as position type:{config.POSITION_TYPE_COVERED_CALL}")
-          pass
-        if not current_short_leg:
-          print("missing short leg for the spread or CSP")
+          print("missing short leg for the spread")
           continue
-        #print(f"current_short_leg is: {current_short_leg}")
-        quantity = current_short_leg['Quantity']
-        trade_dto['Quantity'] = quantity
-        short_strike_price = current_short_leg['Strike']
-        trade_dto['short_strike'] = current_short_leg['Strike']
-        trade_dto['short_expiry'] = current_short_leg['Expiration']
+        
+        current_long_leg =  next((leg for leg in active_legs if leg['Action'] == config.ACTION_BUY_TO_OPEN), None)
+        if current_long_leg:
+          trade_dto['long_strike'] = current_long_leg['Strike']
+        else:
+          print("missing long leg of the spread")
+          continue
       else:
-        print(f"trade strategy: {trade['Strategy']} is not identified: as position type: {config.POSITION_TYPE_DIAGONAL} or position type: {config.POSITION_TYPE_COVERED_CALL} ")
+        print(f"trade strategy: {trade['Strategy']} is not in {config.POSITION_TYPES_ACTIVE}")
         
       if refresh_risk and current_short_leg:
         try:
           # A. Get Margin from latest transaction
           # Sort transactions by date to get the most recent margin entry
-          sorted_trans = sorted(trade_transactions, key=lambda x: x['TransactionDate'])
+          sorted_trans = sorted(trade_transactions, key=lambda x: x['TransactionDate'], reverse=True)
+          latest_open_transaction = next(
+                                        (txn for txn in sorted_trans 
+                                        if any(leg['Action'] in config.OPEN_ACTIONS for leg in app_tables.legs.search(Transaction=txn))),
+                                          None)
           latest_margin = sorted_trans[-1]['ResultingMargin'] if sorted_trans else 0
 
           # B. Get Days in Trade
@@ -233,8 +233,8 @@ def get_open_trades_with_risk(environment: str=config.ENV_SANDBOX,
           days_in_trade = 1 if days_in_trade < 1 else days_in_trade
           
           # Get live underlying price
-          underlying_symbol = trade['Underlying']
-          underlying_price = server_helpers.get_underlying_price(tradier_client, underlying_symbol)
+          #underlying_symbol = trade['Underlying']
+          #underlying_price = server_helpers.get_underlying_price(tradier_client, underlying_symbol)
           
           # 3. Fetch Quotes for Both Legs
           short_quote = server_helpers.fetch_leg_quote(tradier_client, trade['Underlying'], current_short_leg)
@@ -243,7 +243,7 @@ def get_open_trades_with_risk(environment: str=config.ENV_SANDBOX,
           # D. Calculate Current P/L
           # Sum collected credit (per share)
           total_credit_per_share = sum(t['CreditDebit'] for t in trade_transactions if t['CreditDebit'] is not None)
-
+          
           # Calculate Cost to Close (per share)
           # Short: Buy to close (Ask) | Long: Sell to close (Bid)
           short_ask = short_quote.get('ask', 0) if short_quote else 0
@@ -254,28 +254,25 @@ def get_open_trades_with_risk(environment: str=config.ENV_SANDBOX,
 
           # Net P/L Dollar Amount
           # (Total Credit - Cost to Close) * Quantity * 100
-
           current_pl_dollars = (total_credit_per_share - cost_to_close_per_share) * quantity * config.DEFAULT_MULTIPLIER
 
-          # E. Final RROC Calculation
+          # E. RROC Calculation
           # Avoid division by zero
           if latest_margin and latest_margin > 0:
             daily_rroc = (current_pl_dollars / latest_margin) / days_in_trade
             trade_dto['rroc'] = f"{daily_rroc:.2%}" # Format as percentage
-            # flag if ready to harvest
-            trade_dto['is_harvestable'] = True if daily_rroc >= config.DEFAULT_RROC_HARVEST_TARGET else False
-
-            # Target Profit = Target Rate * Margin * Days
-            target_profit_total = target_daily_rroc * latest_margin * days_in_trade
-            target_profit_per_share = target_profit_total / (quantity * config.DEFAULT_MULTIPLIER)
-
-            # Harvest Price = Credit Received - Target Profit
-            harvest_price = total_credit_per_share - target_profit_per_share
-            trade_dto['harvest_price'] = f"{harvest_price:.2f}"
           else:
             trade_dto['rroc'] = "0.00%"
+          
+          # Harvest Price = harvest fraction * credit price
+          harvest_price = config.DEFAULT_HARVEST_TARGET * latest_open_transaction['CreditDebit']
+          trade_dto['harvest_price'] = f"{harvest_price:.2f}"
+          # Is harvestable?
+          # flag if ready to harvest
+          trade_dto['is_harvestable'] = True if cost_to_close_per_share >= harvest_price else False
 
-          # do the assignment risk part
+          # skip assignment risk part - no longer trading american
+          """
           option_price = short_quote.get('bid') # Use bid for risk calc
           intrinsic_value = 0
           if current_short_leg['OptionType'] == config.OPTION_TYPE_PUT:
@@ -292,7 +289,7 @@ def get_open_trades_with_risk(environment: str=config.ENV_SANDBOX,
           # Our risk rule: ITM and extrinsic is less than $0.10
           if intrinsic_value > 0 and extrinsic_value < config.ASSIGNMENT_RISK_THRESHOLD:
             trade_dto['is_at_risk'] = True
-          
+        """  
         except Exception as e:
           print(f"Error calculating RROC/Risk for {trade['Underlying']}: {repr(e)}")
           pass # do not return risk field
