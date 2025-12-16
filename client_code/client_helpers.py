@@ -41,7 +41,7 @@ def _flatten_trade_dto(self, nested_dto: str, quantity:int=1)->list:
     """
   if not nested_dto or not isinstance(nested_dto, list) or not nested_dto[0]:
     return []
-  
+  print(f" in _flatten_trade_dto.  nested_dto: {nested_dto}")
   # 1. Define the legs of the first spread (the only two legs that exist in the DTO)
   first_legs_list = [
     {'type': nested_dto[0]['short_put']['option_type'], 
