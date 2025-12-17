@@ -2,7 +2,7 @@
 import anvil.server
 import anvil.secrets
 import anvil.tables.query as q
-from anvil.tables import app_tables, Row
+from anvil.tables import app_tables, Row, order_by
 
 # public lib sectoin
 import math
@@ -943,3 +943,31 @@ def set_automation_status(enabled: bool):
 def is_automation_live():
   # The Headless Bot calls this first. If False, it terminates immediately.
   return app_tables.settings.get()['automation_enabled']
+
+@anvil.server.callable
+def log_automation_event(level: str, source: str, message: str, data: dict = None):
+  """
+  Writes a permanent record to the logs.
+  Call this whenever the bot makes a decision or hits an error.
+  """
+  # Optional: Print to console for real-time debugging while you watch
+  print(f"[{level}] {source}: {message}")
+
+  # Write to DB
+  app_tables.AutomationLogs.add_row(
+    timestamp=dt.datetime.now(),
+    level=level,
+    source=source,
+    message=message,
+    data=data
+  )
+
+  # Cleanup (Optional): Keep table size manageable
+  # You might want a separate scheduled task to delete logs older than 30 days
+
+@anvil.server.callable
+def get_recent_logs(limit=50):
+  # Return sorted by newest first
+  return app_tables.AutomationLogs.search(
+    order_by("timestamp", ascending=False)
+  )[:limit]

@@ -1,5 +1,25 @@
 allow_embedding: false
 db_schema:
+  automationlogs:
+    client: none
+    columns:
+    - admin_ui: {order: 0, width: 200}
+      name: timestamp
+      type: datetime
+    - admin_ui: {order: 1, width: 200}
+      name: level
+      type: string
+    - admin_ui: {order: 2, width: 200}
+      name: source
+      type: string
+    - admin_ui: {order: 3, width: 200}
+      name: message
+      type: string
+    - admin_ui: {order: 4, width: 200}
+      name: data
+      type: simpleObject
+    server: full
+    title: AutomationLogs
   cycles:
     client: none
     columns:
