@@ -172,7 +172,8 @@ def get_open_trades_with_risk(environment: str=config.ENV_SANDBOX,
       'cumulative_credit': None,
       'rroc': "N/A",
       'harvest_price': "N/A",
-      'is_harvestable': False
+      'is_harvestable': False,
+      'roll_trigger': None
     }
     
     try:
@@ -256,9 +257,13 @@ def get_open_trades_with_risk(environment: str=config.ENV_SANDBOX,
           latest_position_credit = latest_open_transaction['CreditDebit']
           harvest_price = config.DEFAULT_HARVEST_TARGET * latest_position_credit
           trade_dto['harvest_price'] = harvest_price
+
+          # Roll Trigger (3x Credit Limit)
+          # "You must execute a defensive action immediately if... spread reaches 300% (3x)"
+          trade_dto['roll_trigger'] = abs(latest_position_credit) * 3.0
           
           # flag if ready to harvest
-          trade_dto['is_harvestable'] = True if cost_to_close_per_share <= harvest_price else False
+          trade_dto['is_harvestable'] = True if cost_to_close_per_share <= harvest_price else False         
 
           trade_dto['position_credit'] = latest_position_credit
           trade_dto['cumulative_credit'] = total_credit_per_share

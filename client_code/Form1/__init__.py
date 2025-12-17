@@ -627,9 +627,13 @@ class Form1(Form1Template):
       if isinstance(display_row.get('rroc'), (int, float)):
         display_row['rroc'] = f"{display_row['rroc']:.2%}"
 
-      # Format Harvest Price (Float -> Currency String)
-      if isinstance(display_row.get('harvest_price'), (int, float)):
-        display_row['harvest_price'] = f"{display_row['harvest_price']:.2f}"
+      # Format Prices: Current, Harves, Roll (Float -> Currency String)
+      for key in ['harvest_price', 'current_cost', 'roll_trigger']:
+        val = display_row.get(key)
+        if isinstance(val, (int, float)):
+          display_row[key] = f"{val:.2f}"
+        else:
+          display_row[key] = "-" # Placeholder if data missing
 
       formatted_data.append(display_row)
 

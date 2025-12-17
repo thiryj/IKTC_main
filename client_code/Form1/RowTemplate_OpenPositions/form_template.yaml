@@ -11,12 +11,20 @@ components:
     name: label_open_date
     properties: {}
     type: Label
-  - layout_properties: {grid_position: 'TSQKQU,ETGOYU'}
-    name: label_strategy
-    properties: {}
-    type: Label
   - layout_properties: {grid_position: 'TSQKQU,REQDIE'}
     name: label_open_qty
+    properties: {}
+    type: Label
+  - layout_properties: {grid_position: 'TSQKQU,LVFJHA'}
+    name: label_open_harvest_price
+    properties: {}
+    type: Label
+  - layout_properties: {grid_position: 'TSQKQU,RKJNWP'}
+    name: label_open_mark
+    properties: {}
+    type: Label
+  - layout_properties: {grid_position: 'TSQKQU,ILBTRG'}
+    name: label_open_roll
     properties: {}
     type: Label
   - layout_properties: {grid_position: 'TSQKQU,OHLHXQ'}
@@ -24,10 +32,6 @@ components:
     properties:
       spacing:
         padding: [null, null, null, null]
-    type: Label
-  - layout_properties: {grid_position: 'TSQKQU,VBSGHZ'}
-    name: label_open_harvest_price
-    properties: {}
     type: Label
   - event_bindings: {click: button_open_position_close_click}
     layout_properties: {grid_position: 'TSQKQU,IABULK'}

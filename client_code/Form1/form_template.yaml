@@ -504,21 +504,25 @@ components:
         name: label_8
         properties: {bold: true, text: Open/Expiry}
         type: Label
-      - layout_properties: {grid_position: 'YYPOQI,OSPNKB'}
-        name: label_7
-        properties: {bold: true, text: Strategy}
-        type: Label
       - layout_properties: {grid_position: 'YYPOQI,XJHCOA'}
         name: label_20
         properties: {bold: true, text: Qty}
         type: Label
+      - layout_properties: {grid_position: 'YYPOQI,SQOCSY'}
+        name: label_22
+        properties: {bold: true, text: Harvest}
+        type: Label
+      - layout_properties: {grid_position: 'YYPOQI,HXWCWX'}
+        name: label_current_price
+        properties: {bold: true, text: Mark}
+        type: Label
+      - layout_properties: {grid_position: 'YYPOQI,OQARNW'}
+        name: label_7
+        properties: {bold: true, text: Roll}
+        type: Label
       - layout_properties: {grid_position: 'YYPOQI,TLLPHO'}
         name: label_18
         properties: {bold: true, text: RROC}
-        type: Label
-      - layout_properties: {grid_position: 'YYPOQI,ALXENL'}
-        name: label_22
-        properties: {bold: true, text: Harvest Price}
         type: Label
       - layout_properties: {grid_position: 'YYPOQI,PPOLQI'}
         name: label_19

@@ -14,20 +14,32 @@ class RowTemplate_OpenPositions(RowTemplate_OpenPositionsTemplate):
     if self.item:
       #print(f"short_expiry is {self.item.get('short_expiry')}")
       self.label_underlying.text = f"{self.item['Underlying']} {self.item.get('short_strike')}/{self.item.get('long_strike')}"
-      self.label_strategy.text = self.item['Strategy']
+      #self.label_strategy.text = self.item['Strategy']
       self.label_open_qty.text = self.item['Quantity']
-      self.label_open_harvest_price.text = self.item['harvest_price']
+      
       if self.item['OpenDate']:
         se = self.item.get('short_expiry')
         se_str = f"{se:%d-%b}" if se else "-"
         self.label_open_date.text = f"{self.item['OpenDate']:%d-%b} / {se_str}"
+        
+      # Prices
+      self.label_open_mark.text = self.item['current_cost']
+      self.label_open_harvest_price.text = self.item['harvest_price']
+      self.label_open_roll.text = self.item['roll_trigger']
+
+      # Harvestable
+      if self.item.get('is_harvestable'):
+        self.label_open_harvest_price.foreground = 'green'
+        self.button_open_position_close.foreground = 'green'
+
+      # Rollable
+      if self.item.get('current_cost') >= self.item.get('roll_trigger'):
+        self.label_open_roll.foreground = 'red'
+        self.button_roll_live.foreground = 'red'
 
       # RROC portion
       rroc = self.item.get('rroc')
       self.label_open_rroc.text = rroc
-      if self.item.get('is_harvestable'):
-        self.label_open_rroc.foreground = 'green'
-        self.button_open_position_close.foreground = 'green'
 
   def button_edit_click(self, **event_args):
     """
