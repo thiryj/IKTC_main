@@ -1040,20 +1040,43 @@ def run_automation_cycle():
 
     # --- RULE 1: PROFIT TAKING (50% of Premium) --- 
     # We use the 'is_harvestable' flag we already built in the scanner
+    # --- RULE 1: PROFIT TAKING (50% of Premium) ---
     if trade.get('is_harvestable'):
       message = f"HARVEST TRIGGER: {symbol} Profit Target Hit. Credit: {position_credit:.2f}, Cost: {current_cost:.2f}"
 
-      # Log it (The "Write" phase)
-      log_automation_event(
-        level="INFO", 
-        source="Harvester", 
-        message=message, 
-        environment=env,
-        data={'trade_id': trade['trade_row'].get_id(), 'action': 'CLOSE'}
-      )
+      # 1. Log the Intent
+      log_automation_event("ACTION", "Harvester", message, env, data={'trade_id': trade['trade_row'].get_id()})
 
-      # FUTURE: close_package = get_close_trade_dto(...)
-      # FUTURE: submit_order(...)
+      # 2. Check Automation Level (Safety Check)
+      # You might want to add a check here like: if settings['campaign_mode'] != 'MANUAL':
+
+      try:
+        # 3. Calculate the Closing Package
+        # We call our existing logic directly (no anvil.server.call needed inside the server)
+        close_dto = get_close_trade_dto(env, trade['trade_row'])
+
+        if close_dto:
+          # 4. Submit the Order (Live!)
+          # Note: submit_order expects a LIST of DTOs
+          response = submit_order(
+            environment=env,
+            underlying_symbol=symbol,
+            trade_dto_list=[close_dto], 
+            quantity=trade['Quantity'],
+            limit_price=trade['harvest_price'],
+            preview=False # <--- FIRE FOR EFFECT
+          )
+
+          # 5. Log the Result
+          if response and response.get('order', {}).get('status') == 'ok':
+            order_id = response['order']['id']
+            log_automation_event("INFO", "Harvester", f"Harvest Order {order_id} Submitted.", env)
+          else:
+            err = response.get('order', {}).get('errors') if response else "Unknown Error"
+            log_automation_event("ERROR", "Harvester", f"Order Submission Failed: {err}", env)
+
+      except Exception as e:
+        log_automation_event("ERROR", "Harvester", f"Crash during harvest execution: {e}", env)
 
     # --- RULE 2: DEFENSIVE ROLL (3x Credit Stop) --- 
     # Trigger if Current Debit >= 3.0 * Initial Credit
