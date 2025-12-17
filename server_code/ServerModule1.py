@@ -995,6 +995,7 @@ def log_test():
                   )
 
 @anvil.server.background_task
+@anvil.server.callable
 def run_automation_cycle():
   """
   The Heartbeat. Runs every X minutes via Anvil Scheduled Tasks.
@@ -1010,6 +1011,12 @@ def run_automation_cycle():
   # 2. Setup Environment (Default to Sandbox for safety)
   env = config.ENV_SANDBOX
   print(f"Starting automation cycle for {env}...")
+  log_automation_event(
+    level="INFO", 
+    source="Scheduler", 
+    message=f"Starting automation cycle for {env}...", 
+    environment=env
+  )
 
   # 3. SCAN: Get live data
   # We force refresh_risk=True to get up-to-the-second prices
@@ -1020,7 +1027,7 @@ def run_automation_cycle():
     symbol = trade['Underlying']
 
     # Skip invalid data (e.g. if API failed for this row)
-    if trade.get('current_cost') is None or trade.get('initial_credit') is None:
+    if trade.get('current_cost') is None or trade.get('position_credit') is None:
       continue
 
     current_cost = trade['current_cost']
@@ -1029,7 +1036,7 @@ def run_automation_cycle():
     # --- RULE 1: PROFIT TAKING (50% of Premium) --- 
     # We use the 'is_harvestable' flag we already built in the scanner
     if trade.get('is_harvestable'):
-      message = f"HARVEST TRIGGER: {symbol} Profit Target Hit. Credit: {initial_credit:.2f}, Cost: {current_cost:.2f}"
+      message = f"HARVEST TRIGGER: {symbol} Profit Target Hit. Credit: {position_credit:.2f}, Cost: {current_cost:.2f}"
 
       # Log it (The "Write" phase)
       log_automation_event(

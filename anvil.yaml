@@ -203,6 +203,13 @@ runtime_options:
   server_spec: {base: python310-datascience}
   server_version: python3-sandbox
   version: 2
+scheduled_tasks:
+- job_id: BPKTPYTX
+  task_name: run_automation_cycle
+  time_spec:
+    at: {}
+    every: minute
+    n: 5
 secrets:
   IRA_TRADIER_ACCOUNT:
     type: secret
