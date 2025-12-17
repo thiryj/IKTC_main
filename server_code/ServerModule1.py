@@ -167,6 +167,9 @@ def get_open_trades_with_risk(environment: str=config.ENV_SANDBOX,
       'short_strike': None,
       'long_strike': None,
       'short_expiry': None,
+      'position_credit': None,
+      'current_cost': None,
+      'cumulative_credit': None,
       'rroc': "N/A",
       'harvest_price': "N/A",
       'is_harvestable': False
@@ -250,11 +253,16 @@ def get_open_trades_with_risk(environment: str=config.ENV_SANDBOX,
             trade_dto['rroc'] = 0.0
           
           # Harvest Price = harvest fraction * credit price
-          harvest_price = config.DEFAULT_HARVEST_TARGET * latest_open_transaction['CreditDebit']
+          latest_position_credit = latest_open_transaction['CreditDebit']
+          harvest_price = config.DEFAULT_HARVEST_TARGET * latest_position_credit
           trade_dto['harvest_price'] = harvest_price
           
           # flag if ready to harvest
           trade_dto['is_harvestable'] = True if cost_to_close_per_share <= harvest_price else False
+
+          trade_dto['position_credit'] = latest_position_credit
+          trade_dto['cumulative_credit'] = total_credit_per_share
+          trade_dto['current_cost'] = cost_to_close_per_share
           
         except Exception as e:
           print(f"Error calculating RROC/Risk for {trade['Underlying']}: {repr(e)}")
@@ -985,3 +993,73 @@ def log_test():
                     message=f"Triggering defensive roll. Price {current_price} exceeded limit {limit_price}",
                     data={'trade_id': trade_row.get_id(), 'ask': current_price, 'limit': limit_price}
                   )
+
+@anvil.server.background_task
+def run_automation_cycle():
+  """
+  The Heartbeat. Runs every X minutes via Anvil Scheduled Tasks.
+  Phase 1: Scan
+  Phase 2: Decide (Log Only for now)
+  """
+  # 1. Global Kill Switch
+  settings = app_tables.settings.get()
+  if not settings['automation_enabled']:
+    print("Automation is disabled. Skipping cycle.")
+    return
+
+  # 2. Setup Environment (Default to Sandbox for safety)
+  env = config.ENV_SANDBOX
+  print(f"Starting automation cycle for {env}...")
+
+  # 3. SCAN: Get live data
+  # We force refresh_risk=True to get up-to-the-second prices
+  active_trades = get_open_trades_with_risk(env, refresh_risk=True)
+
+  # 4. DECISION ENGINE
+  for trade in active_trades:
+    symbol = trade['Underlying']
+
+    # Skip invalid data (e.g. if API failed for this row)
+    if trade.get('current_cost') is None or trade.get('initial_credit') is None:
+      continue
+
+    current_cost = trade['current_cost']
+    position_credit = trade['position_credit']
+
+    # --- RULE 1: PROFIT TAKING (50% of Premium) --- 
+    # We use the 'is_harvestable' flag we already built in the scanner
+    if trade.get('is_harvestable'):
+      message = f"HARVEST TRIGGER: {symbol} Profit Target Hit. Credit: {initial_credit:.2f}, Cost: {current_cost:.2f}"
+
+      # Log it (The "Write" phase)
+      log_automation_event(
+        level="INFO", 
+        source="Harvester", 
+        message=message, 
+        environment=env,
+        data={'trade_id': trade['trade_row'].get_id(), 'action': 'CLOSE'}
+      )
+
+      # FUTURE: close_package = get_close_trade_dto(...)
+      # FUTURE: submit_order(...)
+
+    # --- RULE 2: DEFENSIVE ROLL (3x Credit Stop) --- 
+    # Trigger if Current Debit >= 3.0 * Initial Credit
+    # Note: absolute values used to handle potential negative sign conventions
+    stop_loss_price = abs(position_credit) * 3.0
+
+    if abs(current_cost) >= stop_loss_price:
+      message = f"DEFENSE TRIGGER: {symbol} hit 3x Stop. Cost: {current_cost:.2f} >= Limit: {stop_loss_price:.2f}"
+
+      log_automation_event(
+        level="WARNING", 
+        source="RiskManager", 
+        message=message, 
+        environment=env,
+        data={'trade_id': trade['trade_row'].get_id(), 'action': 'ROLL'}
+      )
+
+      # FUTURE: roll_package = get_roll_package_dto(...)
+      # FUTURE: submit_order(...)
+
+  print("Automation cycle complete.")
