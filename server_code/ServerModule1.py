@@ -145,13 +145,12 @@ def get_tradier_positions(environment: str):
 
 @anvil.server.callable
 def get_open_trades_with_risk(environment: str=config.ENV_SANDBOX, 
-                              refresh_risk: bool=True)->List[Dict]:
+                              refresh_risk: bool=True
+                             )->List[Dict]:
   """
     Fetches all open trades, then enriches them with live
     pricing and assignment risk data from the Tradier API and RROC.
     """
-
-  #NOTE:  this only works for 2 leg spreads - need different logic for CSP or covered calls
   open_trades = app_tables.trades.search(Status=config.TRADE_ACTION_OPEN, Account=environment)
   #print(f"Found {len(open_trades)} open trades for {environment}")
   tradier_client, endpoint_url = server_helpers.get_tradier_client(environment)
@@ -246,16 +245,16 @@ def get_open_trades_with_risk(environment: str=config.ENV_SANDBOX,
           # Avoid division by zero
           if latest_margin and latest_margin > 0:
             daily_rroc = (current_pl_dollars / latest_margin) / days_in_trade
-            trade_dto['rroc'] = f"{daily_rroc:.2%}" # Format as percentage
+            trade_dto['rroc'] = daily_rroc 
           else:
-            trade_dto['rroc'] = "0.00%"
+            trade_dto['rroc'] = 0.0
           
           # Harvest Price = harvest fraction * credit price
           harvest_price = config.DEFAULT_HARVEST_TARGET * latest_open_transaction['CreditDebit']
-          trade_dto['harvest_price'] = f"{harvest_price:.2f}"
-          # Is harvestable?
+          trade_dto['harvest_price'] = harvest_price
+          
           # flag if ready to harvest
-          trade_dto['is_harvestable'] = True if cost_to_close_per_share >= harvest_price else False
+          trade_dto['is_harvestable'] = True if cost_to_close_per_share <= harvest_price else False
           
         except Exception as e:
           print(f"Error calculating RROC/Risk for {trade['Underlying']}: {repr(e)}")
@@ -318,14 +317,14 @@ def get_closed_trades(environment: str=config.ENV_SANDBOX, campaign_filter: str=
     # Trade level RROC
     if max_margin > 0:
       trade_daily_rroc = (pl / max_margin) / dit
-      trade_dict['rroc'] = f"{trade_daily_rroc:.2%}"
+      trade_dict['rroc'] = trade_daily_rroc
       trade_rroc_sum += trade_daily_rroc
       trade_count += 1
 
       # Portfolio level margin-days
       total_margin_days += (max_margin * dit)
     else:
-      trade_dict['rroc'] = "0.00%"
+      trade_dict['rroc'] = 0.0
   
     enriched_trades.append(trade_dict)
 
@@ -945,7 +944,7 @@ def is_automation_live():
   return app_tables.settings.get()['automation_enabled']
 
 @anvil.server.callable
-def log_automation_event(level: str, source: str, message: str, data: dict = None):
+def log_automation_event(environment: str, level: str, source: str, message: str, data: dict = None):
   """
   Writes a permanent record to the logs.
   Call this whenever the bot makes a decision or hits an error.
@@ -954,20 +953,35 @@ def log_automation_event(level: str, source: str, message: str, data: dict = Non
   print(f"[{level}] {source}: {message}")
 
   # Write to DB
-  app_tables.AutomationLogs.add_row(
+  app_tables.automationlogs.add_row(
     timestamp=dt.datetime.now(),
     level=level,
     source=source,
     message=message,
-    data=data
+    data=data,
+    environment=environment
   )
 
   # Cleanup (Optional): Keep table size manageable
   # You might want a separate scheduled task to delete logs older than 30 days
 
 @anvil.server.callable
-def get_recent_logs(limit=50):
+def get_recent_logs(environment:str, limit:int=50)->List[Dict]:
   # Return sorted by newest first
-  return app_tables.AutomationLogs.search(
-    order_by("timestamp", ascending=False)
+  recent_logs = app_tables.automationlogs.search(
+    order_by("timestamp", ascending=False),
+    environment=environment
   )[:limit]
+  return [dict(r) for r in recent_logs]
+
+@anvil.server.callable
+def log_test():
+  trade_row = app_tables.trades.search()[0]
+  current_price=3
+  limit_price=2
+  log_automation_event(
+                    level="ACTION", 
+                    source="RollLogic", 
+                    message=f"Triggering defensive roll. Price {current_price} exceeded limit {limit_price}",
+                    data={'trade_id': trade_row.get_id(), 'ask': current_price, 'limit': limit_price}
+                  )
