@@ -781,8 +781,8 @@ def get_vertical_spread(t: TradierAPI,
                         symbol: str = config.DEFAULT_SYMBOL, 
                         target_delta: float = config.DEFAULT_VERTICAL_DELTA, 
                         width: float = None, 
-                        quantity: int = None,
-                        target_rroc: float = None)->Dict:
+                        quantity: int = None
+                        )->Dict:
   """
     Finds a 0DTE (or nearest term) Vertical Put Spread based on Delta.
   """
@@ -838,9 +838,7 @@ def get_vertical_spread(t: TradierAPI,
   position = positions.DiagonalPutSpread(short_leg, long_leg)
   #print(f"position is: {position.get_dto()}")
   # 6. Return Dict with Object
-  harvest_amt = (position.margin / 100) * target_rroc # adapting your margin logic to your harvest logic
   
-  #print(f"harvest_target: {target_rroc}, harvest_amt: {harvest_amt}")
   return_dict = {
     "status": "success",
     "parameters": {
@@ -855,8 +853,7 @@ def get_vertical_spread(t: TradierAPI,
       "credit_per_contract": round(position.net_premium, 2),
       "margin_per_contract": round(position.margin / 100, 2), # Class calculates total margin (width*100), normalizing for display if needed
       "total_credit": round(position.net_premium * quantity * 100, 2),
-      "total_margin_risk": round(position.margin * quantity, 2),
-      "harvest_price": round(position.net_premium - harvest_amt, 2)
+      "total_margin_risk": round(position.margin * quantity, 2)
     }
   }
   #print(f"return_dict: {return_dict}")

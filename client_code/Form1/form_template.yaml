@@ -10,7 +10,12 @@ components:
     name: column_panel_1
     properties: {}
     type: ColumnPanel
-  - components: []
+  - components:
+    - event_bindings: {change: checkbox_automation_change}
+      layout_properties: {grid_position: 'DVXVAM,NJWDCI'}
+      name: checkbox_automation
+      properties: {text: Automation Status}
+      type: CheckBox
     layout_properties: {grid_position: 'JBMXBM,CUYQLX'}
     name: column_panel_2
     properties: {}
@@ -68,7 +73,7 @@ components:
         type: TextBox
       - layout_properties: {col_xs: 0, row: RXEBHO, width_xs: 2}
         name: label_17
-        properties: {text: Verticals Only}
+        properties: {text: Allow Diagonals}
         type: Label
       - data_bindings:
         - {code: 'self.my_settings[''allow_diagonals'']', property: checked, writeback: true}
@@ -97,23 +102,13 @@ components:
         name: checkbox_use_max_qty
         properties: {text: ''}
         type: CheckBox
-      - layout_properties: {col_xs: 0, row: JWQWNJ, width_xs: 2}
-        name: label_21
-        properties: {text: Def. Target RROC}
-        type: Label
-      - data_bindings:
-        - {code: 'self.my_settings[''default_target_rroc'']', property: text, writeback: true}
-        layout_properties: {col_xs: 2, row: JWQWNJ, width_xs: 2}
-        name: textbox_settings_default_target_rroc
-        properties: {text: 'self.my_settings[''default_target_rroc'']', type: number}
-        type: TextBox
-      - layout_properties: {col_xs: 7, row: JWQWNJ, width_xs: 2}
+      - layout_properties: {col_xs: 4, row: JWQWNJ, width_xs: 2}
         name: label_23
         properties: {text: Default Sp. Width}
         type: Label
       - data_bindings:
         - {code: 'self.my_settings[''default_width'']', property: text, writeback: true}
-        layout_properties: {col_xs: 9, row: JWQWNJ, width_xs: 2}
+        layout_properties: {col_xs: 6, row: JWQWNJ, width_xs: 2}
         name: textbox_default_width
         properties: {placeholder: '25', type: number}
         type: TextBox
@@ -157,6 +152,11 @@ components:
       layout_properties: {grid_position: 'LJXOJV,MWFZEC'}
       name: button_tab_trade_history
       properties: {role: outlined-button, text: Trade History}
+      type: Button
+    - event_bindings: {click: button_tab_logs_click}
+      layout_properties: {grid_position: 'LJXOJV,SLGVDY'}
+      name: button_tab_logs
+      properties: {role: outlined-button, text: Logs}
       type: Button
     - components:
       - components:
@@ -504,29 +504,29 @@ components:
         name: label_8
         properties: {bold: true, text: Open/Expiry}
         type: Label
-      - layout_properties: {grid_position: 'YYPOQI,OSPNKB'}
-        name: label_7
-        properties: {bold: true, text: Strategy}
-        type: Label
       - layout_properties: {grid_position: 'YYPOQI,XJHCOA'}
         name: label_20
         properties: {bold: true, text: Qty}
+        type: Label
+      - layout_properties: {grid_position: 'YYPOQI,SQOCSY'}
+        name: label_22
+        properties: {bold: true, text: Harvest}
+        type: Label
+      - layout_properties: {grid_position: 'YYPOQI,HXWCWX'}
+        name: label_current_price
+        properties: {bold: true, text: Mark}
+        type: Label
+      - layout_properties: {grid_position: 'YYPOQI,OQARNW'}
+        name: label_7
+        properties: {bold: true, text: Roll}
         type: Label
       - layout_properties: {grid_position: 'YYPOQI,TLLPHO'}
         name: label_18
         properties: {bold: true, text: RROC}
         type: Label
-      - layout_properties: {grid_position: 'YYPOQI,ALXENL'}
-        name: label_22
-        properties: {bold: true, text: Harvest Price}
-        type: Label
       - layout_properties: {grid_position: 'YYPOQI,PPOLQI'}
         name: label_19
         properties: {}
-        type: Label
-      - layout_properties: {grid_position: 'YYPOQI,FAFRKV'}
-        name: label_9
-        properties: {bold: true, text: Assign Risk}
         type: Label
       - layout_properties: {grid_position: 'YYPOQI,UJUKCC'}
         name: label_10
@@ -609,6 +609,25 @@ components:
       type: DataGrid
     layout_properties: {grid_position: 'TGWAEE,GSGXMD'}
     name: card_trade_history
+    properties: {role: outlined-card, visible: false}
+    type: ColumnPanel
+  - components:
+    - components:
+      - name: repeatingpanel_logs
+        properties: {item_template: Form1.RowTemplate2}
+        type: RepeatingPanel
+      layout_properties: {grid_position: 'NZURKP,XKVVRN'}
+      name: data_grid_1
+      properties:
+        columns:
+        - {data_key: timestamp, id: JKSDUP, title: Time}
+        - {data_key: level, id: VJQQOR, title: Level}
+        - {data_key: source, id: OJLQEN, title: Source}
+        - {data_key: message, id: BFCQBO, title: Message}
+        - {data_key: data, id: NUDLRL, title: Data}
+      type: DataGrid
+    layout_properties: {grid_position: 'AALORL,UVGDSX'}
+    name: card_logs
     properties: {role: outlined-card, visible: false}
     type: ColumnPanel
   layout_properties: {slot: default}

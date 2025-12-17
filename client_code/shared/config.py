@@ -3,7 +3,6 @@
 ALLOCATION = 10000
 #MAX_DTE = 90
 LONG_STRIKE_DELTA_MAX = 25  # how much lower than short strike to search
-ASSIGNMENT_RISK_THRESHOLD = 0.1
 
 # Shared config
 # Environment
@@ -18,6 +17,7 @@ POSITION_TYPES_ACTIVE = [POSITION_TYPE_VERTICAL]
 # Defaults
 DEFAULT_SYMBOL = 'SPX'
 DEFAULT_QUANTITY = 1
+INDEX_SYMBOLS = [DEFAULT_SYMBOL]
 
 # Spread Defaults
 DEFTAULT_WIDTH = 25
@@ -58,10 +58,6 @@ ACTION_BUY_TO_CLOSE = 'Buy to Close'
 OPEN_ACTIONS = {ACTION_SELL_TO_OPEN, ACTION_BUY_TO_OPEN}
 CLOSE_ACTIONS = {ACTION_BUY_TO_CLOSE, ACTION_SELL_TO_CLOSE}
 
-# Option Metadata
-OPTION_TYPE_PUT = 'PUT'
-OPTION_TYPE_CALL = 'CALL'
-
 MANUAL_ENTRY_STATE_OPEN = 'OPEN'
 MANUAL_ENTRY_STATE_CLOSE = 'CLOSE'
 MANUAL_ENTRY_STATE_ROLL = 'ROLL'
@@ -76,8 +72,6 @@ CAMPAIGN_AUTO_PRE = "PRE-AUTO"   #used app to select and send open verts, but ma
 CAMPAIGN_AUTO_SEMI = "SEMI-AUTO" #app now sends harvest orders and panic close orders (rolls?)
 CAMPAIGN_AUTO_FULL = "FULL-AUTO" #app now executes all rules including hedge management w/o human intervention
 CAMPAIGN_ALL = [CAMPAIGN_AUTO_PRE, CAMPAIGN_AUTO_SEMI, CAMPAIGN_AUTO_FULL]
-
-#INDEX_SYMBOLS = ['SPX', 'NDX', 'RUT', 'VIX']
 
 # Globals
 REFRESH_TIMER_INTERVAL = 3600

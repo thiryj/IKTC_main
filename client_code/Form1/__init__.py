@@ -18,11 +18,9 @@ from .Form_ManualLegEntry import Form_ManualLegEntry
 
 class Form1(Form1Template):
   def __init__(self, **properties):
-    # populate settings components first
-        
     # get the settings row (one row of data) and pass it to helper class
     row = anvil.server.call('get_settings')
-    
+    #anvil.server.call('log_test')    
     # this trick allows dot notation
     self.my_settings = client_helpers.LiveSettings(row)
     
@@ -70,6 +68,8 @@ class Form1(Form1Template):
     )
           
     # Populate misc components
+    self.checkbox_automation.checked = self.my_settings['automation_enabled']
+    self.checkbox_automation_change()
     self.dropdown_strategy_picker.items = config.POSITION_TYPES_ACTIVE
     self.textbox_symbol.text = self.my_settings.default_symbol
     
@@ -117,21 +117,25 @@ class Form1(Form1Template):
     # Hide the open positions card and show the history card
     self.card_open_positions.visible = False
     self.card_trade_history.visible = True
+    self.card_logs.visible = False
     self.load_trade_history()
   
     # Update the button appearance to show which tab is active
     self.button_tab_open_positions.role = 'outlined-button'
     self.button_tab_trade_history.role = 'filled-button'
+    self.button_tab_logs.role = 'outlined-button'
 
   def button_tab_open_positions_click(self, **event_args):
     """This method is called when the button is clicked"""
     # Show the open positions card and hide the history card
     self.card_open_positions.visible = True
     self.card_trade_history.visible = False
+    self.card_logs.visible = False
   
     # Update the button appearance
     self.button_tab_open_positions.role = 'filled-button'
     self.button_tab_trade_history.role = 'outlined-button'
+    self.button_tab_logs.role = 'outlined-button'
 
   def button_find_new_trade_click(self, **event_args):
     """This method is called when the button is clicked"""
@@ -169,13 +173,10 @@ class Form1(Form1Template):
       
       # 2. Populate UI (Standard Logic)
       self.trade_dto = best_trade_dto
-      self.trade_dto_list = [self.trade_dto]
-            
-      print(f"best {trade_strategy} DTO is: {best_trade_dto}")
+      self.trade_dto_list = [self.trade_dto]            
+      #print(f"best {trade_strategy} DTO is: {best_trade_dto}")
 
-      # 5. Populate strategy leg fields
-    
-      # Short Leg
+      # 5. Populate strategy leg fields    
       short_leg = best_trade_dto['short_put']
       self.label_leg1_action.text = config.ACTION_SELL_TO_OPEN
       short_expiry = short_leg['expiration_date']
@@ -187,7 +188,6 @@ class Form1(Form1Template):
         f"DTE: {short_dte.days}"
       )
 
-      # Long Leg
       long_leg = best_trade_dto['long_put']
       self.label_leg2_action.text = "buy to open"
       long_expiry = long_leg['expiration_date']
@@ -614,12 +614,35 @@ class Form1(Form1Template):
     self.reset_card_manual_trade()
 
   def refresh_open_positions_grid(self, refresh_risk: bool=True):
-    #print("Refreshing open positions with live risk data...") if refresh_risk else print("...Updating positions")     
-    # Call the new "smart" function and pass the environment
+    # 1. Fetch Raw Data
     open_trades_data = anvil.server.call('get_open_trades_with_risk', self.environment, refresh_risk)
-  
-    self.repeatingpanel_open_positions.items = open_trades_data
-    print(f"...RROC/Risk data loaded for {len(open_trades_data)} positions") if refresh_risk else print(f"...{len(open_trades_data)} Positions updated")
+
+    # 2. Client-Side Formatting (The "Makeup" Layer)
+    formatted_data = []
+    for t in open_trades_data:
+      # Clone the dict so we don't mutate the original raw data
+      display_row = dict(t) 
+
+      # Format RROC (Float -> Percentage String)
+      if isinstance(display_row.get('rroc'), (int, float)):
+        display_row['rroc'] = f"{display_row['rroc']:.2%}"
+
+      # Format Prices: Current, Harves, Roll (Float -> Currency String)
+      for key in ['harvest_price', 'current_cost', 'roll_trigger']:
+        val = display_row.get(key)
+        if isinstance(val, (int, float)):
+          display_row[key] = f"{val:.2f}"
+        else:
+          display_row[key] = "-" # Placeholder if data missing
+
+      formatted_data.append(display_row)
+
+    # 3. Update UI
+    self.repeatingpanel_open_positions.items = formatted_data
+
+    # Optional: Console feedback
+    msg = f"...Risk data loaded for {len(formatted_data)} positions" if refresh_risk else f"...{len(formatted_data)} Positions updated"
+    print(msg)
 
   def dropdown_manual_existing_trade_change(self, **event_args):
     """
@@ -881,9 +904,14 @@ class Form1(Form1Template):
         alert(f"Error deleting trade: {e}")
 
   def load_trade_history(self):
-    
     data = anvil.server.call('get_closed_trades', self.environment, self.dropdown_campaign.selected_value)
-    self.repeatingpanel_trade_history.items = data['trades']
+    formatted_trades = []
+    for t in data['trades']:
+      row = dict(t)
+      if isinstance(row.get('rroc'), (int, float)):
+        row['rroc'] = f"{row['rroc']:.2%}"
+      formatted_trades.append(row)
+    self.repeatingpanel_trade_history.items = formatted_trades
     self.label_agg_pl.text = f"Total P/L: ${data['total_pl']:.2f}"
     self.label_trade_rroc_ave.text = f"Trade RROC Ave: {data['trade_rroc_avg']:.2%}"
     self.label_portfolio_rroc_cum.text = f"Portfolio RROC Cum: {data['portfolio_rroc_cum']:.2%}"
@@ -891,3 +919,44 @@ class Form1(Form1Template):
   def dropdown_campaign_change(self, **event_args):
     """This method is called when an item is selected"""
     self.load_trade_history()
+
+  def checkbox_automation_change(self, **event_args):
+    """This method is called when this checkbox is checked or unchecked"""
+    is_enabled = self.checkbox_automation.checked
+    anvil.server.call('set_automation_status', is_enabled)
+
+    # Visual feedback
+    if is_enabled:
+      self.checkbox_automation.foreground = "green"
+      self.checkbox_automation.text = "AUTOMATION LIVE"
+    else:
+      self.checkbox_automation.foreground = "red"
+      self.checkbox_automation.text = "Automation Safed"
+
+  def button_tab_logs_click(self, **event_args):
+    """Called when the 'Automation Logs' tab button is clicked"""
+    # 1. Toggle visibility of cards
+    self.card_open_positions.visible = False
+    self.card_trade_history.visible = False
+    self.card_logs.visible = True 
+  
+    # 2. Update button styles (Visual feedback for active tab)
+    self.button_tab_open_positions.role = 'outlined-button'
+    self.button_tab_trade_history.role = 'outlined-button'
+    self.button_tab_logs.role = 'filled-button' # Make sure you added this button to the UI!
+  
+    # 3. Load the data
+    self.load_logs()
+  
+  def load_logs(self):
+    self.label_quote_status.text = "Loading automation logs..."
+    # Call the server function we wrote earlier
+    raw_logs = anvil.server.call('get_recent_logs', 
+                                 environment=self.environment, 
+                                 limit=50)
+    logs = [
+      {**x, 'timestamp': x['timestamp'].strftime('%Y-%m-%d %H:%M:%S')}
+      for x in raw_logs      
+    ]
+    self.repeatingpanel_logs.items = logs
+    self.label_quote_status.text = "Logs loaded."

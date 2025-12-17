@@ -2,7 +2,7 @@
 import anvil.server
 import anvil.secrets
 import anvil.tables.query as q
-from anvil.tables import app_tables, Row
+from anvil.tables import app_tables, Row, order_by
 
 # public lib sectoin
 import math
@@ -20,16 +20,18 @@ from shared import config
 #  
 @anvil.server.callable
 def get_settings():
-  # Attempt to get the first row
   settings_row = app_tables.settings.get()
-
-  # If table is empty, initialize it with your preferred defaults
   if not settings_row:
     settings_row = app_tables.settings.add_row(
       default_symbol=config.DEFAULT_SYMBOL,
       defualt_qty=1, 
       use_max_qty=False, 
-      refresh_timer_on=True
+      refresh_timer_on=True,
+      allow_diagonals=False,
+      margin_expansion_limit=0,
+      default_width=config.DEFTAULT_WIDTH,
+      harvest_fraction=config.DEFAULT_HARVEST_TARGET,
+      automation_enabled=False
     )
   return settings_row
   
@@ -65,7 +67,7 @@ def get_open_trades_for_dropdown(environment: str=config.ENV_SANDBOX):
     of (display_text, item) tuples for a DropDown.
     """
   open_trades = app_tables.trades.search(
-                                          Status='Open',
+                                          Status=config.TRADE_ACTION_OPEN,
                                           Account=environment
   )
   dropdown_items = []
@@ -142,27 +144,17 @@ def get_tradier_positions(environment: str):
     return e
 
 @anvil.server.callable
-def get_open_trades(environment: str=config.ENV_SANDBOX):
-  """Fetches all trades with a status of 'Open'."""
-  open_trades_list = list(app_tables.trades.search(Status=q.full_text_match('Open'),Account=environment))
-  #print(f"Found {len(open_trades_list)} open trades.")
-  return open_trades_list
-
-@anvil.server.callable
 def get_open_trades_with_risk(environment: str=config.ENV_SANDBOX, 
-                              refresh_risk: bool=True)->Dict:
+                              refresh_risk: bool=True
+                             )->List[Dict]:
   """
     Fetches all open trades, then enriches them with live
     pricing and assignment risk data from the Tradier API and RROC.
     """
-
-  #NOTE:  this only works for 2 leg spreads - need different logic for CSP or covered calls
-  open_trades = app_tables.trades.search(Status='Open', Account=environment)
+  open_trades = app_tables.trades.search(Status=config.TRADE_ACTION_OPEN, Account=environment)
   #print(f"Found {len(open_trades)} open trades for {environment}")
   tradier_client, endpoint_url = server_helpers.get_tradier_client(environment)
 
-  settings = app_tables.settings.get()
-  target_daily_rroc = settings['default_target_rroc'] if settings and settings['default_target_rroc'] else 0.001
   enriched_trades_list = []
   
   for trade in open_trades:
@@ -172,14 +164,16 @@ def get_open_trades_with_risk(environment: str=config.ENV_SANDBOX,
       'Strategy': trade['Strategy'],
       'Quantity': None,
       'OpenDate': trade['OpenDate'],
-      'extrinsic_value': None, # Placeholder
-      'is_at_risk': False,       # Placeholder
       'short_strike': None,
       'long_strike': None,
       'short_expiry': None,
+      'position_credit': None,
+      'current_cost': None,
+      'cumulative_credit': None,
       'rroc': "N/A",
       'harvest_price': "N/A",
-      'is_harvestable': False
+      'is_harvestable': False,
+      'roll_trigger': None
     }
     
     try:
@@ -195,46 +189,41 @@ def get_open_trades_with_risk(environment: str=config.ENV_SANDBOX,
       
       #print(f"Active legs found: {active_legs}")
       if trade['Strategy'] in config.POSITION_TYPES_ACTIVE:
+        #print(f"trade strategy: {trade['Strategy']} is in:{config.POSITION_TYPES_ACTIVE}")
         current_short_leg = next((leg for leg in active_legs if leg['Action'] == config.ACTION_SELL_TO_OPEN), None)
-        
-        if trade['Strategy'] == config.POSITION_TYPE_VERTICAL:
-          #print(f"trade strategy: {trade['Strategy']} is identified: as position type:{config.POSITION_TYPE_VERTICAL}")
-          current_long_leg =  next((leg for leg in active_legs if leg['Action'] == config.ACTION_BUY_TO_OPEN), None)
-          if current_long_leg:
-            trade_dto['long_strike'] = current_long_leg['Strike']
-          else:
-            print("missing long leg of the spread")
-            continue
-          
+        if current_short_leg:
+          #print(f"current_short_leg is: {current_short_leg}")
+          quantity = current_short_leg['Quantity']
+          trade_dto['Quantity'] = quantity
+          trade_dto['short_strike'] = current_short_leg['Strike']
+          trade_dto['short_expiry'] = current_short_leg['Expiration']
         else:
-          #print(f"trade strategy: {trade['Strategy']} is identified: as position type:{config.POSITION_TYPE_COVERED_CALL}")
-          pass
-        if not current_short_leg:
-          print("missing short leg for the spread or CSP")
+          print("missing short leg for the spread")
           continue
-        #print(f"current_short_leg is: {current_short_leg}")
-        quantity = current_short_leg['Quantity']
-        trade_dto['Quantity'] = quantity
-        short_strike_price = current_short_leg['Strike']
-        trade_dto['short_strike'] = current_short_leg['Strike']
-        trade_dto['short_expiry'] = current_short_leg['Expiration']
+        
+        current_long_leg =  next((leg for leg in active_legs if leg['Action'] == config.ACTION_BUY_TO_OPEN), None)
+        if current_long_leg:
+          trade_dto['long_strike'] = current_long_leg['Strike']
+        else:
+          print("missing long leg of the spread")
+          continue
       else:
-        print(f"trade strategy: {trade['Strategy']} is not identified: as position type: {config.POSITION_TYPE_DIAGONAL} or position type: {config.POSITION_TYPE_COVERED_CALL} ")
+        print(f"trade strategy: {trade['Strategy']} is not in {config.POSITION_TYPES_ACTIVE}")
         
       if refresh_risk and current_short_leg:
         try:
           # A. Get Margin from latest transaction
           # Sort transactions by date to get the most recent margin entry
-          sorted_trans = sorted(trade_transactions, key=lambda x: x['TransactionDate'])
+          sorted_trans = sorted(trade_transactions, key=lambda x: x['TransactionDate'], reverse=True)
+          latest_open_transaction = next(
+                                        (txn for txn in sorted_trans 
+                                        if any(leg['Action'] in config.OPEN_ACTIONS for leg in app_tables.legs.search(Transaction=txn))),
+                                          None)
           latest_margin = sorted_trans[-1]['ResultingMargin'] if sorted_trans else 0
 
           # B. Get Days in Trade
           days_in_trade = (dt.date.today() - trade['OpenDate']).days
           days_in_trade = 1 if days_in_trade < 1 else days_in_trade
-          
-          # Get live underlying price
-          underlying_symbol = trade['Underlying']
-          underlying_price = server_helpers.get_underlying_price(tradier_client, underlying_symbol)
           
           # 3. Fetch Quotes for Both Legs
           short_quote = server_helpers.fetch_leg_quote(tradier_client, trade['Underlying'], current_short_leg)
@@ -243,7 +232,7 @@ def get_open_trades_with_risk(environment: str=config.ENV_SANDBOX,
           # D. Calculate Current P/L
           # Sum collected credit (per share)
           total_credit_per_share = sum(t['CreditDebit'] for t in trade_transactions if t['CreditDebit'] is not None)
-
+          
           # Calculate Cost to Close (per share)
           # Short: Buy to close (Ask) | Long: Sell to close (Bid)
           short_ask = short_quote.get('ask', 0) if short_quote else 0
@@ -254,44 +243,31 @@ def get_open_trades_with_risk(environment: str=config.ENV_SANDBOX,
 
           # Net P/L Dollar Amount
           # (Total Credit - Cost to Close) * Quantity * 100
-
           current_pl_dollars = (total_credit_per_share - cost_to_close_per_share) * quantity * config.DEFAULT_MULTIPLIER
 
-          # E. Final RROC Calculation
+          # E. RROC Calculation
           # Avoid division by zero
           if latest_margin and latest_margin > 0:
             daily_rroc = (current_pl_dollars / latest_margin) / days_in_trade
-            trade_dto['rroc'] = f"{daily_rroc:.2%}" # Format as percentage
-            # flag if ready to harvest
-            trade_dto['is_harvestable'] = True if daily_rroc >= config.DEFAULT_RROC_HARVEST_TARGET else False
-
-            # Target Profit = Target Rate * Margin * Days
-            target_profit_total = target_daily_rroc * latest_margin * days_in_trade
-            target_profit_per_share = target_profit_total / (quantity * config.DEFAULT_MULTIPLIER)
-
-            # Harvest Price = Credit Received - Target Profit
-            harvest_price = total_credit_per_share - target_profit_per_share
-            trade_dto['harvest_price'] = f"{harvest_price:.2f}"
+            trade_dto['rroc'] = daily_rroc 
           else:
-            trade_dto['rroc'] = "0.00%"
+            trade_dto['rroc'] = 0.0
+          
+          # Harvest Price = harvest fraction * credit price
+          latest_position_credit = latest_open_transaction['CreditDebit']
+          harvest_price = config.DEFAULT_HARVEST_TARGET * latest_position_credit
+          trade_dto['harvest_price'] = harvest_price
 
-          # do the assignment risk part
-          option_price = short_quote.get('bid') # Use bid for risk calc
-          intrinsic_value = 0
-          if current_short_leg['OptionType'] == config.OPTION_TYPE_PUT:
-            intrinsic_value = max(0, short_strike_price - underlying_price)
-            #print(f"in put: intrinsic: {intrinsic_value}, extrinsic: {extrinsic_value}")
-          elif current_short_leg['OptionType'] == config.OPTION_TYPE_CALL: 
-            intrinsic_value = max(0, underlying_price - short_strike_price)
-            #print(f"in call: intrinsic: {intrinsic_value}, extrinsic: {extrinsic_value}")
-          else:
-            print("bad option type in get open trades with risk")
-          extrinsic_value = option_price - intrinsic_value
-          trade_dto['extrinsic_value'] = extrinsic_value
-    
-          # Our risk rule: ITM and extrinsic is less than $0.10
-          if intrinsic_value > 0 and extrinsic_value < config.ASSIGNMENT_RISK_THRESHOLD:
-            trade_dto['is_at_risk'] = True
+          # Roll Trigger (3x Credit Limit)
+          # "You must execute a defensive action immediately if... spread reaches 300% (3x)"
+          trade_dto['roll_trigger'] = abs(latest_position_credit) * 3.0
+          
+          # flag if ready to harvest
+          trade_dto['is_harvestable'] = True if cost_to_close_per_share <= harvest_price else False         
+
+          trade_dto['position_credit'] = latest_position_credit
+          trade_dto['cumulative_credit'] = total_credit_per_share
+          trade_dto['current_cost'] = cost_to_close_per_share
           
         except Exception as e:
           print(f"Error calculating RROC/Risk for {trade['Underlying']}: {repr(e)}")
@@ -310,7 +286,7 @@ def get_open_trades_with_risk(environment: str=config.ENV_SANDBOX,
 def get_closed_trades(environment: str=config.ENV_SANDBOX, campaign_filter: str=None)->Dict: 
   search_kwargs = {'Campaign': campaign_filter} if campaign_filter else {}
   
-  closed_trades = app_tables.trades.search(Status='Closed', Account=environment, **search_kwargs)
+  closed_trades = app_tables.trades.search(Status=config.TRADE_ACTION_CLOSE, Account=environment, **search_kwargs)
   enriched_trades = []
   
   # Trade level accumulators
@@ -354,14 +330,14 @@ def get_closed_trades(environment: str=config.ENV_SANDBOX, campaign_filter: str=
     # Trade level RROC
     if max_margin > 0:
       trade_daily_rroc = (pl / max_margin) / dit
-      trade_dict['rroc'] = f"{trade_daily_rroc:.2%}"
+      trade_dict['rroc'] = trade_daily_rroc
       trade_rroc_sum += trade_daily_rroc
       trade_count += 1
 
       # Portfolio level margin-days
       total_margin_days += (max_margin * dit)
     else:
-      trade_dict['rroc'] = "0.00%"
+      trade_dict['rroc'] = 0.0
   
     enriched_trades.append(trade_dict)
 
@@ -512,8 +488,8 @@ def save_manual_trade(environment: str,
                       open_spread_credit: float=None):  #CLOSE or ROLL: exising Trade row.  OPEN: None
 
   print(f"Server saving to environment {environment}: {strategy}")
-  # --- 0. NEW: Safety Validation for Diagonals ---
-  if strategy == config.POSITION_TYPE_DIAGONAL or config.POSITION_TYPE_VERTICAL:
+  # --- 0. NEW: Safety Validation for Vertical Spreads ---
+  if strategy == config.POSITION_TYPE_VERTICAL:
     try:
       # Filter for opening legs
       short_legs = [l for l in legs_data_list if l['action'] == config.ACTION_SELL_TO_OPEN]
@@ -854,7 +830,7 @@ def get_new_open_trade_dto(environment: str,
                           ) -> Dict:
   """
   Unified wrapper for 'Find New Trade'.
-  Dispatches to the correct logic (Vertical vs Diagonal) and normalizes the output 
+  Dispatches to the find new Vertical and normalizes the output 
   so the UI receives a consistent DTO with:
     {
     'legs_to_populate': None,
@@ -866,7 +842,6 @@ def get_new_open_trade_dto(environment: str,
 
   # 1. Resolve Settings
   settings_row = app_tables.settings.get() or {} # Assumes single-row settings table
-  target_rroc = settings_row['default_target_rroc'] if settings_row and settings_row['default_target_rroc'] else config.DEFAULT_RROC_HARVEST_TARGET
   width = settings_row['default_width'] if settings_row and settings_row['default_width'] else config.DEFAULT_WIDTH
   qty = settings_row['default_qty'] if settings_row and settings_row['default_qty'] else config.DEFAULT_QUANTITY
   
@@ -877,23 +852,18 @@ def get_new_open_trade_dto(environment: str,
                                                 symbol=symbol, 
                                                 target_delta=config.DEFAULT_VERTICAL_DELTA, 
                                                 width=width, 
-                                                quantity=qty, 
-                                                target_rroc=target_rroc)
+                                                quantity=qty
+                                                )
     if result and not result.get('error'):
+      #print(f"get_new_open_trade_dto.  result: {result}")
       best_spread_object = result['legs']
       qty = result['parameters']['quantity'] # Capture quantity before discarding result dict
-  elif strategy_type == config.POSITION_TYPE_DIAGONAL:
-    # deprecated, can remove
-    best_spread_object = server_helpers.find_new_diagonal_trade(t,
-                                                                  underlying_symbol=symbol,
-                                                                  position_to_roll=None  # We pass None to trigger 'open' logic
-    )
   else:
     anvil.alert(f"Strategy: {strategy_type} is not implemented")
     return
   
   if not best_spread_object:
-    print("find new trade for {strategy_type} on {symbol} did not return a best trade object")
+    print(f"find new trade for {strategy_type} on {symbol} did not return a best trade object")
     return None # Or return an error string
     
   best_spread_dto = best_spread_object.get_dto()
@@ -977,3 +947,131 @@ def get_price(environment: str, symbol: str, price_type: str=None)->float:
   t, _ = server_helpers.get_tradier_client(environment)
   return server_helpers.get_underlying_price(t, symbol)
 
+@anvil.server.callable
+def set_automation_status(enabled: bool):
+  app_tables.settings.get().update(automation_enabled=enabled)
+
+@anvil.server.callable
+def is_automation_live():
+  # The Headless Bot calls this first. If False, it terminates immediately.
+  return app_tables.settings.get()['automation_enabled']
+
+@anvil.server.callable
+def log_automation_event(environment: str, level: str, source: str, message: str, data: dict = None):
+  """
+  Writes a permanent record to the logs.
+  Call this whenever the bot makes a decision or hits an error.
+  """
+  # Optional: Print to console for real-time debugging while you watch
+  print(f"[{level}] {source}: {message}")
+
+  # Write to DB
+  app_tables.automationlogs.add_row(
+    timestamp=dt.datetime.now(),
+    level=level,
+    source=source,
+    message=message,
+    data=data,
+    environment=environment
+  )
+
+  # Cleanup (Optional): Keep table size manageable
+  # You might want a separate scheduled task to delete logs older than 30 days
+
+@anvil.server.callable
+def get_recent_logs(environment:str, limit:int=50)->List[Dict]:
+  # Return sorted by newest first
+  recent_logs = app_tables.automationlogs.search(
+    order_by("timestamp", ascending=False),
+    environment=environment
+  )[:limit]
+  return [dict(r) for r in recent_logs]
+
+@anvil.server.callable
+def log_test():
+  trade_row = app_tables.trades.search()[0]
+  current_price=3
+  limit_price=2
+  log_automation_event(
+                    level="ACTION", 
+                    source="RollLogic", 
+                    message=f"Triggering defensive roll. Price {current_price} exceeded limit {limit_price}",
+                    data={'trade_id': trade_row.get_id(), 'ask': current_price, 'limit': limit_price}
+                  )
+
+@anvil.server.background_task
+@anvil.server.callable
+def run_automation_cycle():
+  """
+  The Heartbeat. Runs every X minutes via Anvil Scheduled Tasks.
+  Phase 1: Scan
+  Phase 2: Decide (Log Only for now)
+  """
+  # 1. Global Kill Switch
+  settings = app_tables.settings.get()
+  if not settings['automation_enabled']:
+    print("Automation is disabled. Skipping cycle.")
+    return
+
+  # 2. Setup Environment (Default to Sandbox for safety)
+  env = config.ENV_SANDBOX
+  print(f"Starting automation cycle for {env}...")
+  log_automation_event(
+    level="INFO", 
+    source="Scheduler", 
+    message=f"Starting automation cycle for {env}...", 
+    environment=env
+  )
+
+  # 3. SCAN: Get live data
+  # We force refresh_risk=True to get up-to-the-second prices
+  active_trades = get_open_trades_with_risk(env, refresh_risk=True)
+
+  # 4. DECISION ENGINE
+  for trade in active_trades:
+    symbol = trade['Underlying']
+
+    # Skip invalid data (e.g. if API failed for this row)
+    if trade.get('current_cost') is None or trade.get('position_credit') is None:
+      continue
+
+    current_cost = trade['current_cost']
+    position_credit = trade['position_credit']
+
+    # --- RULE 1: PROFIT TAKING (50% of Premium) --- 
+    # We use the 'is_harvestable' flag we already built in the scanner
+    if trade.get('is_harvestable'):
+      message = f"HARVEST TRIGGER: {symbol} Profit Target Hit. Credit: {position_credit:.2f}, Cost: {current_cost:.2f}"
+
+      # Log it (The "Write" phase)
+      log_automation_event(
+        level="INFO", 
+        source="Harvester", 
+        message=message, 
+        environment=env,
+        data={'trade_id': trade['trade_row'].get_id(), 'action': 'CLOSE'}
+      )
+
+      # FUTURE: close_package = get_close_trade_dto(...)
+      # FUTURE: submit_order(...)
+
+    # --- RULE 2: DEFENSIVE ROLL (3x Credit Stop) --- 
+    # Trigger if Current Debit >= 3.0 * Initial Credit
+    # Note: absolute values used to handle potential negative sign conventions
+    stop_loss_price = abs(position_credit) * 3.0
+
+    if abs(current_cost) >= stop_loss_price:
+      message = f"DEFENSE TRIGGER: {symbol} hit 3x Stop. Cost: {current_cost:.2f} >= Limit: {stop_loss_price:.2f}"
+
+      log_automation_event(
+        level="WARNING", 
+        source="RiskManager", 
+        message=message, 
+        environment=env,
+        data={'trade_id': trade['trade_row'].get_id(), 'action': 'ROLL'}
+      )
+
+      # FUTURE: roll_package = get_roll_package_dto(...)
+      # FUTURE: submit_order(...)
+
+  print("Automation cycle complete.")
