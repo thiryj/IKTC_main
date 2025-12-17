@@ -1005,7 +1005,7 @@ def run_automation_cycle():
   """
   The Heartbeat. Runs every X minutes via Anvil Scheduled Tasks.
   Phase 1: Scan
-  Phase 2: Decide (Log Only for now)
+  Phase 2: Decide  - Execute and log
   """
   # 1. Global Kill Switch
   settings = app_tables.settings.get()
@@ -1024,47 +1024,72 @@ def run_automation_cycle():
   )
 
   # 3. SCAN: Get live data
-  # We force refresh_risk=True to get up-to-the-second prices
-  active_trades = get_open_trades_with_risk(env, refresh_risk=True)
+  try:
+    active_trades = get_open_trades_with_risk(env, refresh_risk=True)
+  except Exception as e:
+    log_automation_event("ERROR", "Scanner", f"Failed to scan trades: {e}", env)
+    return
 
   # 4. DECISION ENGINE
   for trade in active_trades:
-    symbol = trade['Underlying']
+    try:
+      symbol = trade['Underlying']
+  
+      # Skip invalid data (e.g. if API failed for this row)
+      if trade.get('current_cost') is None or trade.get('position_credit') is None:
+        continue
+  
+      current_cost = trade['current_cost']
+      position_credit = trade['position_credit']
+      stop_loss_price = abs(position_credit) * 3.0
 
-    # Skip invalid data (e.g. if API failed for this row)
-    if trade.get('current_cost') is None or trade.get('position_credit') is None:
-      continue
+      # --- RULE 1: DEFENSIVE ROLL (3x Credit Stop) ---
+      # We check Defense FIRST. If a trade is in trouble, we fix it before looking for profit.
+      if abs(current_cost) >= stop_loss_price:
+        message = f"DEFENSE TRIGGER: {symbol} hit 3x Stop. Cost: {current_cost:.2f} >= Limit: {stop_loss_price:.2f}"
+        log_automation_event("WARNING", "RiskManager", message, env, data={'trade_id': trade['trade_row'].get_id()})
 
-    current_cost = trade['current_cost']
-    position_credit = trade['position_credit']
+        # A. Calculate the Roll Package
+        roll_package = get_roll_package_dto(env, trade['trade_row'])
 
-    # --- RULE 1: PROFIT TAKING (50% of Premium) --- 
-    # We use the 'is_harvestable' flag we already built in the scanner
-    # --- RULE 1: PROFIT TAKING (50% of Premium) ---
-    if trade.get('is_harvestable'):
-      message = f"HARVEST TRIGGER: {symbol} Profit Target Hit. Credit: {position_credit:.2f}, Cost: {current_cost:.2f}"
+        if roll_package:
+          # B. Submit the 4-Leg Order
+          # Note: 'legs_to_populate' is the list of 4 dicts that submit_order needs
+          response = submit_order(
+            environment=env,
+            underlying_symbol=symbol,
+            trade_dto_list=roll_package['legs_to_populate'], 
+            quantity=trade['Quantity'],
+            preview=False,
+            limit_price=roll_package['total_roll_credit'] # Can be positive (Credit) or negative (Debit)
+          )
 
-      # 1. Log the Intent
-      log_automation_event("ACTION", "Harvester", message, env, data={'trade_id': trade['trade_row'].get_id()})
-
-      # 2. Check Automation Level (Safety Check)
-      # You might want to add a check here like: if settings['campaign_mode'] != 'MANUAL':
-
-      try:
-        # 3. Calculate the Closing Package
-        # We call our existing logic directly (no anvil.server.call needed inside the server)
+          if response and response.get('order', {}).get('status') == 'ok':
+            order_id = response['order']['id']
+            log_automation_event("INFO", "RiskManager", f"Roll Order {order_id} Submitted.", env)
+            continue # Stop processing this trade (don't harvest if we just rolled)
+          else:
+            err = response.get('order', {}).get('errors') if response else "Unknown Error"
+            log_automation_event("ERROR", "RiskManager", f"Roll Order Failed: {err}", env)
+        else:
+          log_automation_event("ERROR", "RiskManager", f"Could not calculate valid roll for {symbol}", env)
+      # --- RULE 2: PROFIT TAKING (50% of Premium) ---
+      # Only check harvest if we aren't rolling
+      elif trade.get('is_harvestable'):
+        message = f"HARVEST TRIGGER: {symbol} Profit Target Hit. Credit: {position_credit:.2f}, Cost: {current_cost:.2f}"
+        log_automation_event("ACTION", "Harvester", message, env, data={'trade_id': trade['trade_row'].get_id()})
+  
         close_dto = get_close_trade_dto(env, trade['trade_row'])
 
         if close_dto:
-          # 4. Submit the Order (Live!)
           # Note: submit_order expects a LIST of DTOs
           response = submit_order(
             environment=env,
             underlying_symbol=symbol,
             trade_dto_list=[close_dto], 
             quantity=trade['Quantity'],
-            limit_price=trade['harvest_price'],
-            preview=False # <--- FIRE FOR EFFECT
+            preview=False, # <--- FIRE FOR EFFECT
+            limit_price=trade['harvest_price']
           )
 
           # 5. Log the Result
@@ -1075,26 +1100,5 @@ def run_automation_cycle():
             err = response.get('order', {}).get('errors') if response else "Unknown Error"
             log_automation_event("ERROR", "Harvester", f"Order Submission Failed: {err}", env)
 
-      except Exception as e:
-        log_automation_event("ERROR", "Harvester", f"Crash during harvest execution: {e}", env)
-
-    # --- RULE 2: DEFENSIVE ROLL (3x Credit Stop) --- 
-    # Trigger if Current Debit >= 3.0 * Initial Credit
-    # Note: absolute values used to handle potential negative sign conventions
-    stop_loss_price = abs(position_credit) * 3.0
-
-    if abs(current_cost) >= stop_loss_price:
-      message = f"DEFENSE TRIGGER: {symbol} hit 3x Stop. Cost: {current_cost:.2f} >= Limit: {stop_loss_price:.2f}"
-
-      log_automation_event(
-        level="WARNING", 
-        source="RiskManager", 
-        message=message, 
-        environment=env,
-        data={'trade_id': trade['trade_row'].get_id(), 'action': 'ROLL'}
-      )
-
-      # FUTURE: roll_package = get_roll_package_dto(...)
-      # FUTURE: submit_order(...)
-
-  print("Automation cycle complete.")
+    except Exception as e:
+      log_automation_event("ERROR", "Harvester", f"Crash during harvest execution: {e}", env)
