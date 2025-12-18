@@ -46,6 +46,9 @@ db_schema:
       name: RuleSet
       target: rulesets
       type: link_single
+    - admin_ui: {order: -1, width: 200}
+      name: Name
+      type: string
     server: full
     title: Cycles
   legs:

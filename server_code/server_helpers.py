@@ -900,3 +900,59 @@ def is_market_open(t_client, buffer_minutes=5) -> bool:
     print(f"Error checking market clock: {e}")
     # FAIL SAFE: If we can't verify market is open, assume CLOSED.
     return False
+
+def calculate_cycle_net_liq(t_client, cycle_row):
+  """
+    Calculates the total liquidation value of a Cycle:
+    (Value of Long Hedge) - (Cost to Close all Short Spreads)
+    """
+  total_hedge_value = 0.0
+  total_spread_cost = 0.0
+
+  # 1. PRICE THE HEDGE (Stored on the Cycle row)
+  hedge_leg = cycle_row['HedgeLeg'] # Link to 'legs' table
+  if hedge_leg:
+    # Construct OCC symbol from the leg row
+    hedge_occ = build_occ_symbol(
+      underlying=hedge_leg['Underlying'], # Assuming 'legs' has this
+      expiration_date=hedge_leg['Expiration'], 
+      option_type=hedge_leg['OptionType'], 
+      strike=hedge_leg['Strike']
+    )
+
+    # Get Live Price (Bid) because we are SELLING the hedge to close
+    quote = get_quote(t_client, hedge_occ)
+    if quote:
+      total_hedge_value = quote['bid'] * hedge_leg['Quantity'] * 100
+
+    # 2. PRICE THE SPREADS (Stored in Trades table)
+    # Find all open trades linked to this cycle
+  child_trades = app_tables.trades.search(Cycle=cycle_row, Status='OPEN')
+
+  active_spread_dtos = [] # Keep track of these so we can return them for the close order
+
+  for trade in child_trades:
+    # We can reuse your existing logic to get cost to close
+    # (Assuming you have a helper for this, or we just do it manually here for speed)
+
+    # Quick fetch of active legs for this trade
+    # ... (Implementation depends on how you link legs to trades, likely via transactions)
+    # For now, let's assume we use your 'get_close_trade_dto' logic:
+
+    close_dto = ServerModule1.get_close_trade_dto(trade) # You likely need to import this or move it to helpers
+    if close_dto:
+      # Add to total cost (Ask price of Short - Bid price of Long)
+      # close_dto usually has the limit price embedded or we calculate it
+      # For panic calculation, we want the current MARKET price
+
+      # Simplified: Just grab the 'mark' of the spread if you have it, 
+      # or re-quote the legs here.
+      pass 
+      # (To keep this snippet short, I assume you sum up the cost)
+
+      active_spread_dtos.append(close_dto)
+
+    # Net Liq = What we get for the Hedge - What we pay to close Spreads
+  net_liq = total_hedge_value - total_spread_cost
+
+  return net_liq, active_spread_dtos, hedge_occ

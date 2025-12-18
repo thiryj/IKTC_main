@@ -1042,6 +1042,45 @@ def run_automation_cycle():
     message=f"Starting automation cycle for {env}...", 
     environment=env
   )
+  # --- RULE 0: CYCLE CHECK (The Panic Button) ---
+  # We iterate through active CYCLES first
+  open_cycles = app_tables.cycles.search(Status='Open')
+
+  for cycle in open_cycles:
+    # 1. Calculate Global Value
+    net_liq, spread_dtos, hedge_symbol = server_helpers.calculate_cycle_net_liq(t, cycle)
+  
+    # 2. Check Panic Threshold (e.g. $500 Profit)
+    # You might store 'Panic_Threshold' on the Cycle row, or use a global config
+    panic_target = config.CYCLE_PROFIT_TRIGGER
+  
+    if net_liq >= panic_target:
+      log_automation_event("ACTION", "CycleManager", f"PANIC PROFIT: Cycle hit ${net_liq:.2f} (Target ${panic_target})", env)
+  
+      # 3. BUILD THE 'CLOSE EVERYTHING' PAYLOAD
+      # We need to close the Hedge AND all Spreads
+  
+      # A. Close Spreads
+      for dto in spread_dtos:
+        # Submit individual close orders for spreads
+        # (Or combine them if your broker supports massive multilegs, but individual is safer)
+        submit_order(env, symbol, {'to_close': dto}, quantity=1)
+  
+        # B. Close Hedge
+        # Create a simple single-leg close order
+      hedge_payload = {
+        'symbol': hedge_symbol,
+        'side': 'sell_to_close',
+        'quantity': cycle['HedgeLeg']['Quantity'],
+        'type': 'market' # Panic close usually implies "Get me out NOW"
+      }
+      t.orders.create(**hedge_payload)
+  
+      # 4. Close the Cycle in DB
+      cycle['Status'] = 'CLOSED'
+      cycle['NetPL'] = net_liq
+  
+      continue # Move to next cycle
 
   # 3. SCAN: Get live data
   try:
