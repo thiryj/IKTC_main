@@ -768,7 +768,7 @@ def get_roll_package_dto(environment: str,
 
   # --- 3.  Find NEW Legs ---
   limit_ticks = int(margin_expansion_limit)
-  new_spread_object = server_helpers.find_vertical_roll(
+  new_spread_object, roll_net_price = server_helpers.find_vertical_roll(
     t,
     trade_row['Underlying'],
     current_spread,
@@ -779,10 +779,7 @@ def get_roll_package_dto(environment: str,
   if not new_spread_object or isinstance(new_spread_object, int):
     print(f"No valid roll configuration found for {trade_row['Underlying']}")
     return None
-  # --- 4. Calculate Opening Credit & Build Opening Leg Dicts (FIXED) ---
-  total_open_credit = new_spread_object.calculate_net_premium()
-  #print(f"open credit of roll to: {total_open_credit}")
-  
+    
   # prepare for serialization
   new_spread_dto = new_spread_object.get_dto()
   new_short_leg_dto = new_spread_dto['short_put']
@@ -809,13 +806,13 @@ def get_roll_package_dto(environment: str,
 
   # --- 5. Package and Return ---
   all_4_legs = closing_legs_list + opening_legs_list
-  total_roll_credit = total_open_credit - total_close_cost
+  #total_roll_credit = total_open_credit - total_close_cost
 
-  #print(f"in get_roll: roll legs:{all_4_legs}, roll credit: {total_roll_credit}")
+  #print(f"in get_roll: roll legs:{all_4_legs}, roll credit: {roll_net_price}")
   print(f" in get_roll: new_spread_dto['net_premium']: {new_spread_dto['net_premium']}")
   return {
     'legs_to_populate': all_4_legs, # list of leg_dto [{leg1}, {leg2}, etc] closing-short, closing-long, opening-short, opening-long
-    'total_roll_credit': total_roll_credit,
+    'total_roll_credit': roll_net_price,
     'new_spread_dto': new_spread_dto,  # full nested { meta, 'short_put', 'long_put'} position dto
     'closing_spread_dto': closing_spread_dto # full nested { meta, 'short_put', 'long_put'} position dto
   }

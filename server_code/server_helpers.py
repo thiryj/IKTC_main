@@ -689,7 +689,7 @@ def fetch_strikes_direct(tradier_client, symbol, expiration):
 def find_vertical_roll(t: TradierAPI, 
                        underlying_symbol, 
                        current_position: positions.DiagonalPutSpread, 
-                       margin_expansion_limit_ticks: int = 0):
+                       margin_expansion_limit_ticks: int = 0)->Tuple: # returns roll to spread, net roll price
   """
   Finds the best 'Roll Out and Down' candidate.
   
