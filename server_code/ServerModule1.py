@@ -369,15 +369,35 @@ def submit_order(environment: str='SANDBOX',
                            )->Dict:
   """
   Submits an order to Tradier.
-  :param strategy_package: Dict with optional keys 'to_open' and 'to_close' containing DTOs.
+  Acts as an Adapter: Accepts either a Dict (New Format) or a List (Legacy Format).
+  :param trade_dto_dict: Dict with optional keys 'to_open' and 'to_close' containing DTOs.
                            Examples:
                            Harvest: {'to_close': close_dto}
                            Roll:    {'to_open': new_dto, 'to_close': old_dto}
   """
-    
   # verify symbol and positions are present
   if underlying_symbol is None or trade_dto_dict is None:
     print("no symbol or position in submit_preview_order")
+    
+  normalized_package = {}
+
+  if isinstance(trade_dto_dict, dict):
+    # Already perfect, pass it through
+    normalized_package = trade_dto_dict
+
+  elif isinstance(trade_dto_dict, list):
+    # Legacy Client Call: We need to infer the keys ('to_open', 'to_close')
+    # We inspect the items to see what they are.
+
+    for item in trade_dto_dict:
+      # Method A: Check for explicit 'spread_action' flag (Preferred)
+      action = item.get('spread_action', '').lower()
+
+      if 'open' in action:
+        normalized_package['to_open'] = item
+      elif 'close' in action:
+        normalized_package['to_close'] = item
+    
   # get client and endpoint
   t, endpoint_url = server_helpers.get_tradier_client(environment)
 
@@ -747,7 +767,6 @@ def get_roll_package_dto(environment: str,
   current_spread = positions.DiagonalPutSpread(short_leg_quote, long_leg_quote)
   closing_spread_dto = current_spread.get_dto()   # fresh pricing is contained in this dto
   closing_spread_dto['spread_action'] = config.TRADE_ACTION_CLOSE
-  total_close_cost = current_spread.calculate_cost_to_close()
 
   # Build standardized dicts for the closing legs
   closing_leg_1 = {
@@ -1055,7 +1074,7 @@ def run_automation_cycle():
           response = submit_order(
             environment=env,
             underlying_symbol=symbol,
-            trade_dto_list=strategy_package,  # dict of labeld spreads
+            trade_dto_dict=strategy_package,  # dict of labeld spreads
             quantity=trade['Quantity'],
             preview=False,
             limit_price=roll_package['total_roll_credit'] # Can be positive (Credit) or negative (Debit)

@@ -117,8 +117,12 @@ def submit_spread_order(
   #print(f"endpoint_url: {endpoint_url}")
   api_url = urljoin(endpoint_url, path)
 
-  payload = build_multileg_payload(tradier_client, underlying_symbol, quantity, trade_dto_dict)
-
+  payload = build_multileg_payload(tradier_client, 
+                                   underlying_symbol, 
+                                   quantity, 
+                                   trade_dto_dict, 
+                                   limit_price)
+  
   # override price if limit_price sent in
   if limit_price is not None:
     payload['price'] = f"{limit_price:.2f}"
@@ -164,39 +168,22 @@ def build_multileg_payload(
     closing_dto = trade_dto_dict['to_close']
     legs.append({'symbol': closing_dto.get('short_put',{}).get('symbol'), 'side': 'buy_to_close'})
     legs.append({'symbol': closing_dto.get('long_put', {}).get('symbol'), 'side': 'sell_to_close'})
-    # need to get fresh quotes to calc current cost to close
-    short_position_to_close_symbol = closing_dto.get('short_put',{}).get('symbol')
-    long_position_to_close_symbol = closing_dto.get('long_put',  {}).get('symbol')
-    short_position_to_close_quote = get_quote(tradier_client, short_position_to_close_symbol)
-    long_position_to_close_quote =  get_quote(tradier_client, long_position_to_close_symbol)
-    cost_to_close = short_position_to_close_quote.get('ask',0) - long_position_to_close_quote.get('bid',0)
-    payload_price = f"{cost_to_close:.2f}"
-    payload_type = 'debit'
     
   # Process the 'to_open'
   if 'to_open' in trade_dto_dict:
     opening_dto = trade_dto_dict['to_open']
     legs.append({'symbol': opening_dto.get('short_put',{}).get('symbol'), 'side': 'sell_to_open'})
     legs.append({'symbol': opening_dto.get('long_put', {}).get('symbol'), 'side': 'buy_to_open'})
-    credit_to_open = opening_dto.get('net_premium')  # this is fresh pricing obtained when finding opening position
-    payload_price = f"{opening_dto.get('net_premium'):.2f}"
-    payload_type = 'credit'
-    
+
+  print(f"build_multileg_payload: trade_dto_dict: {trade_dto_dict}")
+  print(f"build_multileg_payload: limit price: {limit_price}")
+  print(f"legs are: {legs}")
+        
   if not legs:
     raise ValueError("build_multileg_payload: No valid legs found in trade_dto_dict")
     
-  # Process the roll
-  if 'to_open' in trade_dto_dict and 'to_close' in trade_dto_dict:  #its a roll because both spreads are present
-    roll_value = credit_to_open - cost_to_close
-    #print(f"build multi leg: roll credit: {roll_value}")
-    payload_price = f"{abs(roll_value):.2f}"
-    payload_type = 'credit' if roll_value >= 0 else 'debit'
-
-  # 2. Determine Type/Price from the passed limit_price
-  # Positive Limit = Credit
-  # Negative Limit = Debit
-  payload_type = 'credit' if limit_price >= 0 else 'debit'
   payload_price = f"{abs(limit_price):.2f}"
+  payload_type = 'credit' if limit_price >= 0 else 'debit'
     
   payload = {
     'class': 'multileg',
@@ -770,11 +757,11 @@ def find_vertical_roll(t: TradierAPI,
         return positions.DiagonalPutSpread(new_short_obj, new_long_obj), best_for_this_exp['net_roll_price']
       except Exception as e:
         print(f"Error building best position object: {e}")
-        return None
+        return None, 0.0
 
   # If loop finishes without returning, no valid rolls exist.
   print("No valid roll candidates found (Zero Debit / Down & Out).")
-  return None
+  return None, 0.0
   
 def get_vertical_spread(t: TradierAPI, 
                         symbol: str = config.DEFAULT_SYMBOL, 
