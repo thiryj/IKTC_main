@@ -689,7 +689,6 @@ def fetch_strikes_direct(tradier_client, symbol, expiration):
 def find_vertical_roll(t: TradierAPI, 
                        underlying_symbol, 
                        current_position: positions.DiagonalPutSpread, 
-                       original_credit: float = 0.0,
                        margin_expansion_limit_ticks: int = 0):
   """
   Finds the best 'Roll Out and Down' candidate.
@@ -768,7 +767,7 @@ def find_vertical_roll(t: TradierAPI,
       try:
         new_short_obj = Quote(**best_for_this_exp['short_leg'])
         new_long_obj = Quote(**best_for_this_exp['long_leg'])
-        return positions.DiagonalPutSpread(new_short_obj, new_long_obj)
+        return positions.DiagonalPutSpread(new_short_obj, new_long_obj), best_for_this_exp['net_roll_price']
       except Exception as e:
         print(f"Error building best position object: {e}")
         return None

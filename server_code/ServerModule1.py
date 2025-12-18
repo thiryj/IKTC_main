@@ -741,16 +741,6 @@ def get_roll_package_dto(environment: str,
 
   except Exception as e:
     raise Exception(f"Error finding active legs: {e}")
-
-  # --- NEW: Calculate Total Original Credit ---
-  # Sum of all credits collected so far (Open + previous Rolls)
-  # We use this to determine the "10% Pain Threshold"
-  trade_transactions = app_tables.transactions.search(Trade=trade_row)
-  original_credit = sum(
-    t['CreditDebit'] 
-    for t in trade_transactions 
-    if t['CreditDebit'] is not None
-  )
   
     # --- 2. Calculate Closing Cost & Build Closing Leg Dicts ---
   # uses fresh quotes to get updated pricing
@@ -782,7 +772,6 @@ def get_roll_package_dto(environment: str,
     t,
     trade_row['Underlying'],
     current_spread,
-    original_credit=original_credit,
     margin_expansion_limit_ticks=limit_ticks
   )
   
