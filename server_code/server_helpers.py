@@ -179,7 +179,6 @@ def build_multileg_payload(
     payload['price'] = f"{position_original_dto.get('net_premium'):.2f}"
 
     # --- Case 2: Roll a 4-leg position ---
-    # TODO:  following line is a hack.  need to deal with 4 legged trade_dto
   elif len(trade_dto_list) == 2:    # this is a roll
     # Convention: The first position is to open, the second is to close.
     position_to_close_dto = trade_dto_list[1]

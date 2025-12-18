@@ -367,6 +367,13 @@ def submit_order(environment: str='SANDBOX',
                            preview: bool=True,
                            limit_price: float=None
                            )->Dict:
+  """
+  Submits an order to Tradier.
+  :param strategy_package: Dict with optional keys 'to_open' and 'to_close' containing DTOs.
+                           Examples:
+                           Harvest: {'to_close': close_dto}
+                           Roll:    {'to_open': new_dto, 'to_close': old_dto}
+  """
     
   # verify symbol and positions are present
   if underlying_symbol is None or trade_dto_list is None:
@@ -1058,7 +1065,7 @@ def run_automation_cycle():
           response = submit_order(
             environment=env,
             underlying_symbol=symbol,
-            trade_dto_list=roll_package['legs_to_populate'], 
+            trade_dto_list=[roll_package['new_spread_dto'],roll_package['closing_spread_dto']],
             quantity=trade['Quantity'],
             preview=False,
             limit_price=roll_package['total_roll_credit'] # Can be positive (Credit) or negative (Debit)
@@ -1073,6 +1080,7 @@ def run_automation_cycle():
             log_automation_event("ERROR", "RiskManager", f"Roll Order Failed: {err}", env)
         else:
           log_automation_event("ERROR", "RiskManager", f"Could not calculate valid roll for {symbol}", env)
+        continue #don't move on to harvest if it was a roll
       # --- RULE 2: PROFIT TAKING (50% of Premium) ---
       # Only check harvest if we aren't rolling
       elif trade.get('is_harvestable'):
