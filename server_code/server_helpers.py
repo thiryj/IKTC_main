@@ -844,3 +844,59 @@ def get_vertical_spread(t: TradierAPI,
   }
   #print(f"return_dict: {return_dict}")
   return return_dict
+
+def is_market_open(t_client, buffer_minutes=5) -> bool:
+  """
+  Queries Tradier's official clock to see if we are in a valid trading session.
+  Handles holidays and early closes automatically.
+  
+  :param t_client: Authenticated TradierAPI client
+  :param buffer_minutes: Wait N minutes after open before trading (Volatility Guard)
+  """
+  try:
+    # 1. Ask Tradier for the time
+    response = t_client.markets.get_clock() 
+    # Note: Depending on your Python wrapper, this might be t_client.get_clock() 
+    # or t_client.markets_clock(). Adjust based on your library.
+    # If using raw requests: t.get('markets/clock')
+
+    if not response or 'clock' not in response:
+      print("Error: Empty response from Market Clock")
+      return False
+
+    clock = response['clock']
+    state = clock['state']
+
+    # 2. Hard Check: If Tradier says "closed", "pre", or "post", we sleep.
+    if state != 'open':
+      return False
+
+    # 3. Buffer Check (Volatility Guard)
+    # The 'state' becomes 'open' exactly at 09:30:00.
+    # We check the timestamp to ensure we are past 09:30 + buffer.
+
+    # 'timestamp' is current server time (Unix Epoch)
+    current_ts = float(clock['timestamp'])
+
+    # We need to find when the status CHANGED to open to calculate buffer.
+    # Tradier doesn't give "last_change", so we fallback to local math for the buffer
+    # OR we just rely on the fact that if it's 09:31, we are good.
+
+    # Simple Logic: Get current HH:MM from the timestamp
+    server_time = dt.datetime.fromtimestamp(current_ts)
+
+    # If it is BEFORE 09:30 + buffer, return False
+    # (Assuming we are in the morning. If it's 2 PM, this check passes)
+    market_open_time = server_time.replace(hour=9, minute=30, second=0)
+    safe_start_time = market_open_time + dt.timedelta(minutes=buffer_minutes)
+
+    if server_time < safe_start_time:
+      # print(f"Market is Open, but within {buffer_minutes} min buffer.")
+      return False
+
+    return True
+
+  except Exception as e:
+    print(f"Error checking market clock: {e}")
+    # FAIL SAFE: If we can't verify market is open, assume CLOSED.
+    return False

@@ -970,26 +970,36 @@ def is_automation_live():
   return app_tables.settings.get()['automation_enabled']
 
 @anvil.server.callable
-def log_automation_event(environment: str, level: str, source: str, message: str, data: dict = None):
+def log_automation_event(level: str, source: str, message: str, environment: str, data: dict = None):
   """
-  Writes a permanent record to the logs.
-  Call this whenever the bot makes a decision or hits an error.
+  Writes to logs. 
+  Arg Order: Level, Source, Message, Environment, Data
   """
-  # Optional: Print to console for real-time debugging while you watch
-  print(f"[{level}] {source}: {message}")
 
-  # Write to DB
-  app_tables.automationlogs.add_row(
-    timestamp=dt.datetime.now(),
-    level=level,
-    source=source,
-    message=message,
-    data=data,
-    environment=environment
-  )
+  # 1. NOISE FILTER: Stop logging the "Starting..." message unless it's an error
+  if source == "Scheduler" and "Starting automation cycle" in message and level == "INFO":
+    return
 
-  # Cleanup (Optional): Keep table size manageable
-  # You might want a separate scheduled task to delete logs older than 30 days
+  # 2. Console Mirror (Keep this, it's useful)
+  print(f"[{level}] {source}: {message}: {environment}")
+
+  # 3. Data Safety (Prevent crashes if data isn't a dict)
+  if data is not None and not isinstance(data, dict):
+    # If someone passes a list or string by accident, wrap it so it doesn't crash
+    data = {'raw_payload': str(data)}
+
+  # 4. Write to DB
+  try:
+    app_tables.automationlogs.add_row(
+      timestamp=dt.datetime.now(),
+      level=level,
+      source=source,
+      message=message,
+      data=data,
+      environment=environment
+    )
+  except Exception as e:
+    print(f"CRITICAL: Logger failed to write to DB: {e}")
 
 @anvil.server.callable
 def get_recent_logs(environment:str, limit:int=50)->List[Dict]:
@@ -999,18 +1009,6 @@ def get_recent_logs(environment:str, limit:int=50)->List[Dict]:
     environment=environment
   )[:limit]
   return [dict(r) for r in recent_logs]
-
-@anvil.server.callable
-def log_test():
-  trade_row = app_tables.trades.search()[0]
-  current_price=3
-  limit_price=2
-  log_automation_event(
-                    level="ACTION", 
-                    source="RollLogic", 
-                    message=f"Triggering defensive roll. Price {current_price} exceeded limit {limit_price}",
-                    data={'trade_id': trade_row.get_id(), 'ask': current_price, 'limit': limit_price}
-                  )
 
 @anvil.server.background_task
 @anvil.server.callable
@@ -1028,6 +1026,15 @@ def run_automation_cycle():
 
   # 2. Setup Environment (Default to Sandbox for safety)
   env = config.ENV_SANDBOX
+
+  # Don't run at night
+  t, _ = server_helpers.get_tradier_client(env)
+  if not server_helpers.is_market_open(t):
+    # Optional: Log only once per hour to show bot is alive but sleeping
+    if dt.datetime.now().minute == 0:
+      log_automation_event("INFO", "Scheduler", "Market Closed. Sleeping.", env)
+    return
+  
   print(f"Starting automation cycle for {env}...")
   log_automation_event(
     level="INFO", 
