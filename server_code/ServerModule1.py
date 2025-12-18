@@ -380,7 +380,7 @@ def submit_order(environment: str='SANDBOX',
     print("no symbol or position in submit_preview_order")
     
   normalized_package = {}
-
+  
   if isinstance(trade_dto_dict, dict):
     # Already perfect, pass it through
     normalized_package = trade_dto_dict
@@ -401,13 +401,13 @@ def submit_order(environment: str='SANDBOX',
   # get client and endpoint
   t, endpoint_url = server_helpers.get_tradier_client(environment)
 
-  #print(f"submit order: trade_dto_list: {trade_dto_list}")
+  #print(f"submit order: normalized_package: {normalized_package}")
   # submit order
   trade_response = server_helpers.submit_spread_order(t, 
                                                               endpoint_url, 
                                                               underlying_symbol, 
                                                               quantity, 
-                                                              trade_dto_dict, # nested dict with one or two {spread meta..., 'short_put', 'long_put'}
+                                                              normalized_package, # nested dict with one or two {spread meta..., 'short_put', 'long_put'}
                                                               preview,
                                                               limit_price
                                                             )
@@ -1103,7 +1103,7 @@ def run_automation_cycle():
           response = submit_order(
             environment=env,
             underlying_symbol=symbol,
-            trade_dto_list=[close_dto], 
+            trade_dto_dict=[close_dto], 
             quantity=trade['Quantity'],
             preview=False, # <--- FIRE FOR EFFECT
             limit_price=trade['harvest_price']

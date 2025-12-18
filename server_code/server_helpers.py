@@ -175,9 +175,9 @@ def build_multileg_payload(
     legs.append({'symbol': opening_dto.get('short_put',{}).get('symbol'), 'side': 'sell_to_open'})
     legs.append({'symbol': opening_dto.get('long_put', {}).get('symbol'), 'side': 'buy_to_open'})
 
-  print(f"build_multileg_payload: trade_dto_dict: {trade_dto_dict}")
-  print(f"build_multileg_payload: limit price: {limit_price}")
-  print(f"legs are: {legs}")
+  #print(f"build_multileg_payload: trade_dto_dict: {trade_dto_dict}")
+  #print(f"build_multileg_payload: limit price: {limit_price}")
+  #print(f"legs are: {legs}")
         
   if not legs:
     raise ValueError("build_multileg_payload: No valid legs found in trade_dto_dict")
