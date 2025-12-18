@@ -362,7 +362,7 @@ def get_closed_trades(environment: str=config.ENV_SANDBOX, campaign_filter: str=
 @anvil.server.callable
 def submit_order(environment: str='SANDBOX', 
                            underlying_symbol: str=None,
-                           trade_dto_list: List=[], # list of dicts with {spread meta..., 'short_put', 'long_put'}
+                           trade_dto_dict: Dict=None, # nested dict with one or two spreads {spread meta..., 'short_put', 'long_put'}
                            quantity: int=1,
                            preview: bool=True,
                            limit_price: float=None
@@ -376,7 +376,7 @@ def submit_order(environment: str='SANDBOX',
   """
     
   # verify symbol and positions are present
-  if underlying_symbol is None or trade_dto_list is None:
+  if underlying_symbol is None or trade_dto_dict is None:
     print("no symbol or position in submit_preview_order")
   # get client and endpoint
   t, endpoint_url = server_helpers.get_tradier_client(environment)
@@ -387,7 +387,7 @@ def submit_order(environment: str='SANDBOX',
                                                               endpoint_url, 
                                                               underlying_symbol, 
                                                               quantity, 
-                                                              trade_dto_list, # list of dicts with {spread meta..., 'short_put', 'long_put'}
+                                                              trade_dto_dict, # nested dict with one or two {spread meta..., 'short_put', 'long_put'}
                                                               preview,
                                                               limit_price
                                                             )
@@ -753,8 +753,9 @@ def get_roll_package_dto(environment: str,
   )
   
     # --- 2. Calculate Closing Cost & Build Closing Leg Dicts ---
+  # uses fresh quotes to get updated pricing
   current_spread = positions.DiagonalPutSpread(short_leg_quote, long_leg_quote)
-  closing_spread_dto = current_spread.get_dto()
+  closing_spread_dto = current_spread.get_dto()   # fresh pricing is contained in this dto
   closing_spread_dto['spread_action'] = config.TRADE_ACTION_CLOSE
   total_close_cost = current_spread.calculate_cost_to_close()
 
@@ -1060,12 +1061,15 @@ def run_automation_cycle():
         roll_package = get_roll_package_dto(env, trade['trade_row'])
 
         if roll_package:
-          # B. Submit the 4-Leg Order
-          # Note: 'legs_to_populate' is the list of 4 dicts that submit_order needs
+          strategy_package = {
+            'to_close': roll_package['closing_spread_dto'],
+            'to_open': roll_package['new_spread_dto']
+          }
+          
           response = submit_order(
             environment=env,
             underlying_symbol=symbol,
-            trade_dto_list=[roll_package['new_spread_dto'],roll_package['closing_spread_dto']],
+            trade_dto_list=strategy_package,  # dict of labeld spreads
             quantity=trade['Quantity'],
             preview=False,
             limit_price=roll_package['total_roll_credit'] # Can be positive (Credit) or negative (Debit)
