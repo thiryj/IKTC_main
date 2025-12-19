@@ -1031,7 +1031,8 @@ def run_automation_cycle():
   t, _ = server_helpers.get_tradier_client(env)
   if not server_helpers.is_market_open(t):
     # Optional: Log only once per hour to show bot is alive but sleeping
-    if dt.datetime.now().minute == 0:
+    now = dt.datetime.now()
+    if now.hour > 6 and now.minute >=0 and now.minute < 5:
       log_automation_event("INFO", "Scheduler", "Market Closed. Sleeping.", env)
     return
   
