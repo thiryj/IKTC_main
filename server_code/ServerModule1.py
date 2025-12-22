@@ -8,6 +8,7 @@ from anvil.tables import app_tables, Row, order_by
 import math
 from typing import Dict, Tuple, List
 import datetime as dt
+import pytz
 import json
 from tradier_python import TradierAPI, Position
 
@@ -990,8 +991,9 @@ def log_automation_event(level: str, source: str, message: str, environment: str
 
   # 4. Write to DB
   try:
+    tz = pytz.timezone('America/New_York')
     app_tables.automationlogs.add_row(
-      timestamp=dt.datetime.now(),
+      timestamp=dt.datetime.now(tz),
       level=level,
       source=source,
       message=message,
@@ -1031,7 +1033,8 @@ def run_automation_cycle():
   t, _ = server_helpers.get_tradier_client(env)
   if not server_helpers.is_market_open(t):
     # Optional: Log only once per hour to show bot is alive but sleeping
-    now = dt.datetime.now()
+    tz = pytz.timezone('America/New_York')
+    now = dt.datetime.now(tz)
     if now.hour > 6 and now.minute >=0 and now.minute < 5:
       log_automation_event("INFO", "Scheduler", "Market Closed. Sleeping.", env)
     return
