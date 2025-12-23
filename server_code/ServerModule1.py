@@ -1035,7 +1035,7 @@ def run_automation_cycle():
     # Optional: Log only once per hour to show bot is alive but sleeping
     tz = pytz.timezone('America/New_York')
     now = dt.datetime.now(tz)
-    if now.hour > 6 and now.minute >=0 and now.minute < 5:
+    if now.hour >= 6 and now.minute >=0 and now.minute < 5:
       log_automation_event("INFO", "Scheduler", "Market Closed. Sleeping.", env)
     return
   
@@ -1061,9 +1061,7 @@ def run_automation_cycle():
     if net_liq >= panic_target:
       log_automation_event("ACTION", "CycleManager", f"PANIC PROFIT: Cycle hit ${net_liq:.2f} (Target ${panic_target})", env)
   
-      # 3. BUILD THE 'CLOSE EVERYTHING' PAYLOAD
-      # We need to close the Hedge AND all Spreads
-  
+      # 3. BUILD THE 'CLOSE EVERYTHING' PAYLOAD- We need to close the Hedge AND all Spreads  
       # A. Close Spreads
       for dto in spread_dtos:
         # Submit individual close orders for spreads

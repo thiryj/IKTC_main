@@ -74,7 +74,7 @@ CAMPAIGN_AUTO_FULL = "FULL-AUTO" #app now executes all rules including hedge man
 CAMPAIGN_ALL = [CAMPAIGN_AUTO_PRE, CAMPAIGN_AUTO_SEMI, CAMPAIGN_AUTO_FULL]
 
 # Cycles
-CYCLE_PROFIT_TRIGGER = 350.0
+CYCLE_PROFIT_TRIGGER = 350.0   # from strategy doc - 
 
 # Globals
 REFRESH_TIMER_INTERVAL = 3600
