@@ -911,7 +911,7 @@ def calculate_cycle_net_liq(t: TradierAPI, cycle_row):
       total_hedge_credit = quote['bid'] * hedge_leg['Quantity'] * config.DEFAULT_MULTIPLIER
       # Save info for the order execution later
       hedge_info = {
-        'symbol': hedge_symbol,
+        'symbol': hedge_occ,
         'quantity': hedge_leg['Quantity'],
         'bid': quote['bid'] # panic price reference
       }
@@ -921,21 +921,50 @@ def calculate_cycle_net_liq(t: TradierAPI, cycle_row):
   child_trades = app_tables.trades.search(Cycle=cycle_row, Status='OPEN')
 
   for trade in child_trades:
-    close_dto = ServerModule1.get_close_trade_dto(env, trade) # You likely need to import this or move it to helpers
+    close_dto = build_closing_trade_dto(t, trade) # returns position.get_dto
     
     if close_dto:
-      # Add to total cost (Ask price of Short - Bid price of Long)
-      # close_dto usually has the limit price embedded or we calculate it
-      # For panic calculation, we want the current MARKET price
+      cost_per_unit = close_dto['cost_to_close']
+      total_debit = cost_per_unit * trade['Quantity'] * config.DEFAULT_MULTIPLIER
+      total_spread_debit += total_debit
 
-      # Simplified: Just grab the 'mark' of the spread if you have it, 
-      # or re-quote the legs here.
-      pass 
-      # (To keep this snippet short, I assume you sum up the cost)
+      # Store for execution
+      spread_dtos.append({
+        'trade_row': trade,
+        'dto': close_dto,
+        'cost': cost_per_unit
+      })
+      
+  # Net Liq = credit Hedge - debit spread
+  net_liq = total_hedge_credit - total_spread_debit
 
-      active_spread_dtos.append(close_dto)
+  return net_liq, spread_dtos, hedge_info
 
-    # Net Liq = What we get for the Hedge - What we pay to close Spreads
-  net_liq = total_hedge_value - total_spread_cost
+def build_closing_trade_dto(t_client: TradierAPI, trade_row)->Dict:
+  """
+    Core logic to build the closing DTO. 
+    Agnostic of 'env' string; relies on the passed t_client.
+  """
+  try:
+    # 1. Get Active Legs from DB
+    trade_transactions = app_tables.transactions.search(Trade=trade_row)
+    short_leg_db = app_tables.legs.search(Transaction=q.any_of(*trade_transactions), active=True, Action='Sell to Open')[0]
+    long_leg_db = app_tables.legs.search(Transaction=q.any_of(*trade_transactions), active=True, Action='Buy to Open')[0]
 
-  return net_liq, active_spread_dtos, hedge_occ
+    # 2. Build OCC Symbols & Get Live Quotes
+    short_occ = build_occ_symbol(trade_row['Underlying'], short_leg_db['Expiration'], short_leg_db['OptionType'], short_leg_db['Strike'])
+    long_occ = build_occ_symbol(trade_row['Underlying'], long_leg_db['Expiration'], long_leg_db['OptionType'], long_leg_db['Strike'])
+
+    short_quote = get_quote(t_client, short_occ)
+    long_quote = get_quote(t_client, long_occ)
+
+    # 3. Build DTO (Position Object)
+    current_spread = positions.DiagonalPutSpread(short_quote, long_quote)
+    close_dto = current_spread.get_dto()
+    close_dto['spread_action'] = config.TRADE_ACTION_CLOSE
+    close_dto['cost_to_close'] = current_spread.calculate_cost_to_close()
+    return close_dto
+    
+  except Exception as e:
+    print(f"s.h.build_closing_trade_dto: Error building close package: {e}")
+    return None

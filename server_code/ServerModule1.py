@@ -927,35 +927,9 @@ def delete_trade(trade_row):
 def get_close_trade_dto(environment: str, trade_row: Row) -> Dict:
   """Calculates the closing trade package for an active position."""
   t, _ = server_helpers.get_tradier_client(environment)
+  dto = server_helpers.build_closing_trade_dto(t, trade_row)
+  return dto
   
-  try:
-    # 1. Get Active Legs from DB
-    trade_transactions = app_tables.transactions.search(Trade=trade_row)
-    short_leg_db = app_tables.legs.search(Transaction=q.any_of(*trade_transactions), active=True, Action='Sell to Open')[0]
-    long_leg_db = app_tables.legs.search(Transaction=q.any_of(*trade_transactions), active=True, Action='Buy to Open')[0]
-
-    # 2. Build OCC Symbols & Get Live Quotes
-    short_occ = server_helpers.build_occ_symbol(trade_row['Underlying'], short_leg_db['Expiration'], short_leg_db['OptionType'], short_leg_db['Strike'])
-    long_occ = server_helpers.build_occ_symbol(trade_row['Underlying'], long_leg_db['Expiration'], long_leg_db['OptionType'], long_leg_db['Strike'])
-
-    short_quote = server_helpers.get_quote(t, short_occ)
-    long_quote = server_helpers.get_quote(t, long_occ)
-
-    # 3. Build DTO (Position Object)
-    current_spread = positions.DiagonalPutSpread(short_quote, long_quote)
-    close_dto = current_spread.get_dto()
-
-    # Calculate Debit (Cost to Close)
-    close_dto['cost_to_close'] = current_spread.calculate_cost_to_close()
-
-    # mark as a spread closing action
-    close_dto['spread_action'] = config.TRADE_ACTION_CLOSE
-
-    return close_dto
-  except Exception as e:
-    print(f"Error getting close package: {e}")
-    return None
-
 @anvil.server.callable
 def get_price(environment: str, symbol: str, price_type: str=None)->float:
   t, _ = server_helpers.get_tradier_client(environment)
@@ -1049,41 +1023,50 @@ def run_automation_cycle():
   # --- RULE 0: CYCLE CHECK (The Panic Button) ---
   # We iterate through active CYCLES first
   open_cycles = app_tables.cycles.search(Status='Open')
+  processed_cycle_ids = set() # To prevent double processing
 
   for cycle in open_cycles:
-    # 1. Calculate Global Value
-    net_liq, spread_dtos, hedge_symbol = server_helpers.calculate_cycle_net_liq(t, cycle)
-  
-    # 2. Check Panic Threshold (e.g. $500 Profit)
-    # You might store 'Panic_Threshold' on the Cycle row, or use a global config
-    panic_target = config.CYCLE_PROFIT_TRIGGER
-  
+    # 1. Calculate Global PnL for this cycle (hedge plus current spread)
+    net_liq, hedge_info, spread_dtos = server_helpers.calculate_cycle_net_liq(t, cycle)
+    cycle_qty = cycle['HedgeLeg']['Quantity'] if cycle['HedgeLeg'] else 1
+    panic_target = config.CYCLE_PROFIT_TRIGGER * cycle_qty
     if net_liq >= panic_target:
       log_automation_event("ACTION", "CycleManager", f"PANIC PROFIT: Cycle hit ${net_liq:.2f} (Target ${panic_target})", env)
-  
-      # 3. BUILD THE 'CLOSE EVERYTHING' PAYLOAD- We need to close the Hedge AND all Spreads  
-      # A. Close Spreads
-      for dto in spread_dtos:
-        # Submit individual close orders for spreads
-        # (Or combine them if your broker supports massive multilegs, but individual is safer)
-        submit_order(env, symbol, {'to_close': dto}, quantity=1)
-  
-        # B. Close Hedge
-        # Create a simple single-leg close order
-      hedge_payload = {
-        'symbol': hedge_symbol,
-        'side': 'sell_to_close',
-        'quantity': cycle['HedgeLeg']['Quantity'],
-        'type': 'market' # Panic close usually implies "Get me out NOW"
-      }
-      t.orders.create(**hedge_payload)
-  
+
+      # Close Hedge
+      if hedge_info:
+        try:
+          hedge_payload = {
+            'symbol': hedge_info['symbol'],
+            'side': 'sell_to_close',
+            'quantity': hedge_info['quantity'],
+            'type': 'market',
+            'duration': 'day'# Panic close usually implies "Get me out NOW"
+          }
+          t.orders.create(**hedge_payload)
+          log_automation_event("INFO", "CycleManager", "Hedge Close Order Submitted", env)
+        except Exception as e:
+          log_automation_event("ERROR", "CycleManager", f"Hedge Close Failed: {e}", env)
+      
+      # Close Spread(s)
+      for item in spread_dtos:
+        trade_row = item['trade_row']
+        strategy_payload = {'to_close': item['dto']}
+        response = submit_order(environment=env, 
+                     underlying_symbo=trade_row['Underlying'],
+                     trad_dto_dict=strategy_payload,
+                     quantity=trade_row['Quantity'],
+                     limit_price=item['cost']
+                    )
+        if response:
+          log_automation_event("INFO", "CycleManager", f"Spread Close Order Submitted for {trade_row.get_id()}", env)
+    
       # 4. Close the Cycle in DB
       cycle['Status'] = 'CLOSED'
       cycle['NetPL'] = net_liq
-  
-      continue # Move to next cycle
-
+      cycle['EndDate'] = dt.date.today()
+      processed_cycle_ids.add(cycle.get_id())
+      
   # 3. SCAN: Get live data
   try:
     active_trades = get_open_trades_with_risk(env, refresh_risk=True)
