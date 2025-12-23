@@ -883,13 +883,16 @@ def is_market_open(t_client, buffer_minutes=5) -> bool:
     # FAIL SAFE: If we can't verify market is open, assume CLOSED.
     return False
 
-def calculate_cycle_net_liq(t_client, cycle_row):
+def calculate_cycle_net_liq(t: TradierAPI, cycle_row):
   """
     Calculates the total liquidation value of a Cycle:
     (Value of Long Hedge) - (Cost to Close all Short Spreads)
+    Returns: (Net_Value, Hedge_Info_Dict, List_of_Spread_DTOs)
     """
-  total_hedge_value = 0.0
-  total_spread_cost = 0.0
+  total_hedge_credit = 0.0
+  total_spread_debit = 0.0
+  spread_dtos = []
+  hedge_info = None
 
   # 1. PRICE THE HEDGE (Stored on the Cycle row)
   hedge_leg = cycle_row['HedgeLeg'] # Link to 'legs' table
@@ -903,25 +906,23 @@ def calculate_cycle_net_liq(t_client, cycle_row):
     )
 
     # Get Live Price (Bid) because we are SELLING the hedge to close
-    quote = get_quote(t_client, hedge_occ)
+    quote = get_quote(t, hedge_occ)
     if quote:
-      total_hedge_value = quote['bid'] * hedge_leg['Quantity'] * 100
+      total_hedge_credit = quote['bid'] * hedge_leg['Quantity'] * config.DEFAULT_MULTIPLIER
+      # Save info for the order execution later
+      hedge_info = {
+        'symbol': hedge_symbol,
+        'quantity': hedge_leg['Quantity'],
+        'bid': quote['bid'] # panic price reference
+      }
 
-    # 2. PRICE THE SPREADS (Stored in Trades table)
-    # Find all open trades linked to this cycle
+  # 2. PRICE THE SPREADS (Stored in Trades table)
+  # Find all open trades linked to this cycle
   child_trades = app_tables.trades.search(Cycle=cycle_row, Status='OPEN')
 
-  active_spread_dtos = [] # Keep track of these so we can return them for the close order
-
   for trade in child_trades:
-    # We can reuse your existing logic to get cost to close
-    # (Assuming you have a helper for this, or we just do it manually here for speed)
-
-    # Quick fetch of active legs for this trade
-    # ... (Implementation depends on how you link legs to trades, likely via transactions)
-    # For now, let's assume we use your 'get_close_trade_dto' logic:
-
-    close_dto = ServerModule1.get_close_trade_dto(trade) # You likely need to import this or move it to helpers
+    close_dto = ServerModule1.get_close_trade_dto(env, trade) # You likely need to import this or move it to helpers
+    
     if close_dto:
       # Add to total cost (Ask price of Short - Bid price of Long)
       # close_dto usually has the limit price embedded or we calculate it
