@@ -117,8 +117,7 @@ def submit_spread_order(
   #print(f"endpoint_url: {endpoint_url}")
   api_url = urljoin(endpoint_url, path)
 
-  payload = build_multileg_payload(tradier_client, 
-                                   underlying_symbol, 
+  payload = build_multileg_payload(underlying_symbol, 
                                    quantity, 
                                    trade_dto_dict, 
                                    limit_price)
@@ -149,14 +148,14 @@ def submit_spread_order(
     return None
 
 def build_multileg_payload(
-  tradier_client: TradierAPI,
   underlying_symbol: str, 
   quantity: int,
   trade_dto_dict: Dict,
   limit_price: float# {'to_open': dto, 'to_close': dto} nested dicts with {spread meta..., 'short_put', 'long_put'}
 )->Dict:
   """
-    Builds the API payload for a multileg order from a dict of one or multi spreads.
+    Builds the API payload for a singleton or multileg order from a dict of one or multi spreads.
+    if spreads:
     - A list with 1 spread is treated as an 'open' [open] or a 'close' [close].
     - A list with 2 spreads is treated as a 'roll' [open, close].
     """
@@ -194,7 +193,7 @@ def build_multileg_payload(
   }
   # Dynamically add each leg and its quantity to the payload
   
-  for i, leg in enumerate(legs):
+  for i, leg in enumerate(l for l in legs if l['symbol']):
     payload[f'option_symbol[{i}]'] = leg['symbol']
     payload[f'side[{i}]'] = leg['side']
     payload[f'quantity[{i}]'] = quantity # Assumes same quantity for all new/closing legs
@@ -938,7 +937,7 @@ def calculate_cycle_net_liq(t: TradierAPI, cycle_row):
   # Net Liq = credit Hedge - debit spread
   net_liq = total_hedge_credit - total_spread_debit
 
-  return net_liq, spread_dtos, hedge_info
+  return net_liq, hedge_info, spread_dtos
 
 def build_closing_trade_dto(t_client: TradierAPI, trade_row)->Dict:
   """

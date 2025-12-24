@@ -148,3 +148,53 @@ position_dto = {
     return position_dto
       
 """
+
+'''
+definition of spread_dto - its a list of spread ditcs with [{'trade_row', 'cost', 'dto'}]
+created in calculate_cycle_net_liq
+[
+  {
+    # 1. THE DB REFERENCE
+    'trade_row': <LiveObject: app_tables.trades row>, 
+
+    # 2. THE PRICE
+    'cost': 0.45,  # (float) The specific cost to close this spread (calculated inside the helper)
+
+    # 3. THE PAYLOAD DATA (The 'dto')
+    'dto': {
+        'spread_action': 'close',
+        'cost_to_close': 0.45,
+        
+        # Standard Spread Metrics (from DiagonalPutSpread.get_dto)
+        'net_premium': 0.85,
+        'margin': 500.0,
+        'ROM': 0.0017,
+        'short_put_DTE': 24,
+        'ROM_rate': 0.00007,
+
+        # The Legs
+        'short_put': {
+            'symbol': 'IWM...P...',
+            'option_type': 'put',
+            'strike': 195.0,
+            'expiration_date': datetime.date(2025, 12, 19),
+            'bid': 1.05,
+            'ask': 1.10,
+            'last': 1.08,
+            'contract_size': 100
+        },
+        'long_put': {
+            'symbol': 'IWM...P...',
+            'option_type': 'put',
+            'strike': 190.0,
+            'expiration_date': datetime.date(2025, 12, 19),
+            'bid': 0.60,
+            'ask': 0.65,
+            'last': 0.62,
+            'contract_size': 100
+        }
+    }
+  },
+  # ... next spread ...
+]
+'''
