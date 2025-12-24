@@ -1009,7 +1009,7 @@ def run_automation_cycle():
     # Optional: Log only once per hour to show bot is alive but sleeping
     tz = pytz.timezone('America/New_York')
     now = dt.datetime.now(tz)
-    if now.hour >= 6 and now.minute >=0 and now.minute < 5:
+    if (6 <= now.hour <= 9) and (0 <= now.minute < 5):
       log_automation_event("INFO", "Scheduler", "Market Closed. Sleeping.", env)
     return
   
