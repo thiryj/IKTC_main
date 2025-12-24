@@ -149,56 +149,111 @@ def submit_spread_order(
 
 def build_multileg_payload(
   underlying_symbol: str, 
-  quantity: int,
-  trade_dto_dict: Dict,
-  limit_price: float# {'to_open': dto, 'to_close': dto} nested dicts with {spread meta..., 'short_put', 'long_put'}
-)->Dict:
+  quantity: int, 
+  trade_dto_dict: dict, 
+  limit_price: float = None
+) -> dict:
   """
-    Builds the API payload for a singleton or multileg order from a dict of one or multi spreads.
-    if spreads:
-    - A list with 1 spread is treated as an 'open' [open] or a 'close' [close].
-    - A list with 2 spreads is treated as a 'roll' [open, close].
-    """
-  legs = []
-  
-  #print(f"trade_dto_dict is: {trade_dto_dict}")
-  # Process the 'to_close' spread
-  if 'to_close' in trade_dto_dict:
-    closing_dto = trade_dto_dict['to_close']
-    legs.append({'symbol': closing_dto.get('short_put',{}).get('symbol'), 'side': 'buy_to_close'})
-    legs.append({'symbol': closing_dto.get('long_put', {}).get('symbol'), 'side': 'sell_to_close'})
+    Constructs the Tradier API payload for both Single-Leg and Multi-Leg orders.
     
-  # Process the 'to_open'
-  if 'to_open' in trade_dto_dict:
-    opening_dto = trade_dto_dict['to_open']
-    legs.append({'symbol': opening_dto.get('short_put',{}).get('symbol'), 'side': 'sell_to_open'})
-    legs.append({'symbol': opening_dto.get('long_put', {}).get('symbol'), 'side': 'buy_to_open'})
+    Args:
+        underlying_symbol (str): The stock symbol (e.g., 'SPY').
+        quantity (int): Number of contracts per leg.
+        trade_dto_dict (dict): Contains 'to_open'/'to_close' and 'order_class'.
+        limit_price (float, optional): Net price. Positive=Credit, Negative=Debit. 
+                                       If None, defaults to Market.
 
-  #print(f"build_multileg_payload: trade_dto_dict: {trade_dto_dict}")
-  #print(f"build_multileg_payload: limit price: {limit_price}")
-  #print(f"legs are: {legs}")
-        
+    Returns:
+        dict: The formatted payload ready for t.session.post().
+    """
+
+  # 1. DETERMINE ORDER CLASS
+  # Default to 'multileg' if not specified, for backward compatibility
+  target_class = trade_dto_dict.get('order_class', 'multileg')
+
+  legs = []
+
+  # 2. EXTRACT LEGS: 'to_close' (Closing existing positions)
+  if 'to_close' in trade_dto_dict:
+    data = trade_dto_dict['to_close']
+
+    if target_class == 'option':
+      # Single Leg Mode: The dict IS the leg info
+      # Expects: {'symbol': '...', 'side': 'sell_to_close'}
+      legs.append(data)
+
+    elif target_class == 'multileg':
+      # Multi Leg Mode: The dict contains named legs (e.g. Put Spread)
+      # We map specific keys to sides
+      if 'short_put' in data:
+        legs.append({'symbol': data['short_put']['symbol'], 'side': 'buy_to_close'})
+      if 'long_put' in data:
+        legs.append({'symbol': data['long_put']['symbol'], 'side': 'sell_to_close'})
+        # Add call logic here if you trade Iron Condors later
+
+    # 3. EXTRACT LEGS: 'to_open' (Opening new positions)
+  if 'to_open' in trade_dto_dict:
+    data = trade_dto_dict['to_open']
+
+    if target_class == 'option':
+      # Single Leg Mode
+      legs.append(data)
+
+    elif target_class == 'multileg':
+      # Multi Leg Mode
+      if 'short_put' in data:
+        legs.append({'symbol': data['short_put']['symbol'], 'side': 'sell_to_open'})
+      if 'long_put' in data:
+        legs.append({'symbol': data['long_put']['symbol'], 'side': 'buy_to_open'})
+
+    # Validate we actually found something
   if not legs:
-    raise ValueError("build_multileg_payload: No valid legs found in trade_dto_dict")
-    
-  payload_price = f"{abs(limit_price):.2f}"
-  payload_type = 'credit' if limit_price >= 0 else 'debit'
-    
+    raise ValueError(f"build_multileg_payload: No valid legs found in DTO for class {target_class}")
+
+    # 4. INITIALIZE PAYLOAD
   payload = {
-    'class': 'multileg',
+    'class': target_class,
     'symbol': underlying_symbol,
-    'duration': 'day',
-    'type': payload_type,
-    'price': payload_price
+    'duration': 'day'
   }
-  # Dynamically add each leg and its quantity to the payload
-  
-  for i, leg in enumerate(l for l in legs if l['symbol']):
-    payload[f'option_symbol[{i}]'] = leg['symbol']
-    payload[f'side[{i}]'] = leg['side']
-    payload[f'quantity[{i}]'] = quantity # Assumes same quantity for all new/closing legs
-    
-  #print(f"build_multi_leg_payload: payload: {payload}")
+
+  # 5. HANDLE PRICING & ORDER TYPE
+  # Tradier logic differs between 'option' and 'multileg' endpoints
+
+  if target_class == 'option':
+    # --- SINGLE LEG PRICING ---
+    if limit_price is not None:
+      payload['type'] = 'limit'
+      payload['price'] = f"{abs(limit_price):.2f}"
+    else:
+      payload['type'] = 'market'
+
+  elif target_class == 'multileg':
+    # --- MULTILEG PRICING ---
+    # 'type' field indicates Debit/Credit direction
+    if limit_price is not None:
+      # Convention: Positive = Credit, Negative = Debit
+      payload['type'] = 'credit' if limit_price >= 0 else 'debit'
+      payload['price'] = f"{abs(limit_price):.2f}"
+    else:
+      payload['type'] = 'market'
+
+    # 6. SERIALIZE LEGS TO PAYLOAD
+  if target_class == 'option':
+    # Single Leg: Use root-level keys (No indices)
+    # We take the first leg found (Logic assumes single leg DTO only has 1)
+    leg = legs[0]
+    payload['option_symbol'] = leg['symbol']
+    payload['side'] = leg['side']
+    payload['quantity'] = str(quantity)
+
+  elif target_class == 'multileg':
+    # Multi Leg: Use indexed keys (option_symbol[0], etc.)
+    for i, leg in enumerate(legs):
+      payload[f'option_symbol[{i}]'] = leg['symbol']
+      payload[f'side[{i}]'] = leg['side']
+      payload[f'quantity[{i}]'] = str(quantity)
+
   return payload
 
 def get_strike(symbol:str) -> float:
@@ -778,6 +833,7 @@ def get_vertical_spread(t: TradierAPI,
   if not expirations:
     return {"error": f"No expirations found for {symbol}"}
   target_date = expirations[0] # Pick the nearest one (0DTE logic)
+  print(f"in get_vertical_spreads, symbol: {symbol}")
   
   # 3. Fetch Chain WITH GREEKS
   chain = fetch_option_chain_direct(t, symbol, target_date, greeks=True)
@@ -910,9 +966,14 @@ def calculate_cycle_net_liq(t: TradierAPI, cycle_row):
       total_hedge_credit = quote['bid'] * hedge_leg['Quantity'] * config.DEFAULT_MULTIPLIER
       # Save info for the order execution later
       hedge_info = {
-        'symbol': hedge_occ,
+        'underlying': hedge_leg['Underlying'],
+        'symbol': hedge_occ, 
         'quantity': hedge_leg['Quantity'],
-        'bid': quote['bid'] # panic price reference
+        'bid': quote['bid'],
+
+        # NEW: Explicit instruction for Tradier
+        'order_class': 'option', 
+        'side': 'sell_to_close' 
       }
 
   # 2. PRICE THE SPREADS (Stored in Trades table)
@@ -962,6 +1023,7 @@ def build_closing_trade_dto(t_client: TradierAPI, trade_row)->Dict:
     close_dto = current_spread.get_dto()
     close_dto['spread_action'] = config.TRADE_ACTION_CLOSE
     close_dto['cost_to_close'] = current_spread.calculate_cost_to_close()
+    close_dto['order_class'] = 'multileg'
     return close_dto
     
   except Exception as e:
