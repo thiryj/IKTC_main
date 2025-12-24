@@ -7,6 +7,7 @@ from typing import Dict
 
 from tradier_python.models import Quote
 import datetime
+from types import SimpleNamespace
 
 class DiagonalPutSpread:    
   def __init__(self, short_put: Quote, long_put: Quote):
@@ -15,13 +16,58 @@ class DiagonalPutSpread:
     """
     # Helper to convert dict to Quote if necessary
     def ensure_quote(item):
-      if isinstance(item, dict):
-        try:
-          return Quote(**item)
-        except Exception as e:
-          print(f"Error converting dict to Quote: {e}")
-          return item
-      return item
+      # If it's already an object, just return it
+      if not isinstance(item, dict):
+        return item
+
+      # --- PATCHING LOGIC START ---
+      # Tradier Sandbox often sends incomplete dicts. 
+      # We fill gaps so Quote(**item) validation passes.
+      defaults = {
+        'open_interest': 0,
+        'volume': 0, 
+        'last_volume': 0,
+        'average_volume': 0,
+        'greeks': None,
+        'bid': 0.0,
+        'ask': 0.0,
+        'last': 0.0,
+        'contract_size': 100,
+        'bidexch': 'N/A', 
+        'askexch': 'N/A',
+        'description': 'No Description',
+        'exch': 'N/A'
+      }
+      for k, v in defaults.items():
+        if item.get(k) is None:
+          item[k] = v
+
+      # Try to create the real Quote object
+      try:
+        return Quote(**item)
+      except Exception as e:
+        print(f"Warning: Quote validation failed: {e}. Using Fallback Object.")
+
+        # --- FALLBACK LOGIC ---
+        # If strict validation still fails, create a "Mock Object" 
+        # so the rest of the class doesn't crash on .attribute access.
+
+        # 1. Handle Date Parsing (Crucial for DTE calc)
+        if isinstance(item.get('expiration_date'), str):
+          try:
+            # Parse 'YYYY-MM-DD' to date object
+            y, m, d = map(int, item['expiration_date'].split('-'))
+            item['expiration_date'] = datetime.date(y, m, d)
+          except:
+            pass # Keep as string if parsing fails
+
+        # 2. Handle Enum (get_dto calls .option_type.name)
+        if isinstance(item.get('option_type'), str):
+          # Create a tiny object so .name returns the string
+          item['option_type'] = SimpleNamespace(name=item['option_type'])
+
+        return SimpleNamespace(**item)
+      # --- END ensure_quote ---
       
     # Data (Attributes)
     self.short_put = ensure_quote(short_put)
@@ -30,7 +76,7 @@ class DiagonalPutSpread:
     # Behavior (Methods) that calculate properties from the data
     self.net_premium = self.calculate_net_premium()
     self.margin = self.calculate_margin()
-    self.ROM = self.net_premium / self.margin
+    self.ROM = self.net_premium / self.margin if (self.margin and self.margin > 0) else 0.0
     self.short_put_DTE = max(1, (self.short_put.expiration_date - datetime.date.today()).days)
     self.ROM_rate = self.ROM / self.short_put_DTE
 
