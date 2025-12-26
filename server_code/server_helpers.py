@@ -1029,3 +1029,74 @@ def build_closing_trade_dto(t_client: TradierAPI, trade_row)->Dict:
   except Exception as e:
     print(f"s.h.build_closing_trade_dto: Error building close package: {e}")
     return None
+
+def scan_and_initialize_cycle(t, account_id):
+  """
+    Phase 1: The Scanner
+    Checks if an Active Cycle exists. If NOT, scans Tradier for a valid manual Hedge
+    to 'adopt' and start a new Cycle.
+    """
+  print("--- Phase 1: Scanning for Cycle Context ---")
+
+  # 1. SINGLETON GUARD: Do we already have an open cycle?
+  # We assume 'Status' column exists in 'cycles' table.
+  active_cycle = app_tables.cycles.get(Status='Open')
+
+  if active_cycle:
+    print(f"Active Cycle found (ID: {active_cycle.get_id()}). Skipping initialization.")
+    return active_cycle
+
+    # 2. If NO Cycle, fetch positions to look for a "Seed" Hedge
+  print("No Active Cycle. Scanning positions for Hedge Candidates...")
+  positions = t.account.get_positions(account_id)
+
+  # Handle empty account case
+  if not positions:
+    print("No positions found in account.")
+    return None
+
+    # Normalize to list (Tradier returns dict if only 1 pos, list if multiple)
+  pos_list = positions if isinstance(positions, list) else [positions]
+
+  valid_hedge = None
+
+  for p in pos_list:
+    # 3. FILTER CRITERIA
+    # Must be a PUT (Long)
+    if p.get('symbol') and 'P' in p['symbol']: # Rough check, or use option_type if available
+      # Need detailed quote for Greeks/DTE if not in position payload
+      # (Positions usually have minimal data, so we might need to fetch the quote)
+      # Let's assume we fetch the quote to check DTE/Delta
+      quote = t.quotes.get(p['symbol'])
+
+      if not quote or not quote.get('greeks'):
+        continue
+
+        # DTE Calculation
+      expiry_str = quote['expiration_date'] # 'YYYY-MM-DD'
+      expiry_date = datetime.datetime.strptime(expiry_str, "%Y-%m-%d").date()
+      dte = (expiry_date - datetime.date.today()).days
+
+      # Delta Check (Puts are negative, so use ABS)
+      delta = abs(float(quote['greeks'].get('delta', 0) or 0))
+
+      # YOUR RULES: DTE > 50, Delta 0.05 - 0.35
+      if dte > 50 and 0.05 <= delta <= 0.35:
+        print(f"MATCH FOUND: {p['symbol']} (DTE: {dte}, Delta: {delta})")
+        valid_hedge = p
+        break # Found our ONE hedge
+
+    # 4. INITIALIZATION
+  if valid_hedge:
+    print(f"Initializing New Cycle based on Hedge: {valid_hedge['symbol']}")
+    new_cycle = app_tables.cycles.add_row(
+      Status='Open',
+      StartDate=datetime.date.today(),
+      HedgeSymbol=valid_hedge['symbol'],
+      HedgeID=valid_hedge['id'], # Store Tradier ID to track it
+      NetPL=0.0
+    )
+    return new_cycle
+  else:
+    print("No valid Hedge Candidates found. Staying Idle.")
+    return None
