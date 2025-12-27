@@ -30,7 +30,7 @@ def get_settings():
       refresh_timer_on=True,
       allow_diagonals=False,
       margin_expansion_limit=0,
-      default_width=config.DEFTAULT_WIDTH,
+      default_width=config.DEFAULT_WIDTH,
       harvest_fraction=config.DEFAULT_HARVEST_TARGET,
       automation_enabled=False
     )
@@ -1009,9 +1009,9 @@ def run_automation_cycle():
     # Optional: Log only once per hour to show bot is alive but sleeping
     tz = pytz.timezone('America/New_York')
     now = dt.datetime.now(tz)
-    if (6 <= now.hour <= 9) and (0 <= now.minute < 5):
+    if (6 <= now.hour <= 9) and (0 <= now.minute < 55):
       log_automation_event("INFO", "Scheduler", "Market Closed. Sleeping.", env)
-    return
+    #return
   
   print(f"Starting automation cycle for {env}...")
   log_automation_event(
@@ -1020,6 +1020,69 @@ def run_automation_cycle():
     message=f"Starting automation cycle for {env}...", 
     environment=env
   )
+
+  # First:  initialze cycle if one is not running
+  # 2 step:  scan for a naked hedge, if found, put on spreads
+  active_cycle = server_helpers.scan_and_initialize_cycle(t)
+  
+  if active_cycle:
+    # 2. RECONCILE (Phase 2)
+    # This now returns 0 if we are already active (Coasting)
+    quantity_to_add, trade_dto = server_helpers.reconcile_cycle_state(t, active_cycle)
+  
+    if quantity_to_add > 0 and trade_dto:
+      print(f"EXECUTING ENTRY: Selling {quantity_to_add} spreads...")
+  
+      # A. Prepare the Data for submit_order
+      symbol = trade_dto['parameters']['symbol']
+      credit_price = trade_dto['financials']['credit_per_contract']
+
+      # Extract the Position DTO from the Object returned by Reconciler
+      # trade_dto['legs'] is the DiagonalPutSpread object
+      position_dto = trade_dto['legs'].get_dto() 
+
+      # Flag it for submit_order logic
+      position_dto['order_class'] = 'multileg'
+
+      # Wrap it: submit_order expects {'to_open': ...} for new trades
+      execution_payload = {'to_open': position_dto}
+
+      # B. Call your existing execution engine
+      response = submit_order(
+        environment=env,
+        underlying_symbol=symbol,
+        trade_dto_dict=execution_payload,
+        quantity=quantity_to_add,
+        preview=False,           # <--- LIVE TRADE
+        limit_price=credit_price # Limit order at the target credit
+      )
+
+      # C. Handle Result & Link to Cycle
+      if response and response.get('order', {}).get('status') == 'ok':
+        order_id = response['order']['id']
+        print(f"Trade Success. Order ID: {order_id}")
+
+        # Create the Trade Row linked to the Cycle
+        app_tables.trades.add_row(
+          Cycle=active_cycle,            # <--- THE CRITICAL LINK
+          Status=config.TRADE_ACTION_OPEN,
+          Symbol=symbol,
+          Quantity=quantity_to_add,
+          OpenDate=dt.date.today(),
+          FillPrice=credit_price,        # Estimated fill
+          Strategy=config.POSITION_TYPE_VERTICAL,
+          Account=env,
+          TradierOrderID=str(order_id)
+        )
+
+        log_automation_event("INFO", "Reconciler", f"Placed Entry Order {order_id} for {quantity_to_add} spreads", env)
+
+      else:
+        # Log Failure
+        err = response.get('order', {}).get('errors') if response else "Unknown API Error"
+        print(f"Trade Execution Failed: {err}")
+        log_automation_event("ERROR", "Reconciler", f"Entry Order Failed: {err}", env)
+  
   # --- RULE 0: CYCLE CHECK (The Panic Button) ---
   # We iterate through active CYCLES first
   open_cycles = app_tables.cycles.search(Status='Open')

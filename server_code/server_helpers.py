@@ -1030,7 +1030,7 @@ def build_closing_trade_dto(t_client: TradierAPI, trade_row)->Dict:
     print(f"s.h.build_closing_trade_dto: Error building close package: {e}")
     return None
 
-def scan_and_initialize_cycle(t, account_id):
+def scan_and_initialize_cycle(t:TradierAPI):
   """
     Phase 1: The Scanner
     Checks if an Active Cycle exists. If NOT, scans Tradier for a valid manual Hedge
@@ -1048,7 +1048,7 @@ def scan_and_initialize_cycle(t, account_id):
 
     # 2. If NO Cycle, fetch positions to look for a "Seed" Hedge
   print("No Active Cycle. Scanning positions for Hedge Candidates...")
-  positions = t.account.get_positions(account_id)
+  positions = t.get_positions()
 
   # Handle empty account case
   if not positions:
@@ -1100,3 +1100,89 @@ def scan_and_initialize_cycle(t, account_id):
   else:
     print("No valid Hedge Candidates found. Staying Idle.")
     return None
+
+def reconcile_cycle_state(t:TradierAPI, active_cycle):
+  """
+    Phase 2: The Reconciler (Entry Logic Only)
+    Checks if the cycle needs to enter new positions based on the '5/C' rule.
+    STRICT RULE: If ANY spreads are already open, we do nothing (Coasting Mode).
+    """
+  print(f"--- Phase 2: Reconciling Cycle {active_cycle.get_id()} ---")
+
+  # 1. FETCH RULESET DIRECTLY FROM CYCLE
+  rules = active_cycle['RuleSet']
+  if not rules:
+    print("CRITICAL: Cycle has no linked RuleSet! Using defaults.")
+    target_delta = 0.20
+    magic_number = 5
+  else:
+    target_delta = rules['SpreadDelta']
+    magic_number = rules['SpreadSizingMagicNum']
+
+  print(f"Using RuleSet '{rules['Name'] if rules else 'Default'}': Delta={target_delta}, MagicNum={magic_number}")
+
+  # 1. ONE-SHOT GUARD (Coasting Mode)
+  # Search for ANY open trade linked to this cycle
+  existing_trades = app_tables.trades.search(
+    Cycle=active_cycle, 
+    Status=config.CYCLE_STATUS_OPEN
+  )
+
+  # If we have even 1 active spread, we are "deployed" -> Exit immediately.
+  if len(existing_trades) > 0:
+    print("Cycle is Active (Coasting Mode). No new entries allowed.")
+    return 0, None
+
+    # 2. GET HEDGE CONTEXT
+  hedge_id = active_cycle['HedgeID']
+  positions = t.get_positions()
+  pos_list = positions if isinstance(positions, list) else [positions]
+
+  # Find the specific hedge leg to get its quantity
+  hedge_pos = next((p for p in pos_list if p['id'] == hedge_id), None)
+
+  if not hedge_pos:
+    print(f"CRITICAL: Hedge ID {hedge_id} not found in Tradier positions.")
+    return 0, None
+
+  hedge_qty = int(hedge_pos['quantity'])
+  print(f"Hedge Found: {hedge_qty} contract(s). Calculating entry size...")
+
+  # 3. GET MARKET PRICING ('C')
+  # Use 0.20 Delta as per strategy doc 
+  # Use Width 25 as per strategy doc 
+  underlying = active_cycle['HedgeSymbol'][:3] # e.g. 'SPX'
+
+  spread_result = get_vertical_spread(
+    t, 
+    symbol=underlying, 
+    target_delta=target_delta, 
+    width=config.DEFAULT_WIDTH,
+    quantity=1 # Dummy qty to get price
+  )
+
+  if spread_result.get('error'):
+    print(f"Market Check Failed: {spread_result['error']}")
+    return 0, None
+
+  c_price = spread_result['financials']['credit_per_contract']
+
+  # Safety Check: Ignore garbage data or tiny premiums
+  if c_price < 0.20: 
+    print(f"Premium too low (${c_price}). Waiting for better pricing.")
+    return 0, None
+
+    # 4. CALCULATE TARGET (The 5/C Formula)
+    # Strategy: Quantity = Hedge count * 5 / C 
+  raw_target = (hedge_qty * magic_number) / c_price
+  target_qty = math.floor(raw_target) # Always round down for safety
+
+  # Sanity Check: Ensure we sell at least 1, but cap max risk (e.g. 20)
+  target_qty = max(1, min(target_qty, 20))
+
+  print(f"Sizing Logic: ({hedge_qty} Hedge * {magic_number}) / ${c_price} = {raw_target:.2f} -> Target {target_qty} Spreads")
+
+  # 5. UPDATE DTO & RETURN
+  spread_result['parameters']['quantity'] = target_qty
+
+  return target_qty, spread_result
