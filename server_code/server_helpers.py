@@ -1047,7 +1047,7 @@ def scan_and_initialize_cycle(t:TradierAPI, env:str=config.ENV_SANDBOX):
   # 2. If NO Cycle, fetch positions to look for a "Seed" Hedge
   print("No Active Cycle. Scanning positions for Hedge Candidates...")
   if config.MOCK:
-    positions = [{'symbol': 'SPXW251219P05500000', 'id': 12345, 'quantity': 1.0}]
+    positions = [{'symbol': 'SPXW260619P05500000', 'id': 12345, 'quantity': 1.0}]
   else:
     positions = t.get_positions()
     if not positions:
@@ -1204,6 +1204,10 @@ def reconcile_cycle_state(t:TradierAPI, active_cycle):
   hedge_occ = active_hedge_leg[0]['OCCSymbol']
   
   positions = t.get_positions() or []
+  
+  # comment this next line out for production, testing only
+  positions = [{'symbol': 'SPXW260619P05500000', 'quantity': 1, 'id': 99999}]
+  
   pos_list = positions if isinstance(positions, list) else [positions]
 
   # Find match by Symbol
@@ -1251,3 +1255,4 @@ def reconcile_cycle_state(t:TradierAPI, active_cycle):
   spread_result['parameters']['quantity'] = target_qty
 
   return target_qty, spread_result
+

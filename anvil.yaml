@@ -177,10 +177,13 @@ db_schema:
     - admin_ui: {width: 200}
       name: TargetHarvestPrice
       type: number
-    - admin_ui: {width: 200}
+    - admin_ui: {order: 8, width: 93}
       name: Cycle
       target: cycles
       type: link_single
+    - admin_ui: {order: 9, width: 200}
+      name: Quantity
+      type: number
     server: full
     title: Trades
   transactions:
