@@ -1125,7 +1125,8 @@ def reconcile_cycle_state(t:TradierAPI, active_cycle):
     """
   print(f"--- Phase 2: Reconciling Cycle {active_cycle.get_id()} ---")
   print(f"in reconcile.  active_cycle: {active_cycle}")
-
+  settings_row = app_tables.settings.get()
+  
   # 1. FETCH RULESET DIRECTLY FROM CYCLE
   rules = active_cycle['RuleSet']
   if not rules:
@@ -1169,13 +1170,7 @@ def reconcile_cycle_state(t:TradierAPI, active_cycle):
   print(f"Hedge Found: {hedge_qty} contract(s). Calculating entry size...")
 
   # 3. GET MARKET PRICING ('C')
-  # Use 0.20 Delta as per strategy doc 
-  # Use Width 25 as per strategy doc 
-  if active_cycle['HedgeLeg']:
-    underlying = active_cycle['HedgeLeg']['Underlying']
-  else:
-    print("Error: Cycle missing HedgeLeg link. Defaulting to SPX.")
-    underlying = "SPX"
+  underlying = settings_row['default_symbol']  if settings_row else config.DEFAULT_SYMBOL
 
   spread_result = get_vertical_spread(
     t, 
