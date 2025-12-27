@@ -33,20 +33,20 @@ db_schema:
       name: HedgeLeg
       target: legs
       type: link_single
-    - admin_ui: {order: 2, width: 200}
+    - admin_ui: {order: 2, width: 81}
       name: StartDate
       type: date
-    - admin_ui: {order: 3, width: 200}
+    - admin_ui: {order: 3, width: 73}
       name: EndDate
       type: date
-    - admin_ui: {order: 4, width: 200}
+    - admin_ui: {order: 4, width: 55}
       name: NetPL
       type: number
-    - admin_ui: {order: 5, width: 200}
+    - admin_ui: {order: 5, width: 118}
       name: RuleSet
       target: rulesets
       type: link_single
-    - admin_ui: {order: -1, width: 200}
+    - admin_ui: {order: -1, width: 58}
       name: Name
       type: string
     server: full
@@ -81,26 +81,29 @@ db_schema:
   rulesets:
     client: none
     columns:
-    - admin_ui: {order: 0, width: 200}
+    - admin_ui: {order: 0, width: 58}
       name: Name
       type: string
-    - admin_ui: {order: 1, width: 200}
+    - admin_ui: {order: 1, width: 138}
       name: Description
       type: string
-    - admin_ui: {order: 2, width: 200}
+    - admin_ui: {order: 2, width: 95}
       name: HedgeDelta
       type: number
-    - admin_ui: {order: 3, width: 200}
+    - admin_ui: {order: 3, width: 84}
       name: HedgeDTE
       type: number
-    - admin_ui: {order: 4, width: 200}
+    - admin_ui: {order: 4, width: 99}
       name: SpreadDelta
       type: number
-    - admin_ui: {order: 5, width: 200}
+    - admin_ui: {order: 5, width: 122}
       name: HarvestFraction
       type: number
-    - admin_ui: {order: 6, width: 200}
+    - admin_ui: {order: 6, width: 139}
       name: RollTriggerMultiple
+      type: number
+    - admin_ui: {order: 7, width: 130}
+      name: PanicHarvestDPU
       type: number
     server: full
     title: RuleSets

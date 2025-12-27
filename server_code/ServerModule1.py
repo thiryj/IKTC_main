@@ -99,8 +99,8 @@ def get_open_trades_for_dropdown(environment: str=config.ENV_SANDBOX):
             long_strike = leg['Strike']
 
             # This is a cleaner, more direct query if your actions are distinct
-      short_leg = app_tables.legs.search(Transaction=q.any_of(*trade_transactions), active=True, Action='Sell to Open')
-      long_leg = app_tables.legs.search(Transaction=q.any_of(*trade_transactions), active=True, Action='Buy to Open')
+      short_leg = app_tables.legs.search(Transaction=q.any_of(*trade_transactions), active=True, Action=config.ACTION_SELL_TO_OPEN)
+      long_leg = app_tables.legs.search(Transaction=q.any_of(*trade_transactions), active=True, Action=config.ACTION_BUY_TO_OPEN)
 
       if short_leg:
         short_strike = short_leg[0]['Strike']
@@ -734,11 +734,11 @@ def get_roll_package_dto(environment: str,
     trade_transactions = app_tables.transactions.search(Trade=trade_row)
     short_leg_db = app_tables.legs.search(
       Transaction=q.any_of(*trade_transactions),
-      active=True, Action='Sell to Open'
+      active=True, Action=config.ACTION_SELL_TO_OPEN
     )[0]
     long_leg_db = app_tables.legs.search(
       Transaction=q.any_of(*trade_transactions),
-      active=True, Action='Buy to Open'
+      active=True, Action=config.ACTION_BUY_TO_OPEN
     )[0]
 
     short_occ = server_helpers.build_occ_symbol(

@@ -314,7 +314,7 @@ def build_leg_dto(spread_dto: Dict, option_index)->Dict:
   """
   selected_leg = spread_dto[option_index]
   leg_dto = {
-    'action': 'Sell to Open',
+    'action': config.ACTION_SELL_TO_OPEN,
     'type': selected_leg['option_type'],
     'strike': selected_leg['strike'],
     'expiration': selected_leg['expiration_date'],
@@ -324,7 +324,7 @@ def build_leg_dto(spread_dto: Dict, option_index)->Dict:
 
 """
 opening_leg_1 = {
-    'action': 'Sell to Open',
+    'action': config.ACTION_SELL_TO_OPEN,
     'type': new_short_leg_dto['option_type'],
     'strike': new_short_leg_dto['strike'],
     'expiration': new_short_leg_dto['expiration_date'],
@@ -978,7 +978,7 @@ def calculate_cycle_net_liq(t: TradierAPI, cycle_row):
 
   # 2. PRICE THE SPREADS (Stored in Trades table)
   # Find all open trades linked to this cycle
-  child_trades = app_tables.trades.search(Cycle=cycle_row, Status='OPEN')
+  child_trades = app_tables.trades.search(Cycle=cycle_row, Status=config.CYCLE_STATUS_OPEN)
 
   for trade in child_trades:
     close_dto = build_closing_trade_dto(t, trade) # returns position.get_dto
@@ -1008,8 +1008,8 @@ def build_closing_trade_dto(t_client: TradierAPI, trade_row)->Dict:
   try:
     # 1. Get Active Legs from DB
     trade_transactions = app_tables.transactions.search(Trade=trade_row)
-    short_leg_db = app_tables.legs.search(Transaction=q.any_of(*trade_transactions), active=True, Action='Sell to Open')[0]
-    long_leg_db = app_tables.legs.search(Transaction=q.any_of(*trade_transactions), active=True, Action='Buy to Open')[0]
+    short_leg_db = app_tables.legs.search(Transaction=q.any_of(*trade_transactions), active=True, Action=config.ACTION_SELL_TO_OPEN)[0]
+    long_leg_db = app_tables.legs.search(Transaction=q.any_of(*trade_transactions), active=True, Action=config.ACTION_BUY_TO_OPEN)[0]
 
     # 2. Build OCC Symbols & Get Live Quotes
     short_occ = build_occ_symbol(trade_row['Underlying'], short_leg_db['Expiration'], short_leg_db['OptionType'], short_leg_db['Strike'])
@@ -1040,7 +1040,7 @@ def scan_and_initialize_cycle(t, account_id):
 
   # 1. SINGLETON GUARD: Do we already have an open cycle?
   # We assume 'Status' column exists in 'cycles' table.
-  active_cycle = app_tables.cycles.get(Status='Open')
+  active_cycle = app_tables.cycles.get(Status=config.CYCLE_STATUS_OPEN)
 
   if active_cycle:
     print(f"Active Cycle found (ID: {active_cycle.get_id()}). Skipping initialization.")
@@ -1074,14 +1074,14 @@ def scan_and_initialize_cycle(t, account_id):
 
         # DTE Calculation
       expiry_str = quote['expiration_date'] # 'YYYY-MM-DD'
-      expiry_date = datetime.datetime.strptime(expiry_str, "%Y-%m-%d").date()
-      dte = (expiry_date - datetime.date.today()).days
+      expiry_date = dt.datetime.strptime(expiry_str, "%Y-%m-%d").date()
+      dte = (expiry_date - dt.date.today()).days
 
       # Delta Check (Puts are negative, so use ABS)
       delta = abs(float(quote['greeks'].get('delta', 0) or 0))
 
       # YOUR RULES: DTE > 50, Delta 0.05 - 0.35
-      if dte > 50 and 0.05 <= delta <= 0.35:
+      if dte > 50 and 0.05 <= abs(delta) <= 0.35:
         print(f"MATCH FOUND: {p['symbol']} (DTE: {dte}, Delta: {delta})")
         valid_hedge = p
         break # Found our ONE hedge
@@ -1090,8 +1090,8 @@ def scan_and_initialize_cycle(t, account_id):
   if valid_hedge:
     print(f"Initializing New Cycle based on Hedge: {valid_hedge['symbol']}")
     new_cycle = app_tables.cycles.add_row(
-      Status='Open',
-      StartDate=datetime.date.today(),
+      Status=config.CYCLE_STATUS_OPEN,
+      StartDate=dt.date.today(),
       HedgeSymbol=valid_hedge['symbol'],
       HedgeID=valid_hedge['id'], # Store Tradier ID to track it
       NetPL=0.0
