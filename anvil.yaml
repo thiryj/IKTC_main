@@ -3,22 +3,22 @@ db_schema:
   automationlogs:
     client: none
     columns:
-    - admin_ui: {order: 0, width: 200}
+    - admin_ui: {width: 200}
       name: timestamp
       type: datetime
-    - admin_ui: {order: 1, width: 200}
+    - admin_ui: {width: 200}
       name: level
       type: string
-    - admin_ui: {order: 2, width: 200}
+    - admin_ui: {width: 200}
       name: source
       type: string
-    - admin_ui: {order: 3, width: 200}
+    - admin_ui: {width: 200}
       name: message
       type: string
-    - admin_ui: {order: 4, width: 200}
+    - admin_ui: {width: 200}
       name: data
       type: simpleObject
-    - admin_ui: {order: 5, width: 102}
+    - admin_ui: {width: 102}
       name: environment
       type: string
     server: full
@@ -26,89 +26,88 @@ db_schema:
   cycles:
     client: none
     columns:
-    - admin_ui: {order: 0, width: 61}
+    - admin_ui: {width: 58}
+      name: Name
+      type: string
+    - admin_ui: {width: 61}
       name: Status
       type: string
-    - admin_ui: {order: 1, width: 200}
-      name: HedgeLeg
-      target: legs
-      type: link_single
-    - admin_ui: {order: 2, width: 81}
+    - admin_ui: {width: 81}
       name: StartDate
       type: date
-    - admin_ui: {order: 3, width: 73}
+    - admin_ui: {width: 73}
       name: EndDate
       type: date
-    - admin_ui: {order: 4, width: 55}
+    - admin_ui: {width: 55}
       name: NetPL
       type: number
-    - admin_ui: {order: 5, width: 118}
+    - admin_ui: {width: 118}
       name: RuleSet
       target: rulesets
       type: link_single
-    - admin_ui: {order: -1, width: 58}
-      name: Name
-      type: string
-    - admin_ui: {order: 0.5, width: 200}
-      name: HedgeID
-      type: string
     server: full
     title: Cycles
   legs:
     client: none
     columns:
-    - admin_ui: {order: 0, width: 200}
+    - admin_ui: {width: 200}
       name: Transaction
       target: transactions
       type: link_single
-    - admin_ui: {order: 1, width: 86}
+    - admin_ui: {width: 86}
       name: Action
       type: string
-    - admin_ui: {order: 2, width: 76}
+    - admin_ui: {width: 76}
       name: Quantity
       type: number
-    - admin_ui: {order: 3, width: 94}
+    - admin_ui: {width: 94}
       name: OptionType
       type: string
-    - admin_ui: {order: 4, width: 83}
+    - admin_ui: {width: 83}
       name: Expiration
       type: date
-    - admin_ui: {order: 5, width: 56}
+    - admin_ui: {width: 56}
       name: Strike
       type: number
-    - admin_ui: {order: 6, width: 60}
+    - admin_ui: {width: 60}
       name: active
       type: bool
+    - admin_ui: {width: 200}
+      name: OCCSymbol
+      type: string
+    - admin_ui: {width: 89}
+      name: Underlying
+      type: string
     server: full
     title: Legs
   rulesets:
     client: none
     columns:
-    - admin_ui: {order: 0, width: 58}
+    - admin_ui: {width: 58}
       name: Name
       type: string
-    - admin_ui: {order: 1, width: 138}
+    - admin_ui: {width: 138}
       name: Description
       type: string
-    - admin_ui: {order: 2, width: 95}
+    - admin_ui: {width: 95}
       name: HedgeDelta
       type: number
-    - admin_ui: {order: 3, width: 84}
+    - admin_ui: {width: 84}
       name: HedgeDTE
       type: number
-    - admin_ui: {order: 4, width: 99}
+    - admin_ui: {width: 99}
       name: SpreadDelta
       type: number
-    - admin_ui: {order: 5, width: 122}
+    - admin_ui: {width: 122}
       name: HarvestFraction
       type: number
-    - admin_ui: {order: 6, width: 139}
+    - admin_ui: {width: 139}
       name: RollTriggerMultiple
       type: number
-    - admin_ui: {order: 7, width: 130}
+    - admin_ui: {width: 130}
       name: PanicHarvestDPU
       type: number
-    - admin_ui: {order: 8, width: 173}
+    - admin_ui: {width: 173}
       name: SpreadSizingMagicNum
       type: number
     server: full
@@ -116,34 +115,34 @@ db_schema:
   settings:
     client: full
     columns:
-    - admin_ui: {order: 0, width: 123}
+    - admin_ui: {width: 123}
       name: default_symbol
       type: string
-    - admin_ui: {order: 1, width: 120}
+    - admin_ui: {width: 120}
       name: default_qty
       type: number
-    - admin_ui: {order: 2, width: 112}
+    - admin_ui: {width: 112}
       name: use_max_qty
       type: bool
-    - admin_ui: {order: 3, width: 135}
+    - admin_ui: {width: 135}
       name: refresh_timer_on
       type: bool
-    - admin_ui: {order: 4, width: 181}
+    - admin_ui: {width: 181}
       name: margin_expansion_limit
       type: number
-    - admin_ui: {order: 5, width: 128}
+    - admin_ui: {width: 128}
       name: allow_diagonals
       type: bool
-    - admin_ui: {order: 7, width: 111}
+    - admin_ui: {width: 111}
       name: default_width
       type: number
-    - admin_ui: {order: 8, width: 143}
+    - admin_ui: {width: 143}
       name: current_campaign
       type: string
-    - admin_ui: {order: 9, width: 128}
+    - admin_ui: {width: 128}
       name: harvest_fraction
       type: number
-    - admin_ui: {order: 10, width: 158}
+    - admin_ui: {width: 158}
       name: automation_enabled
       type: bool
     server: full
@@ -151,34 +150,34 @@ db_schema:
   trades:
     client: none
     columns:
-    - admin_ui: {order: 0, width: 108}
-      name: Underlying
-      type: string
-    - admin_ui: {order: 1, width: 113}
-      name: Strategy
-      type: string
-    - admin_ui: {order: 2, width: 107}
-      name: Status
-      type: string
-    - admin_ui: {order: 3, width: 121}
-      name: OpenDate
-      type: date
-    - admin_ui: {order: 4, width: 116}
-      name: CloseDate
-      type: date
-    - admin_ui: {order: 5, width: 119}
-      name: TotalPL
-      type: number
-    - admin_ui: {order: -1, width: 125}
+    - admin_ui: {width: 125}
       name: Account
       type: string
-    - admin_ui: {order: 6, width: 86}
+    - admin_ui: {width: 108}
+      name: Underlying
+      type: string
+    - admin_ui: {width: 113}
+      name: Strategy
+      type: string
+    - admin_ui: {width: 107}
+      name: Status
+      type: string
+    - admin_ui: {width: 121}
+      name: OpenDate
+      type: date
+    - admin_ui: {width: 116}
+      name: CloseDate
+      type: date
+    - admin_ui: {width: 119}
+      name: TotalPL
+      type: number
+    - admin_ui: {width: 86}
       name: Campaign
       type: string
-    - admin_ui: {order: 7, width: 200}
+    - admin_ui: {width: 200}
       name: TargetHarvestPrice
       type: number
-    - admin_ui: {order: 8, width: 200}
+    - admin_ui: {width: 200}
       name: Cycle
       target: cycles
       type: link_single
@@ -187,22 +186,25 @@ db_schema:
   transactions:
     client: none
     columns:
-    - admin_ui: {order: 0, width: 200}
+    - admin_ui: {width: 200}
       name: Trade
       target: trades
       type: link_single
-    - admin_ui: {order: 1, width: 200}
+    - admin_ui: {width: 200}
       name: TransactionDate
       type: date
-    - admin_ui: {order: 2, width: 200}
+    - admin_ui: {width: 200}
       name: TransactionType
       type: string
-    - admin_ui: {order: 3, width: 200}
+    - admin_ui: {width: 200}
       name: CreditDebit
       type: number
-    - admin_ui: {order: 4, width: 200}
+    - admin_ui: {width: 200}
       name: ResultingMargin
       type: number
+    - admin_ui: {width: 114}
+      name: TradierOrderID
+      type: string
     server: full
     title: Transactions
 dependencies: []

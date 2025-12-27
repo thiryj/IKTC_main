@@ -6,6 +6,7 @@ from io import StringIO
 
 # IMPORTANT: Adjust this import if your function is in a different module
 from server_helpers import scan_and_initialize_cycle 
+from shared import config
 
 class TestScanner(unittest.TestCase):
 
@@ -70,35 +71,62 @@ class TestScanner(unittest.TestCase):
     # 4. Verify we got None (Idle Mode)
     self.assertIsNone(result)
   
+  @patch('server_helpers.get_quote') # <--- NEW PATCH
   @patch('server_helpers.app_tables')
-  def test_valid_hedge_creates_cycle(self, mock_db):
-    # 1. No Cycle Exists
+  def test_valid_hedge_creates_full_trade_structure(self, mock_db, mock_get_quote): 
+    """
+      Scenario: Scanner finds a hedge.
+      Expected: Creates Cycle -> Trade -> Transaction -> Leg (4 Linked Rows)
+      """
+    # 1. Setup Mock DB Returns
     mock_db.cycles.get.return_value = None
-  
-    # 2. Tradier returns a "Perfect Hedge"
-    self.mock_t.account.get_positions.return_value = [{'symbol': 'SPY_PERFECT', 'id': 999}]
-    self.mock_t.quotes.get.return_value = {
-      'expiration_date': self.future_date_str, # 60 Days out
-      'greeks': {'delta': -0.25}               # Perfect Delta
+
+    # We need these to return Mock Objects so we can check their links later
+    mock_cycle_row = MagicMock()
+    mock_trade_row = MagicMock()
+    mock_txn_row = MagicMock()
+
+    mock_db.cycles.add_row.return_value = mock_cycle_row
+    mock_db.trades.add_row.return_value = mock_trade_row
+    mock_db.transactions.add_row.return_value = mock_txn_row
+
+    # 2. Setup Mock Tradier
+    self.mock_t.get_positions.return_value = [{
+      'symbol': 'SPXW251219P05500000', 
+      'id': 12345, 
+      'quantity': 1.0, 
+      'cost_basis': 250.0
+    }]
+
+    mock_get_quote.return_value = {
+      'symbol': 'SPXW251219P05500000',
+      'expiration_date': '2026-06-20', # Future date (>50 days)
+      'greeks': {'delta': -0.25}       # Valid delta (abs(0.25))
     }
-  
-    # 3. Teach Mock DB to return a "Success" object when add_row is called
-    new_row_mock = {'ID': 'new_cycle_row'}
-    mock_db.cycles.add_row.return_value = new_row_mock
-  
-    # 4. Run Function
-    result = scan_and_initialize_cycle(self.mock_t, self.account_id)
-  
-    # 5. Verify the result
-    self.assertEqual(result, new_row_mock)
-  
-    # CRITICAL: Verify the function actually tried to save to the DB
+    # 3. Run Function
+    scan_and_initialize_cycle(self.mock_t)
+
+    # 4. Verify Hierarchy Creation
+    # A. Cycle Created?
     mock_db.cycles.add_row.assert_called_once()
-  
-    # Verify it saved the right data (Status='OPEN', etc.)
-    args = mock_db.cycles.add_row.call_args[1]
-    self.assertEqual(args['Status'], 'OPEN')
-    self.assertEqual(args['HedgeSymbol'], 'SPY_PERFECT')
+
+    # B. Trade Created? (Linked to Cycle?)
+    mock_db.trades.add_row.assert_called_once()
+    trade_args = mock_db.trades.add_row.call_args[1]
+    self.assertEqual(trade_args['Strategy'], config.POSITION_TYPE_HEDGE)
+    self.assertEqual(trade_args['Cycle'], mock_cycle_row) # Link Check
+
+    # C. Transaction Created? (Linked to Trade?)
+    mock_db.transactions.add_row.assert_called_once()
+    txn_args = mock_db.transactions.add_row.call_args[1]
+    self.assertEqual(txn_args['Trade'], mock_trade_row) # Link Check
+    self.assertEqual(txn_args['TradierOrderID'], "12345")
+
+    # D. Leg Created? (Linked to Transaction?)
+    mock_db.legs.add_row.assert_called_once()
+    leg_args = mock_db.legs.add_row.call_args[1]
+    self.assertEqual(leg_args['Transaction'], mock_txn_row) # Link Check
+    self.assertEqual(leg_args['OCCSymbol'], 'SPXW251219P05500000') # New Column Check
 
 @anvil.server.callable
 def run_scanner_tests():

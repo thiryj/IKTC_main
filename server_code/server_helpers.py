@@ -1030,12 +1030,12 @@ def build_closing_trade_dto(t_client: TradierAPI, trade_row)->Dict:
     print(f"s.h.build_closing_trade_dto: Error building close package: {e}")
     return None
 
-def scan_and_initialize_cycle(t:TradierAPI):
+def scan_and_initialize_cycle(t:TradierAPI, env:str=config.ENV_SANDBOX):
   """
-    Phase 1: The Scanner
-    Checks if an Active Cycle exists. If NOT, scans Tradier for a valid manual Hedge
-    to 'adopt' and start a new Cycle.
-    """
+  Phase 1: The Scanner
+  Finds a Hedge in Tradier and 'Adopts' it by creating:
+  Cycle -> Trade (Hedge) -> Transaction -> Leg
+  """
   print("--- Phase 1: Scanning for Cycle Context ---")
 
   # 1. SINGLETON GUARD: Do we already have an open cycle?
@@ -1044,9 +1044,8 @@ def scan_and_initialize_cycle(t:TradierAPI):
     print(f"Active Cycle found (ID: {active_cycle.get_id()}). Skipping initialization.")
     return active_cycle
 
-    # 2. If NO Cycle, fetch positions to look for a "Seed" Hedge
+  # 2. If NO Cycle, fetch positions to look for a "Seed" Hedge
   print("No Active Cycle. Scanning positions for Hedge Candidates...")
-
   if config.MOCK:
     positions = [{'symbol': 'SPXW251219P05500000', 'id': 12345, 'quantity': 1.0}]
   else:
@@ -1057,17 +1056,15 @@ def scan_and_initialize_cycle(t:TradierAPI):
 
     # Normalize to list (Tradier returns dict if only 1 pos, list if multiple)
   pos_list = positions if isinstance(positions, list) else [positions]
-
   valid_hedge = None
 
   for p in pos_list:
-    # 3. FILTER CRITERIA
     # Must be a PUT (Long)
     if p.get('symbol') and 'P' in p['symbol']: # Rough check, or use option_type if available
       # Need detailed quote for Greeks/DTE if not in position payload
       # (Positions usually have minimal data, so we might need to fetch the quote)
       # Let's assume we fetch the quote to check DTE/Delta
-      quote = t.quotes.get(p['symbol'])
+      quote = get_quote(t, p['symbol'])
 
       if not quote or not quote.get('greeks'):
         continue
@@ -1086,32 +1083,64 @@ def scan_and_initialize_cycle(t:TradierAPI):
         valid_hedge = p
         break # Found our ONE hedge
 
-    # 4. INITIALIZATION
+  # 4. INITIALIZATION
   if valid_hedge:
     symbol = valid_hedge['symbol']
     print(f"Initializing New Cycle based on Hedge: {symbol}")
-    # A. PARSE SYMBOL (To populate the Leg row)
-    # Use your existing helpers
-    strike = get_strike(symbol)
-    expiration = get_expiration_date(symbol)
-    underlying = symbol[:3] # Naive, or use regex
-    # B. CREATE LEG ROW
-    new_leg = app_tables.legs.add_row(
-      Action=config.ACTION_BUY_TO_OPEN, # It's a Long Put
-      Underlying=underlying,
-      Expiration=expiration,
-      Strike=strike,
-      OptionType=config.OPTION_TYPE_PUT,
-      Quantity=int(valid_hedge['quantity']),
-      active=True
-    )
+    # Parse Date (Handle '2025-12-01T...' or '2025-12-01')
+    raw_date = valid_hedge.get('date_acquired', str(dt.date.today()))
+    try:
+      # First 10 chars usually capture 'YYYY-MM-DD' safely
+      open_date = dt.datetime.strptime(raw_date[:10], "%Y-%m-%d").date()
+    except:
+      open_date = dt.date.today()
+    # Create top level cycle container - this holds hedge and spread
     new_cycle = app_tables.cycles.add_row(
       Status=config.CYCLE_STATUS_OPEN,
       StartDate=dt.date.today(),
-      HedgeLeg=new_leg,
-      HedgeID=valid_hedge['id'], # Store Tradier ID to track it
       NetPL=0.0
     )
+
+    # Creat the hedge Trade row
+    hedge_trade = app_tables.trades.add_row(
+      Campaign=config.CAMPAIGN_AUTO_PRE,
+      Cycle=new_cycle,
+      Status=config.TRADE_ACTION_OPEN,
+      Underlying=symbol[:3],
+      Strategy=config.POSITION_TYPE_HEDGE,
+      OpenDate=open_date,
+      Account=env
+    )
+
+    # Create the Transaction (the hedge ledger entry)
+    cost_basis = float(valid_hedge.get('cost_basis') or 0.0)
+    qty = int(valid_hedge.get('quantity', 1))
+    price_per_share = cost_basis / (qty * config.DEFAULT_MULTIPLIER) if qty >0 else 0.0
+
+    new_txn = app_tables.transactions.add_row(
+      TransactionType=config.TRANSACTION_TYPE_HEDGE,
+      CreditDebit=-abs(price_per_share),
+      Trade=hedge_trade,
+      TradierOrderID=str(valid_hedge.get('id')),
+      TransactionDate=open_date
+    )
+    
+    # D. Create the Leg (The Specifics)
+    strike = get_strike(symbol)
+    expiration = get_expiration_date(symbol)
+    
+    app_tables.legs.add_row(
+      OptionType=config.OPTION_TYPE_PUT,
+      active=True,
+      Quantity=qty,
+      Strike=strike,
+      OCCSymbol=symbol,
+      Underlying=symbol[:3],
+      Action=config.ACTION_BUY_TO_OPEN,
+      Transaction=new_txn,
+      Expiration=expiration
+    )
+
     return new_cycle
   else:
     print("No valid Hedge Candidates found. Staying Idle.")
@@ -1125,14 +1154,14 @@ def reconcile_cycle_state(t:TradierAPI, active_cycle):
     """
   print(f"--- Phase 2: Reconciling Cycle {active_cycle.get_id()} ---")
   print(f"in reconcile.  active_cycle: {active_cycle}")
-  settings_row = app_tables.settings.get()
+  #settings_row = app_tables.settings.get()
   
   # 1. FETCH RULESET DIRECTLY FROM CYCLE
   rules = active_cycle['RuleSet']
   if not rules:
     print("CRITICAL: Cycle has no linked RuleSet! Using defaults.")
-    target_delta = 0.20
-    magic_number = 5
+    target_delta = config.DEFAULT_VERTICAL_DELTA
+    magic_number = 1 / config.DEFAULT_HEDGE_RATIO
   else:
     target_delta = rules['SpreadDelta']
     magic_number = rules['SpreadSizingMagicNum']
@@ -1141,36 +1170,54 @@ def reconcile_cycle_state(t:TradierAPI, active_cycle):
 
   # 1. ONE-SHOT GUARD (Coasting Mode)
   # Search for ANY open trade linked to this cycle
-  existing_trades = app_tables.trades.search(
+  all_open_trades = app_tables.trades.search(
     Cycle=active_cycle, 
     Status=config.CYCLE_STATUS_OPEN
   )
+  # Filter: Count only trades that are NOT the hedge
+  active_spreads = [
+    tr for tr in all_open_trades 
+    if tr['Strategy'] != config.POSITION_TYPE_HEDGE
+  ]
 
   # If we have even 1 active spread, we are "deployed" -> Exit immediately.
-  if len(existing_trades) > 0:
-    print("Cycle is Active (Coasting Mode). No new entries allowed.")
+  if len(active_spreads) > 0:
+    print(f"Cycle is Active (Coasting with {len(active_spreads)} spreads). No new entries allowed.")
     return 0, None
 
     # 2. GET HEDGE CONTEXT
-  hedge_id = active_cycle['HedgeID']
-  if config.MOCK:
-    positions = [{'id': hedge_id, 'quantity': 1, 'symbol': 'SPX'}]
-  else: 
-    positions = t.get_positions()
+  hedge_trade_row = next(
+    (tr for tr in all_open_trades if tr['Strategy'] == config.POSITION_TYPE_HEDGE), 
+    None
+  )
+  txns = app_tables.transactions.search(Trade=hedge_trade_row)
+  active_hedge_leg = app_tables.legs.search(
+    Transaction=q.any_of(*txns), 
+    active=True
+  )
+
+  if not active_hedge_leg:
+    print("CRITICAL: Hedge Trade found, but no active legs recorded in DB.")
+    return 0, None
+
+  # Assume the first active leg is our hedge (Long Put)
+  hedge_occ = active_hedge_leg[0]['OCCSymbol']
+  
+  positions = t.get_positions() or []
   pos_list = positions if isinstance(positions, list) else [positions]
 
-  # Find the specific hedge leg to get its quantity
-  hedge_pos = next((p for p in pos_list if p['id'] == hedge_id), None)
-
+  # Find match by Symbol
+  hedge_pos = next((p for p in pos_list if p.get('symbol') == hedge_occ), None)
+  
   if not hedge_pos:
-    print(f"CRITICAL: Hedge ID {hedge_id} not found in Tradier positions.")
+    print(f"CRITICAL: Hedge {hedge_occ} not found in live Tradier account.")
     return 0, None
 
   hedge_qty = int(hedge_pos['quantity'])
-  print(f"Hedge Found: {hedge_qty} contract(s). Calculating entry size...")
+  print(f"Hedge Found: {hedge_qty}x {hedge_occ}. Calculating entry size...")
 
   # 3. GET MARKET PRICING ('C')
-  underlying = settings_row['default_symbol']  if settings_row else config.DEFAULT_SYMBOL
+  underlying = hedge_trade_row['Underlying']
 
   spread_result = get_vertical_spread(
     t, 
@@ -1191,11 +1238,10 @@ def reconcile_cycle_state(t:TradierAPI, active_cycle):
     print(f"Premium too low (${c_price}). Waiting for better pricing.")
     return 0, None
 
-    # 4. CALCULATE TARGET (The 5/C Formula)
-    # Strategy: Quantity = Hedge count * 5 / C 
+  # 4. CALCULATE TARGET (The 5/C Formula)
+  # Strategy: Quantity = Hedge count * 5 / C 
   raw_target = (hedge_qty * magic_number) / c_price
   target_qty = math.floor(raw_target) # Always round down for safety
-
   # Sanity Check: Ensure we sell at least 1, but cap max risk (e.g. 20)
   target_qty = max(1, min(target_qty, 20))
 

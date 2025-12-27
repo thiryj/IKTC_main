@@ -1039,12 +1039,9 @@ def run_automation_cycle():
 
       # Extract the Position DTO from the Object returned by Reconciler
       # trade_dto['legs'] is the DiagonalPutSpread object
-      position_dto = trade_dto['legs'].get_dto() 
-
-      # Flag it for submit_order logic
+      position_obj = trade_dto['legs']
+      position_dto = position_obj.get_dto() 
       position_dto['order_class'] = 'multileg'
-
-      # Wrap it: submit_order expects {'to_open': ...} for new trades
       execution_payload = {'to_open': position_dto}
 
       # B. Call your existing execution engine
@@ -1063,18 +1060,59 @@ def run_automation_cycle():
         print(f"Trade Success. Order ID: {order_id}")
 
         # Create the Trade Row linked to the Cycle
-        app_tables.trades.add_row(
+        new_trade = app_tables.trades.add_row(
           Cycle=active_cycle,            # <--- THE CRITICAL LINK
           Status=config.TRADE_ACTION_OPEN,
-          Symbol=symbol,
+          Underlying=symbol,
           Quantity=quantity_to_add,
           OpenDate=dt.date.today(),
-          FillPrice=credit_price,        # Estimated fill
           Strategy=config.POSITION_TYPE_VERTICAL,
           Account=env,
-          TradierOrderID=str(order_id)
+          TargetHarvestPrice=trade_dto['financials']['credit_per_contract'] * config.DEFAULT_HARVEST_TARGET
+        )
+        # B. Create TRANSACTION Row (The Ledger Entry)
+        # We record the Credit (Fill Price) and Order ID here
+        new_txn = app_tables.transactions.add_row(
+          Trade=new_trade,
+          TransactionDate=dt.date.today(),
+          TransactionType='Vertical Open',
+          CreditDebit=credit_price,  # Positive for Credit
+          TradierOrderID=order_id,   # <--- Lives here now
+          ResultingMargin=trade_dto['financials']['margin_per_contract'] * quantity_to_add * config.DEFAULT_MULTIPLIER
         )
 
+        # C. Create LEG Rows (The Specifics)
+        # We parse the Short and Long legs from the object
+        short_leg = position_obj.short_put
+        long_leg = position_obj.long_put
+
+        # Save Short Leg (Sold)
+        app_tables.legs.add_row(
+          Transaction=new_txn,
+          Action=config.ACTION_SELL_TO_OPEN,
+          Symbol=symbol,
+          OCCSymbol=short_leg.symbol, # <--- Uses the Quote object's property
+          Underlying=symbol,
+          Expiration=short_leg.expiration_date,
+          Strike=short_leg.strike,
+          OptionType=config.OPTION_TYPE_PUT,
+          Quantity=quantity_to_add,
+          active=True
+        )
+
+        # Save Long Leg (Bought)
+        app_tables.legs.add_row(
+          Transaction=new_txn,
+          Action=config.ACTION_BUY_TO_OPEN,
+          Symbol=symbol,
+          OCCSymbol=long_leg.symbol,
+          Underlying=symbol,
+          Expiration=long_leg.expiration_date,
+          Strike=long_leg.strike,
+          OptionType=config.OPTION_TYPE_PUT,
+          Quantity=quantity_to_add,
+          active=True
+        )
         log_automation_event("INFO", "Reconciler", f"Placed Entry Order {order_id} for {quantity_to_add} spreads", env)
 
       else:
