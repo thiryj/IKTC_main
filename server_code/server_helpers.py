@@ -1039,21 +1039,21 @@ def scan_and_initialize_cycle(t:TradierAPI):
   print("--- Phase 1: Scanning for Cycle Context ---")
 
   # 1. SINGLETON GUARD: Do we already have an open cycle?
-  # We assume 'Status' column exists in 'cycles' table.
   active_cycle = app_tables.cycles.get(Status=config.CYCLE_STATUS_OPEN)
-
   if active_cycle:
     print(f"Active Cycle found (ID: {active_cycle.get_id()}). Skipping initialization.")
     return active_cycle
 
     # 2. If NO Cycle, fetch positions to look for a "Seed" Hedge
   print("No Active Cycle. Scanning positions for Hedge Candidates...")
-  positions = t.get_positions()
 
-  # Handle empty account case
-  if not positions:
-    print("No positions found in account.")
-    return None
+  if config.MOCK:
+    positions = [{'symbol': 'SPXW251219P05500000', 'id': 12345, 'quantity': 1.0}]
+  else:
+    positions = t.get_positions()
+    if not positions:
+      print("No positions found in account.")
+      return None
 
     # Normalize to list (Tradier returns dict if only 1 pos, list if multiple)
   pos_list = positions if isinstance(positions, list) else [positions]
@@ -1088,11 +1088,27 @@ def scan_and_initialize_cycle(t:TradierAPI):
 
     # 4. INITIALIZATION
   if valid_hedge:
-    print(f"Initializing New Cycle based on Hedge: {valid_hedge['symbol']}")
+    symbol = valid_hedge['symbol']
+    print(f"Initializing New Cycle based on Hedge: {symbol}")
+    # A. PARSE SYMBOL (To populate the Leg row)
+    # Use your existing helpers
+    strike = get_strike(symbol)
+    expiration = get_expiration_date(symbol)
+    underlying = symbol[:3] # Naive, or use regex
+    # B. CREATE LEG ROW
+    new_leg = app_tables.legs.add_row(
+      Action=config.ACTION_BUY_TO_OPEN, # It's a Long Put
+      Underlying=underlying,
+      Expiration=expiration,
+      Strike=strike,
+      OptionType=config.OPTION_TYPE_PUT,
+      Quantity=int(valid_hedge['quantity']),
+      active=True
+    )
     new_cycle = app_tables.cycles.add_row(
       Status=config.CYCLE_STATUS_OPEN,
       StartDate=dt.date.today(),
-      HedgeSymbol=valid_hedge['symbol'],
+      HedgeLeg=new_leg,
       HedgeID=valid_hedge['id'], # Store Tradier ID to track it
       NetPL=0.0
     )
@@ -1108,6 +1124,7 @@ def reconcile_cycle_state(t:TradierAPI, active_cycle):
     STRICT RULE: If ANY spreads are already open, we do nothing (Coasting Mode).
     """
   print(f"--- Phase 2: Reconciling Cycle {active_cycle.get_id()} ---")
+  print(f"in reconcile.  active_cycle: {active_cycle}")
 
   # 1. FETCH RULESET DIRECTLY FROM CYCLE
   rules = active_cycle['RuleSet']
@@ -1135,7 +1152,10 @@ def reconcile_cycle_state(t:TradierAPI, active_cycle):
 
     # 2. GET HEDGE CONTEXT
   hedge_id = active_cycle['HedgeID']
-  positions = t.get_positions()
+  if config.MOCK:
+    positions = [{'id': hedge_id, 'quantity': 1, 'symbol': 'SPX'}]
+  else: 
+    positions = t.get_positions()
   pos_list = positions if isinstance(positions, list) else [positions]
 
   # Find the specific hedge leg to get its quantity
@@ -1151,7 +1171,11 @@ def reconcile_cycle_state(t:TradierAPI, active_cycle):
   # 3. GET MARKET PRICING ('C')
   # Use 0.20 Delta as per strategy doc 
   # Use Width 25 as per strategy doc 
-  underlying = active_cycle['HedgeSymbol'][:3] # e.g. 'SPX'
+  if active_cycle['HedgeLeg']:
+    underlying = active_cycle['HedgeLeg']['Underlying']
+  else:
+    print("Error: Cycle missing HedgeLeg link. Defaulting to SPX.")
+    underlying = "SPX"
 
   spread_result = get_vertical_spread(
     t, 

@@ -61,22 +61,22 @@ db_schema:
       name: Transaction
       target: transactions
       type: link_single
-    - admin_ui: {order: 1, width: 200}
+    - admin_ui: {order: 1, width: 86}
       name: Action
       type: string
-    - admin_ui: {order: 2, width: 200}
+    - admin_ui: {order: 2, width: 76}
       name: Quantity
       type: number
-    - admin_ui: {order: 3, width: 200}
+    - admin_ui: {order: 3, width: 94}
       name: OptionType
       type: string
-    - admin_ui: {order: 4, width: 200}
+    - admin_ui: {order: 4, width: 83}
       name: Expiration
       type: date
-    - admin_ui: {order: 5, width: 200}
+    - admin_ui: {order: 5, width: 56}
       name: Strike
       type: number
-    - admin_ui: {order: 6, width: 200}
+    - admin_ui: {order: 6, width: 60}
       name: active
       type: bool
     server: full

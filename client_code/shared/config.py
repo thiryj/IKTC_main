@@ -8,6 +8,7 @@ LONG_STRIKE_DELTA_MAX = 25  # how much lower than short strike to search
 # Environment
 ENV_SANDBOX = 'SANDBOX'
 ENV_PRODUCTION = 'PROD'
+MOCK = True
 
 # Position Types
 POSITION_TYPE_VERTICAL = 'VERTICAL'
