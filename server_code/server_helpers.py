@@ -1029,6 +1029,32 @@ def build_closing_trade_dto(t_client: TradierAPI, trade_row)->Dict:
   except Exception as e:
     print(f"s.h.build_closing_trade_dto: Error building close package: {e}")
     return None
+'''
+AUTOMATION LOOP SECTION ***************************************************************
+'''
+
+def check_automation_preconditions(t:TradierAPI, env:str)->bool:
+  # 1. Global Kill Switch
+  settings = app_tables.settings.get()
+  if not settings['automation_enabled']:
+    print("Automation is disabled. Skipping cycle.")
+    return
+
+  if not is_market_open(t):
+    # Optional: Log only once per hour to show bot is alive but sleeping
+    tz = pytz.timezone('America/New_York')
+    now = dt.datetime.now(tz)
+    if (6 <= now.hour <= 9) and (0 <= now.minute < 55):
+      ServerModule1.log_automation_event("INFO", "Scheduler", "Market Closed. Sleeping.", env)
+    #return
+
+  print(f"Starting automation cycle for {env}...")
+  ServerModule1.log_automation_event(
+    level="INFO", 
+    source="Scheduler", 
+    message=f"Starting automation cycle for {env}...", 
+    environment=env
+  )
 
 def scan_and_initialize_cycle(t:TradierAPI, env:str=config.ENV_SANDBOX):
   """

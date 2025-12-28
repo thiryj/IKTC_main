@@ -989,38 +989,49 @@ def get_recent_logs(environment:str, limit:int=50)->List[Dict]:
 @anvil.server.background_task
 @anvil.server.callable
 def run_automation_cycle():
+  # Setup Environment
+  env = config.ENV_SANDBOX
+  t, _ = server_helpers.get_tradier_client(env)
+  
+  # 1. PRE-FLIGHT CHECKS
+  # Handles kill switches, market hours, and logging sleeping status
+  if not server_helpers.check_automation_preconditions(t, env):
+    return
+
+  print(f"Starting automation cycle for {env}...")
+
+  # 2. CONTEXT (Phase 1)
+  # Finds or creates the active cycle context
+  active_cycle = server_helpers.scan_and_initialize_cycle(t)
+
+  if not active_cycle: 
+    return # Scanner logged the reason (e.g., "No Hedge Found")
+
+    # 3. TRAFFIC CONTROL
+    # Are we managing existing positions or looking for new ones?
+  active_spreads = server_helpers.get_active_verticals(active_cycle)
+
+  if len(active_spreads) > 0:
+    # === STATE A: DEPLOYED (MANAGE) ===
+    # Handles Panic (Rule 0), Defense (Rule 1), and Harvest (Rule 2)
+    server_helpers.run_management_logic(t, env, active_cycle, active_spreads)
+
+  else:
+    # === STATE B: EMPTY (HUNT) ===
+    # Handles 5/C sizing and Entry Execution
+    server_helpers.run_entry_logic(t, env, active_cycle)
+
+  print("Cycle Complete.")
+
+@anvil.server.background_task
+@anvil.server.callable
+def run_automation_cycle_old():
   """
   The Heartbeat. Runs every X minutes via Anvil Scheduled Tasks.
   Phase 1: Scan
   Phase 2: Decide  - Execute and log
   """
-  # 1. Global Kill Switch
-  settings = app_tables.settings.get()
-  if not settings['automation_enabled']:
-    print("Automation is disabled. Skipping cycle.")
-    return
-
-  # 2. Setup Environment (Default to Sandbox for safety)
-  env = config.ENV_SANDBOX
-
-  # Don't run at night
-  t, _ = server_helpers.get_tradier_client(env)
-  if not server_helpers.is_market_open(t):
-    # Optional: Log only once per hour to show bot is alive but sleeping
-    tz = pytz.timezone('America/New_York')
-    now = dt.datetime.now(tz)
-    if (6 <= now.hour <= 9) and (0 <= now.minute < 55):
-      log_automation_event("INFO", "Scheduler", "Market Closed. Sleeping.", env)
-    #return
   
-  print(f"Starting automation cycle for {env}...")
-  log_automation_event(
-    level="INFO", 
-    source="Scheduler", 
-    message=f"Starting automation cycle for {env}...", 
-    environment=env
-  )
-
   # First:  initialze cycle if one is not running
   # 2 step:  scan for a naked hedge, if found, put on spreads
   active_cycle = server_helpers.scan_and_initialize_cycle(t)
