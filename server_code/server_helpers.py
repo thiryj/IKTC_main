@@ -20,7 +20,7 @@ from tradier_python.models import Quote
 from itertools import groupby
 
 # Private libs
-from shared import config #client side / combined config
+from shared import config_legacy as config #client side / combined config
 import positions
 import ServerModule1
 

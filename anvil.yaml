@@ -35,16 +35,29 @@ db_schema:
     - admin_ui: {width: 81}
       name: StartDate
       type: date
-    - admin_ui: {width: 73}
+    - admin_ui: {order: 7.5, width: 73}
       name: EndDate
       type: date
-    - admin_ui: {width: 55}
+    - admin_ui: {order: 8, width: 55}
       name: NetPL
       type: number
-    - admin_ui: {width: 118}
+    - admin_ui: {order: -0.5, width: 120}
       name: RuleSet
       target: rulesets
       type: link_single
+    - admin_ui: {order: 6, width: 130}
+      name: HedgeTrade
+      target: trades
+      type: link_single
+    - admin_ui: {order: 7, width: 113}
+      name: DailyHedgeRef
+      type: number
+    - admin_ui: {order: -2, width: 73}
+      name: Account
+      type: string
+    - admin_ui: {order: -0.25, width: 89}
+      name: Underlying
+      type: string
     server: full
     title: Cycles
   legs:
@@ -72,11 +85,18 @@ db_schema:
     - admin_ui: {width: 60}
       name: active
       type: bool
-    - admin_ui: {width: 200}
+    - admin_ui: {order: 2.5, width: 200}
       name: OCCSymbol
       type: string
-    - admin_ui: {width: 89}
+    - admin_ui: {order: 8, width: 89}
       name: Underlying
+      type: string
+    - admin_ui: {order: -1, width: 200}
+      name: Trade
+      target: trades
+      type: link_single
+    - admin_ui: {order: 9, width: 200}
+      name: LegID
       type: string
     server: full
     title: Legs
@@ -136,9 +156,6 @@ db_schema:
     - admin_ui: {width: 111}
       name: default_width
       type: number
-    - admin_ui: {width: 143}
-      name: current_campaign
-      type: string
     - admin_ui: {width: 128}
       name: harvest_fraction
       type: number
@@ -150,14 +167,8 @@ db_schema:
   trades:
     client: none
     columns:
-    - admin_ui: {width: 125}
-      name: Account
-      type: string
-    - admin_ui: {width: 108}
-      name: Underlying
-      type: string
-    - admin_ui: {width: 113}
-      name: Strategy
+    - admin_ui: {order: 1, width: 113}
+      name: Role
       type: string
     - admin_ui: {width: 107}
       name: Status
@@ -171,18 +182,24 @@ db_schema:
     - admin_ui: {width: 119}
       name: TotalPL
       type: number
-    - admin_ui: {width: 86}
-      name: Campaign
-      type: string
-    - admin_ui: {width: 200}
+    - admin_ui: {order: 3.8125, width: 143}
       name: TargetHarvestPrice
       type: number
-    - admin_ui: {order: 8, width: 93}
+    - admin_ui: {order: 0, width: 93}
       name: Cycle
       target: cycles
       type: link_single
-    - admin_ui: {order: 9, width: 200}
+    - admin_ui: {order: 3.5, width: 76}
       name: Quantity
+      type: number
+    - admin_ui: {order: 3.875, width: 120}
+      name: RollTriggerPrice
+      type: number
+    - admin_ui: {order: 3.75, width: 92}
+      name: EntryCredit
+      type: number
+    - admin_ui: {order: 3.78125, width: 124}
+      name: CapitalRequired
       type: number
     server: full
     title: Trades
@@ -201,9 +218,6 @@ db_schema:
       type: string
     - admin_ui: {width: 200}
       name: CreditDebit
-      type: number
-    - admin_ui: {width: 200}
-      name: ResultingMargin
       type: number
     - admin_ui: {width: 114}
       name: TradierOrderID
