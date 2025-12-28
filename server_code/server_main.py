@@ -32,8 +32,8 @@ def run_automation_routine():
     print(f"LOG: Automation skipped. Reason: {env['status_message']}")
     return
 
-    # 3. SYNC REALITY (Dirty)
-    # Ensure DB matches Tradier before making decisions
+  # 3. SYNC REALITY (Dirty)
+  # Ensure DB matches Tradier before making decisions
   positions = tradier_api.get_current_positions()
 
   if not server_libs.is_db_consistent(cycle, positions):
@@ -84,6 +84,25 @@ def run_automation_routine():
     chain = tradier_api.get_option_chain(date=env['today'])
     legs_to_sell = server_libs.select_spread_strikes(chain)
     tradier_api.open_spread_position(legs_to_sell)
+
+  elif decision_state == config.STATE_HEDGE_ADJUSTMENT_NEEDED:
+    # Strategy: Roll to fresh 90 DTE / 25 Delta Put
+    print("LOG: Executing Hedge Reset...")
+
+    # 1. Identify the old hedge
+    old_hedge_trade = cycle.hedge_trade_link
+
+    # 2. Find the new target (90 days out, 25 delta)
+    target_expiry = server_libs.get_target_hedge_date()
+    chain = tradier_api.get_option_chain(target_expiry)
+    new_leg_struct = server_libs.select_hedge_strike(chain)
+
+    # 3. Execute the Roll (Close Old, Open New)
+    tradier_api.execute_roll(old_hedge_trade, new_leg_struct)
+
+    # 4. Update the Cycle's DailyHedgeRef to the new price?
+    # Note: We likely need to reset the reference price since we changed the instrument
+    # cycle.daily_hedge_ref = new_leg_struct['price'] (To be implemented)
 
   elif decision_state == config.STATE_IDLE:
     print("LOG: No action required.")
