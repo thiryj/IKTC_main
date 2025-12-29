@@ -8,6 +8,9 @@ from io import StringIO
 from server_helpers import scan_and_initialize_cycle 
 from shared import config
 
+from . server_client import start_new_cycle, get_campaign_dashboard, run_auto, close_campaign_manual
+from anvil.tables import app_tables
+
 class TestScanner(unittest.TestCase):
 
   def setUp(self):
@@ -145,3 +148,48 @@ def run_scanner_tests():
   print(stream.getvalue())
 
   return f"Tests Run: {result.testsRun}, Errors: {len(result.errors)}, Failures: {len(result.failures)}"
+
+@anvil.server.callable
+def skeleton_test_1():
+  # 1. SETUP: Get a valid RuleSet ID (Assuming you have at least one row)
+  # If this fails, add a row to your 'RuleSets' table first!
+  rules = app_tables.rulesets.search()
+  if not len(rules):
+    print("ERROR: Please create at least one row in the 'RuleSets' table.")
+  else:
+    rule_id = rules[0].get_id()
+    print(f"--- TEST START: Using RuleSet {rule_id} ---")
+  
+    # 2. CREATE
+    print("\n1. Creating Cycle...")
+    # Using dummy data for account/symbol
+    cycle = start_new_cycle("TEST_ACCT", "SPX_TEST", rule_id)
+    print(f"   Success! Created Cycle ID: {cycle.id}")
+    print(f"   Status: {cycle.status}")
+  
+    # 3. VERIFY (Fetch via Dashboard)
+    print("\n2. Fetching Dashboard...")
+    dash_cycle = get_campaign_dashboard()
+  
+    if dash_cycle and dash_cycle.id == cycle.id:
+      print("   Success! Dashboard returned the active cycle.")
+    else:
+      print(f"   FAILURE: Expected {cycle.id}, got {dash_cycle}")
+  
+      # 4. EXECUTE (Trigger Automation)
+    print("\n3. Running Automation...")
+    # Watch the console output for logs from server_main!
+    result = run_auto()
+    print(f"   Result: {result}")
+  
+    # 5. TEARDOWN (Close/Panic)
+    print("\n4. Closing Campaign...")
+    success = close_campaign_manual(cycle.id)
+    print(f"   Closed Successfully: {success}")
+  
+    # 6. FINAL CHECK
+    final_check = get_campaign_dashboard()
+    if final_check is None:
+      print("   Success! Cycle is closed and cleared from dashboard.")
+    else:
+      print(f"   Warning: Dashboard still returns: {final_check}")

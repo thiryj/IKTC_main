@@ -26,7 +26,7 @@ def run_automation_routine():
 
   # 2. PRECONDITIONS (Clean check of Dirty Data)
   # Get environment data (Time, Market Open/Close, Holiday)
-  env = tradier_api.get_environment_status()
+  env = server_api.get_environment_status()
 
   if not server_libs.can_run_automation(env, cycle):
     print(f"LOG: Automation skipped. Reason: {env['status_message']}")
@@ -34,7 +34,7 @@ def run_automation_routine():
 
   # 3. SYNC REALITY (Dirty)
   # Ensure DB matches Tradier before making decisions
-  positions = tradier_api.get_current_positions()
+  positions = server_api.get_current_positions()
 
   if not server_libs.is_db_consistent(cycle, positions):
     # Stop everything if the map doesn't match the territory
@@ -43,7 +43,7 @@ def run_automation_routine():
 
     # 4. DETERMINE STATE (Clean)
     # The brain analyzes the cycle + market data and returns ONE state constant
-  market_data = tradier_api.get_market_data_snapshot(cycle)
+  market_data = server_api.get_market_data_snapshot(cycle)
   decision_state = server_libs.determine_cycle_state(cycle, market_data)
 
   print(f"LOG: Decision State -> {decision_state}")
@@ -51,7 +51,7 @@ def run_automation_routine():
   # 5. EXECUTE (Dirty)
   if decision_state == config.STATE_PANIC_HARVEST:
     # Strategy: "Close everything immediately"
-    tradier_api.close_all_positions(cycle)
+    server_api.close_all_positions(cycle)
     server_libs.alert_human("Panic Harvest Executed!", level=config.ALERT_CRITICAL)
     # Update DB
     if cycle_row:
@@ -64,26 +64,26 @@ def run_automation_routine():
     # 2. Calculate new legs (e.g., 1 DTE, lower strike)
     new_legs_struct = server_libs.calculate_roll_legs(spread_trade, market_data)
     # 3. Execute
-    tradier_api.execute_roll(spread_trade, new_legs_struct)
+    server_api.execute_roll(spread_trade, new_legs_struct)
 
   elif decision_state == config.STATE_HARVEST_TARGET_HIT:
     # Strategy: Close spread at 50% profit
     spread_trade = server_libs.get_winning_spread(cycle)
-    tradier_api.close_position(spread_trade)
+    server_api.close_position(spread_trade)
 
   elif decision_state == config.STATE_HEDGE_MISSING:
     # Strategy: Buy the 90 DTE / 25 Delta put
     target_expiry = server_libs.get_target_hedge_date(cycle)
-    chain = tradier_api.get_option_chain(target_expiry)
+    chain = server_api.get_option_chain(target_expiry)
     leg_to_buy = server_libs.select_hedge_strike(chain)
-    tradier_api.buy_option(leg_to_buy)
+    server_api.buy_option(leg_to_buy)
 
   elif decision_state == config.STATE_SPREAD_MISSING:
     # Strategy: Sell the 0DTE spread
     # Only if hedge is present (checked inside determine_cycle_state)
-    chain = tradier_api.get_option_chain(date=env['today'])
+    chain = server_api.get_option_chain(date=env['today'])
     legs_to_sell = server_libs.select_spread_strikes(chain)
-    tradier_api.open_spread_position(legs_to_sell)
+    server_api.open_spread_position(legs_to_sell)
 
   elif decision_state == config.STATE_HEDGE_ADJUSTMENT_NEEDED:
     # Strategy: Roll to fresh 90 DTE / 25 Delta Put
@@ -94,11 +94,11 @@ def run_automation_routine():
 
     # 2. Find the new target (90 days out, 25 delta)
     target_expiry = server_libs.get_target_hedge_date()
-    chain = tradier_api.get_option_chain(target_expiry)
+    chain = server_api.get_option_chain(target_expiry)
     new_leg_struct = server_libs.select_hedge_strike(chain)
 
     # 3. Execute the Roll (Close Old, Open New)
-    tradier_api.execute_roll(old_hedge_trade, new_leg_struct)
+    server_api.execute_roll(old_hedge_trade, new_leg_struct)
 
     # 4. Update the Cycle's DailyHedgeRef to the new price?
     # Note: We likely need to reset the reference price since we changed the instrument

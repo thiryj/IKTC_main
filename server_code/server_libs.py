@@ -103,6 +103,9 @@ def alert_human(message, level=config.ALERT_INFO):
 
 # ... Add other stubs (select_hedge_strike, calculate_roll_legs) as we hit them
 
+def select_hedge_strike(chain):
+  pass
+
 def get_target_hedge_date(cycle: Cycle, current_date:Optional[dt.date]=None)->dt.date:
   """
     Calculates the target expiration date based on the Cycle's RuleSet.

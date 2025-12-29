@@ -8,7 +8,6 @@ import datetime as dt
 
 @anvil.server.callable
 def print_db_schema():
-  
   print({k: [c['name'] for c in v.list_columns()] for k, v in {
     'Cycles': app_tables.cycles, 
     'Legs': app_tables.legs, 
