@@ -2,7 +2,8 @@ from shared import config
 from shared import types
 from shared.classes import Cycle, Trade
 
-from datetime import datetime, timedelta
+import datetime as dt
+from typing import Optional
 
 def can_run_automation(env, cycle):
   # STUB: Always say yes for testing
@@ -102,8 +103,12 @@ def alert_human(message, level=config.ALERT_INFO):
 
 # ... Add other stubs (select_hedge_strike, calculate_roll_legs) as we hit them
 
-def get_target_hedge_date(current_date=None):
+def get_target_hedge_date(cycle: Cycle, current_date:Optional[dt.date]=None)->dt.date:
+  """
+    Calculates the target expiration date based on the Cycle's RuleSet.
+  """
   if not current_date:
-    current_date = datetime.now()
-    # Strategy: ~90 DTE
-  return current_date + timedelta(days=90)
+    current_date = dt.datetime.now().date()
+    target_days = cycle.rules.get('target_hedge_dte', 90)
+
+  return current_date + dt.timedelta(days=target_days)

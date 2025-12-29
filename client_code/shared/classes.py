@@ -1,11 +1,4 @@
 import anvil.server
-#import anvil.tables as tables
-#import anvil.tables.query as q
-#from anvil.tables import app_tables
-# This is a module.
-# You can define variables and functions here, and use them from any form. For example, in a top-level form:
-#
-#    from ..shared import Module1
 
 from . import config
 
@@ -21,11 +14,17 @@ class Cycle:
       self.daily_hedge_ref = row['DailyHedgeRef'] or 0.0
       self.hedge_trade_link = row['HedgeTrade']
       self.trades = [] 
+      rules_row = row['RuleSet']
+      self.rules = {
+        'target_hedge_dte': rules_row['HedgeDTE'] if rules_row else 90
+      }
+      
     else:
       self.id, self.account, self.underlying = None, None, None
       self.status = config.STATUS_NEW
       self.net_pl, self.daily_hedge_ref = 0.0, 0.0
       self.hedge_trade_link, self.trades = None, []
+      self.rules = {'target_hedge_dte': 90}
 
 @anvil.server.portable_class
 class Trade:

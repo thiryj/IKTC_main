@@ -73,7 +73,7 @@ def run_automation_routine():
 
   elif decision_state == config.STATE_HEDGE_MISSING:
     # Strategy: Buy the 90 DTE / 25 Delta put
-    target_expiry = server_libs.get_target_hedge_date()
+    target_expiry = server_libs.get_target_hedge_date(cycle)
     chain = tradier_api.get_option_chain(target_expiry)
     leg_to_buy = server_libs.select_hedge_strike(chain)
     tradier_api.buy_option(leg_to_buy)
