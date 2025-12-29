@@ -2,6 +2,8 @@ from shared import config
 from shared import types
 from shared.classes import Cycle, Trade
 
+from datetime import datetime, timedelta
+
 def can_run_automation(env, cycle):
   # STUB: Always say yes for testing
   return True
@@ -99,3 +101,9 @@ def alert_human(message, level=config.ALERT_INFO):
   print(f"ALERT [{level}]: {message}")
 
 # ... Add other stubs (select_hedge_strike, calculate_roll_legs) as we hit them
+
+def get_target_hedge_date(current_date=None):
+  if not current_date:
+    current_date = datetime.now()
+    # Strategy: ~90 DTE
+  return current_date + timedelta(days=90)
