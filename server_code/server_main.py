@@ -4,7 +4,6 @@ import anvil.tables.query as q
 from anvil.tables import app_tables
 import anvil.server
 
-
 from shared import config
 from shared.classes import Cycle
 from . import server_libs  # The Brains (Clean Stubs)
@@ -23,6 +22,7 @@ def run_automation_routine():
   # Hydrate the Cycle object (or None if we are starting fresh)
   # Note: If no cycle exists, we create a dummy one or handle it in logic
   cycle = Cycle(cycle_row) if cycle_row else None
+  print("In main loop:  cycle: \n" + "\n".join(f"{k} : {v}" for k, v in vars(cycle).items()))
 
   # 2. PRECONDITIONS (Clean check of Dirty Data)
   # Get environment data (Time, Market Open/Close, Holiday)
