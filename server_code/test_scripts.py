@@ -200,7 +200,8 @@ def create_test_cycle_hierarchy():
     cycle=cycle,
     role="spread",
     status="open",
-    open_date=dt.now(),
+    entry_time=dt.datetime.now(),     # Timestamp
+    exit_time=None,                # Timestamp
     quantity=1,
     entry_price=0.85, 
     capital_required=2500.0,
@@ -216,7 +217,7 @@ def create_test_cycle_hierarchy():
     action="STO",
     price=0.85,
     quantity=1,
-    timestamp=dt.now(),
+    timestamp=dt.datetime.now(),
     fees=1.50,
     order_id_external="ORD_123_EXEC"
   )

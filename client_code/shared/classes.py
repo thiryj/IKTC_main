@@ -1,90 +1,80 @@
-import anvil.server
 
-from . import config
+class RuleSet:
+  def __init__(self, row):
+    self._row = row
+    self.name = row['name']
+    self.description = row['description']
 
-@anvil.server.portable_class
 class Cycle:
-  def __init__(self, row=None):
-    if row:
-      self.id = row.get_id()
-      self.account = row['Account']
-      self.underlying = row['Underlying']
-      self.status = row['Status']
-      self.net_pl = row['NetPL'] or 0.0
-      self.daily_hedge_ref = row['DailyHedgeRef'] or 0.0
-      self.hedge_trade_link = row['HedgeTrade']
-      self.trades = [] 
-      rules_row = row['RuleSet']
-      if not rules_row:
-        raise ValueError(f"Cycle {self.id} is missing a RuleSet")
+  def __init__(self, row):
+    self._row = row
+    self.id = row.get_id()
+    self.account = row['account']
+    self.underlying = row['underlying']
+    self.status = row['status']
+    self.start_date = row['start_date']
+    self.end_date = row['end_date']
+    self.daily_hedge_ref = row['daily_hedge_ref']
+    self.total_pnl = row['total_pnl']
+    self.notes = row['notes']
 
-      # Validation Helper: Ensure key exists and is not None
-      def get_rule(col_name):
-        val = rules_row[col_name]
-        if val is None:
-          raise ValueError(f"RuleSet {rules_row.get_id()} is missing value for '{col_name}'.")
-        return val
+    # Link Wrappers (Data Navigation Only)
+    self.rule_set = RuleSet(row['rule_set']) if row['rule_set'] else None
+    self.hedge_trade = Trade(row['hedge_trade']) if row['hedge_trade'] else None
 
-        # Map DB Columns (CamelCase) -> Python Dict (snake_case)
-        self.rules = {
-          'hedge_delta':          get_rule('HedgeDelta'),
-          'target_hedge_dte':     get_rule('HedgeDTE'),
-          'spread_delta':         get_rule('SpreadDelta'),
-          'harvest_fraction':     get_rule('HarvestFraction'),
-          'roll_trigger_mult':    get_rule('RollTriggerMultiple'),
-          'panic_threshold_dpu':  get_rule('PanicHarvestDPU'),
-          'spread_size_magic':    get_rule('SpreadSizingMagicNum')
-        }
-    else:
-      self.rules = {}
-
-@anvil.server.portable_class
 class Trade:
-  def __init__(self, row=None):
-    if row:
-      self.id = row.get_id()
-      self.role = row['Role'] 
-      self.status = row['Status']
-      self.entry_credit = row['EntryCredit'] or 0.0
-      self.roll_trigger = row['RollTriggerPrice']
-      self.capital_req = row['CapitalRequired'] or 0.0
-      self.total_pl = row['TotalPL'] or 0.0
-      self.cycle_link = row['Cycle']
-      self.legs = []
-    else:
-      self.id, self.role = None, None
-      self.status = config.STATUS_OPEN
-      self.entry_credit, self.roll_trigger, self.capital_req = 0.0, None, 0.0
-      self.total_pl, self.cycle_link, self.legs = 0.0, None, []
+  def __init__(self, row):
+    self._row = row
+    self.id = row.get_id()
+    self.role = row['role'] 
+    self.status = row['status']
+    self.quantity = row['quantity']
+    self.entry_price = row['entry_price']
+    self.exit_price = row['exit_price']
+    self.capital_required = row['capital_required']
+    self.target_harvest_price = row['target_harvest_price']
+    self.roll_trigger_price = row['roll_trigger_price']
+    self.pnl = row['pnl']
+    self.entry_time = row['entry_time'] # Renamed
+    self.exit_time = row['exit_time']   # Renamed
+    self.order_id_external = row['order_id_external']
 
-@anvil.server.portable_class
+  @property
+  def cycle(self):
+    return Cycle(self._row['cycle']) if self._row['cycle'] else None
+
 class Leg:
-  def __init__(self, row=None):
-    if row:
-      self.id = row.get_id()
-      self.action = row['Action']
-      self.quantity = row['Quantity']
-      self.expiration = row['Expiration']
-      self.strike = row['Strike']
-      self.option_type = row['OptionType']
-      self.symbol = row['OCCSymbol']
-      self.trade_link = row['Trade']
-      self.txn_link = row['Transaction']
-    else:
-      self.id, self.action, self.quantity = None, None, 0
-      self.expiration, self.strike, self.option_type = None, 0.0, None
-      self.symbol, self.trade_link, self.txn_link = None, None, None
+  def __init__(self, row):
+    self._row = row
+    self.id = row.get_id()
+    self.side = row['side'] 
+    self.quantity = row['quantity']
+    self.occ_symbol = row['occ_symbol']
+    self.strike = row['strike']
+    self.option_type = row['option_type']
+    self.expiry = row['expiry']
+    self.active = row['active']
+    self.id_external = row['id_external']
 
-@anvil.server.portable_class
+    # Store raw rows for links
+    self.opening_transaction = row['opening_transaction']
+    self.closing_transaction = row['closing_transaction']
+
+  @property
+  def trade(self):
+    return Trade(self._row['trade']) if self._row['trade'] else None
+
 class Transaction:
-  def __init__(self, row=None):
-    if row:
-      self.id = row.get_id()
-      self.date = row['Date']
-      self.type = row['Type']
-      self.amount = row['CreditDebit'] or 0.0
-      self.order_id = row['TradierOrderID']
-      self.trade_link = row['Trade']
-    else:
-      self.id, self.date, self.type = None, None, None
-      self.amount, self.order_id, self.trade_link = 0.0, None, None
+  def __init__(self, row):
+    self._row = row
+    self.id = row.get_id()
+    self.action = row['action'] 
+    self.price = row['price']
+    self.quantity = row['quantity']
+    self.fees = row['fees']
+    self.timestamp = row['timestamp']
+    self.order_id_external = row['order_id_external']
+
+  @property
+  def trade(self):
+    return Trade(self._row['trade']) if self._row['trade'] else None

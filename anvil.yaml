@@ -6,9 +6,9 @@ db_schema:
     - admin_ui: {width: 73}
       name: account
       type: string
-    - admin_ui: {width: 120}
+    - admin_ui: {width: 200}
       name: rule_set
-      target: rulesets
+      target: rule_sets
       type: link_single
     - admin_ui: {width: 89}
       name: underlying
@@ -16,7 +16,7 @@ db_schema:
     - admin_ui: {width: 61}
       name: status
       type: string
-    - admin_ui: {width: 89}
+    - admin_ui: {order: 2, width: 121}
       name: start_date
       type: date
     - admin_ui: {width: 130}
@@ -26,10 +26,10 @@ db_schema:
     - admin_ui: {width: 129}
       name: daily_hedge_ref
       type: number
-    - admin_ui: {width: 84}
+    - admin_ui: {order: 7.5, width: 122}
       name: end_date
       type: date
-    - admin_ui: {width: 80}
+    - admin_ui: {order: 8, width: 112}
       name: total_pnl
       type: number
     - admin_ui: {width: 200}
@@ -44,7 +44,7 @@ db_schema:
       name: trade
       target: trades
       type: link_single
-    - admin_ui: {order: 0, width: 200}
+    - admin_ui: {width: 200}
       name: opening_transaction
       target: transactions
       type: link_single
@@ -60,7 +60,7 @@ db_schema:
     - admin_ui: {width: 94}
       name: option_type
       type: string
-    - admin_ui: {width: 83}
+    - admin_ui: {order: 4, width: 114}
       name: expiry
       type: date
     - admin_ui: {width: 56}
@@ -72,7 +72,7 @@ db_schema:
     - admin_ui: {width: 200}
       name: id_external
       type: string
-    - admin_ui: {order: 10, width: 200}
+    - admin_ui: {width: 200}
       name: closing_transaction
       target: transactions
       type: link_single
@@ -166,38 +166,6 @@ db_schema:
       type: number
     server: full
     title: rule_sets
-  rulesets:
-    client: none
-    columns:
-    - admin_ui: {width: 58}
-      name: name
-      type: string
-    - admin_ui: {width: 138}
-      name: description
-      type: string
-    - admin_ui: {width: 95}
-      name: HedgeTargetDelta
-      type: number
-    - admin_ui: {width: 84}
-      name: HedgeDTE
-      type: number
-    - admin_ui: {width: 99}
-      name: SpreadDelta
-      type: number
-    - admin_ui: {width: 122}
-      name: HarvestFraction
-      type: number
-    - admin_ui: {width: 139}
-      name: RollTriggerMultiple
-      type: number
-    - admin_ui: {width: 130}
-      name: PanicHarvestDPU
-      type: number
-    - admin_ui: {width: 173}
-      name: SpreadSizingMagicNum
-      type: number
-    server: full
-    title: RuleSets
   settings:
     client: full
     columns:
@@ -225,9 +193,6 @@ db_schema:
     - admin_ui: {width: 107}
       name: status
       type: string
-    - admin_ui: {width: 121}
-      name: open_date
-      type: date
     - admin_ui: {width: 76}
       name: quantity
       type: number
@@ -243,9 +208,6 @@ db_schema:
     - admin_ui: {width: 120}
       name: roll_trigger_price
       type: number
-    - admin_ui: {width: 116}
-      name: close_date
-      type: date
     - admin_ui: {width: 119}
       name: pnl
       type: number
@@ -255,6 +217,12 @@ db_schema:
     - admin_ui: {width: 200}
       name: exit_price
       type: number
+    - admin_ui: {order: 8, width: 200}
+      name: entry_time
+      type: datetime
+    - admin_ui: {order: 9, width: 200}
+      name: exit_time
+      type: datetime
     server: full
     title: trades
   transactions:
