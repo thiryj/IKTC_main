@@ -15,16 +15,28 @@ class Cycle:
       self.hedge_trade_link = row['HedgeTrade']
       self.trades = [] 
       rules_row = row['RuleSet']
-      self.rules = {
-        'target_hedge_dte': rules_row['HedgeDTE'] if rules_row else 90
-      }
-      
+      if not rules_row:
+        raise ValueError(f"Cycle {self.id} is missing a RuleSet")
+
+      # Validation Helper: Ensure key exists and is not None
+      def get_rule(col_name):
+        val = rules_row[col_name]
+        if val is None:
+          raise ValueError(f"RuleSet {rules_row.get_id()} is missing value for '{col_name}'.")
+        return val
+
+        # Map DB Columns (CamelCase) -> Python Dict (snake_case)
+        self.rules = {
+          'hedge_delta':          get_rule('HedgeDelta'),
+          'target_hedge_dte':     get_rule('HedgeDTE'),
+          'spread_delta':         get_rule('SpreadDelta'),
+          'harvest_fraction':     get_rule('HarvestFraction'),
+          'roll_trigger_mult':    get_rule('RollTriggerMultiple'),
+          'panic_threshold_dpu':  get_rule('PanicHarvestDPU'),
+          'spread_size_magic':    get_rule('SpreadSizingMagicNum')
+        }
     else:
-      self.id, self.account, self.underlying = None, None, None
-      self.status = config.STATUS_NEW
-      self.net_pl, self.daily_hedge_ref = 0.0, 0.0
-      self.hedge_trade_link, self.trades = None, []
-      self.rules = {'target_hedge_dte': 90}
+      self.rules = {}
 
 @anvil.server.portable_class
 class Trade:

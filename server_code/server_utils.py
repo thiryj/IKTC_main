@@ -7,7 +7,7 @@ import anvil.server
 import datetime as dt
 
 @anvil.server.callable
-def print_db_schema():
+def print_entire_db_schema():
   print({k: [c['name'] for c in v.list_columns()] for k, v in {
     'Cycles': app_tables.cycles, 
     'Legs': app_tables.legs, 
@@ -17,6 +17,11 @@ def print_db_schema():
     'RuleSets': app_tables.rulesets,
     'AutomationLogs': app_tables.automationlogs
   }.items()})
+
+@anvil.server.callable
+def print_selected_table_schemas(*table_names)->str:
+  #print({k: [c['name'] for c in v.list_columns()] for k, v in {table_name: eval(f"app_tables.{table_name}")}.items()})
+  print({tn: [c['name'] for c in getattr(app_tables, tn).list_columns()] for tn in table_names})
 
 @anvil.server.callable
 def factory_reset():
