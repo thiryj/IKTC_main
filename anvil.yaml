@@ -26,8 +26,18 @@ db_schema:
   cycles:
     client: none
     columns:
+    - admin_ui: {width: 73}
+      name: Account
+      type: string
     - admin_ui: {width: 58}
       name: Name
+      type: string
+    - admin_ui: {width: 120}
+      name: RuleSet
+      target: rulesets
+      type: link_single
+    - admin_ui: {width: 89}
+      name: Underlying
       type: string
     - admin_ui: {width: 61}
       name: Status
@@ -35,34 +45,28 @@ db_schema:
     - admin_ui: {width: 81}
       name: StartDate
       type: date
-    - admin_ui: {order: 7.5, width: 73}
-      name: EndDate
-      type: date
-    - admin_ui: {order: 8, width: 55}
-      name: NetPL
-      type: number
-    - admin_ui: {order: -0.5, width: 120}
-      name: RuleSet
-      target: rulesets
-      type: link_single
-    - admin_ui: {order: 6, width: 130}
+    - admin_ui: {width: 130}
       name: HedgeTrade
       target: trades
       type: link_single
-    - admin_ui: {order: 7, width: 113}
+    - admin_ui: {width: 113}
       name: DailyHedgeRef
       type: number
-    - admin_ui: {order: -2, width: 73}
-      name: Account
-      type: string
-    - admin_ui: {order: -0.25, width: 89}
-      name: Underlying
-      type: string
+    - admin_ui: {width: 73}
+      name: EndDate
+      type: date
+    - admin_ui: {width: 55}
+      name: NetPL
+      type: number
     server: full
     title: Cycles
   legs:
     client: none
     columns:
+    - admin_ui: {width: 200}
+      name: Trade
+      target: trades
+      type: link_single
     - admin_ui: {width: 200}
       name: Transaction
       target: transactions
@@ -73,6 +77,9 @@ db_schema:
     - admin_ui: {width: 76}
       name: Quantity
       type: number
+    - admin_ui: {width: 200}
+      name: OCCSymbol
+      type: string
     - admin_ui: {width: 94}
       name: OptionType
       type: string
@@ -85,32 +92,90 @@ db_schema:
     - admin_ui: {width: 60}
       name: active
       type: bool
-    - admin_ui: {order: 2.5, width: 200}
-      name: OCCSymbol
-      type: string
-    - admin_ui: {order: 8, width: 89}
+    - admin_ui: {width: 89}
       name: Underlying
       type: string
-    - admin_ui: {order: -1, width: 200}
-      name: Trade
-      target: trades
-      type: link_single
-    - admin_ui: {order: 9, width: 200}
+    - admin_ui: {width: 200}
       name: LegID
       type: string
     server: full
     title: Legs
+  rule_sets:
+    client: none
+    columns:
+    - admin_ui: {width: 71}
+      name: name
+      type: string
+    - admin_ui: {width: 92}
+      name: description
+      type: string
+    - admin_ui: {width: 153}
+      name: hedge_target_delta
+      type: number
+    - admin_ui: {width: 141}
+      name: hedge_target_dte
+      type: number
+    - admin_ui: {width: 132}
+      name: hedge_alloc_pct
+      type: number
+    - admin_ui: {width: 126}
+      name: hedge_min_dte
+      type: number
+    - admin_ui: {width: 138}
+      name: hedge_min_delta
+      type: number
+    - admin_ui: {width: 142}
+      name: hedge_max_delta
+      type: number
+    - admin_ui: {width: 157}
+      name: spread_target_delta
+      type: number
+    - admin_ui: {width: 111}
+      name: spread_width
+      type: number
+    - admin_ui: {width: 145}
+      name: spread_target_dte
+      type: number
+    - admin_ui: {width: 169}
+      name: spread_min_premium
+      type: number
+    - admin_ui: {width: 172}
+      name: spread_max_premium
+      type: number
+    - admin_ui: {width: 147}
+      name: spread_size_factor
+      type: number
+    - admin_ui: {width: 140}
+      name: trade_start_delay
+      type: number
+    - admin_ui: {width: 141}
+      name: gap_down_thresh
+      type: number
+    - admin_ui: {width: 133}
+      name: roll_trigger_mult
+      type: number
+    - admin_ui: {width: 121}
+      name: roll_max_debit
+      type: number
+    - admin_ui: {width: 134}
+      name: profit_target_pct
+      type: number
+    - admin_ui: {width: 162}
+      name: panic_threshold_dpu
+      type: number
+    server: full
+    title: rule_sets
   rulesets:
     client: none
     columns:
     - admin_ui: {width: 58}
-      name: Name
+      name: name
       type: string
     - admin_ui: {width: 138}
-      name: Description
+      name: description
       type: string
     - admin_ui: {width: 95}
-      name: HedgeDelta
+      name: HedgeTargetDelta
       type: number
     - admin_ui: {width: 84}
       name: HedgeDTE
@@ -138,36 +203,22 @@ db_schema:
     - admin_ui: {width: 123}
       name: default_symbol
       type: string
-    - admin_ui: {width: 120}
-      name: default_qty
-      type: number
-    - admin_ui: {width: 112}
-      name: use_max_qty
-      type: bool
     - admin_ui: {width: 135}
       name: refresh_timer_on
       type: bool
-    - admin_ui: {width: 181}
-      name: margin_expansion_limit
-      type: number
-    - admin_ui: {width: 128}
-      name: allow_diagonals
-      type: bool
-    - admin_ui: {width: 111}
-      name: default_width
-      type: number
-    - admin_ui: {width: 128}
-      name: harvest_fraction
-      type: number
     - admin_ui: {width: 158}
       name: automation_enabled
       type: bool
     server: full
-    title: Settings
+    title: settings
   trades:
     client: none
     columns:
-    - admin_ui: {order: 1, width: 113}
+    - admin_ui: {width: 93}
+      name: Cycle
+      target: cycles
+      type: link_single
+    - admin_ui: {width: 113}
       name: Role
       type: string
     - admin_ui: {width: 107}
@@ -176,30 +227,26 @@ db_schema:
     - admin_ui: {width: 121}
       name: OpenDate
       type: date
+    - admin_ui: {width: 76}
+      name: Quantity
+      type: number
+    - admin_ui: {width: 92}
+      name: EntryCredit
+      type: number
+    - admin_ui: {width: 124}
+      name: CapitalRequired
+      type: number
+    - admin_ui: {width: 143}
+      name: TargetHarvestPrice
+      type: number
+    - admin_ui: {width: 120}
+      name: RollTriggerPrice
+      type: number
     - admin_ui: {width: 116}
       name: CloseDate
       type: date
     - admin_ui: {width: 119}
       name: TotalPL
-      type: number
-    - admin_ui: {order: 3.8125, width: 143}
-      name: TargetHarvestPrice
-      type: number
-    - admin_ui: {order: 0, width: 93}
-      name: Cycle
-      target: cycles
-      type: link_single
-    - admin_ui: {order: 3.5, width: 76}
-      name: Quantity
-      type: number
-    - admin_ui: {order: 3.875, width: 120}
-      name: RollTriggerPrice
-      type: number
-    - admin_ui: {order: 3.75, width: 92}
-      name: EntryCredit
-      type: number
-    - admin_ui: {order: 3.78125, width: 124}
-      name: CapitalRequired
       type: number
     server: full
     title: Trades

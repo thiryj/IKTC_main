@@ -112,3 +112,4 @@ def get_target_hedge_date(cycle: Cycle, current_date:Optional[dt.date]=None)->dt
     current_date = dt.datetime.now().date()
     target_days = cycle.rules['target_hedge_dte']
   return current_date + dt.timedelta(days=target_days)
+

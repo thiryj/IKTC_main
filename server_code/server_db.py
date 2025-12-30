@@ -30,6 +30,31 @@ def get_cycle_by_id(cycle_id):
   _hydrate_cycle_children(cycle, cycle_row)
   return cycle
 
+def get_scaled_rules(rule_set_name, symbol):
+  # 1. Fetch SPX-standard rules and convert to mutable dict
+  rules_row = app_tables.rule_sets.get(name=rule_set_name)
+  if not rules_row:
+    return None
+  rules = dict(rules_row)
+
+  # 2. Apply "Sandbox Patch" if trading SPY (Scale Price/Width by 1/10th)
+  if symbol == 'SPY':
+    keys_to_scale = [
+      'spread_width', 
+      'spread_min_premium', 
+      'spread_max_premium', 
+      'roll_max_debit', 
+      'panic_threshold_dpu'
+    ]
+
+    for k in keys_to_scale:
+      if rules.get(k) is not None:
+        rules[k] = rules[k] / 10.0
+
+  return rules
+
+#---DB Writes (creates, saves, updates)
+
 def create_new_cycle(account: str, underlying: str, rule_set_row):
   """Creates a fresh Cycle row and returns the object."""
   row = app_tables.cycles.add_row(
