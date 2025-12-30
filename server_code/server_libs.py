@@ -107,11 +107,8 @@ def select_hedge_strike(chain):
   pass
 
 def get_target_hedge_date(cycle: Cycle, current_date:Optional[dt.date]=None)->dt.date:
-  """
-    Calculates the target expiration date based on the Cycle's RuleSet.
-  """
+  """Calculates the target expiration date based on the Cycle's RuleSet."""
   if not current_date:
     current_date = dt.datetime.now().date()
     target_days = cycle.rules.get('target_hedge_dte', 90)
-
   return current_date + dt.timedelta(days=target_days)

@@ -174,7 +174,7 @@ def skeleton_test_1():
     if dash_cycle and dash_cycle.id == cycle.id:
       print("   Success! Dashboard returned the active cycle.")
     else:
-      print(f"   FAILURE: Expected {cycle.id}, got {dash_cycle}")
+      print(f"   FAILURE: Expected {cycle.id}, got {dash_cycle.id}")
   
       # 4. EXECUTE (Trigger Automation)
     print("\n3. Running Automation...")

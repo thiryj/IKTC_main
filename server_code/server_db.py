@@ -35,7 +35,7 @@ def create_new_cycle(account: str, underlying: str, rule_set_row):
   row = app_tables.cycles.add_row(
     Account=account,
     Underlying=underlying,
-    Status=config.STATUS_NEW,
+    Status=config.STATUS_OPEN,
     NetPL=0.0,
     DailyHedgeRef=0.0,
     RuleSet=rule_set_row
