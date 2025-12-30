@@ -7,6 +7,10 @@ STATUS_CLOSED = 'CLOSED'
 ROLE_HEDGE = 'HEDGE'
 ROLE_INCOME = 'INCOME' # The daily spread
 
+# Leg side: long/short
+LEG_SIDE_SHORT = "short"
+LEG_SIDE_LONG = "long"
+
 # Automation States (The decisions made by server_libs)
 STATE_PANIC_HARVEST = 'PANIC_HARVEST'
 STATE_ROLL_REQUIRED = 'ROLL_REQUIRED'

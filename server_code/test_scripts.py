@@ -1,7 +1,7 @@
 import anvil.server
 import unittest
 from unittest.mock import MagicMock, patch
-import datetime
+import datetime as dt
 from io import StringIO
 
 # IMPORTANT: Adjust this import if your function is in a different module
@@ -20,7 +20,7 @@ class TestScanner(unittest.TestCase):
     self.account_id = "TEST_ACCT_123"
 
     # Create a date 60 days in the future for testing valid DTE
-    self.future_date = datetime.date.today() + datetime.timedelta(days=60)
+    self.future_date = dt.date.today() + dt.timedelta(days=60)
     self.future_date_str = self.future_date.strftime("%Y-%m-%d")
 
   @patch('server_helpers.app_tables')
@@ -60,7 +60,7 @@ class TestScanner(unittest.TestCase):
     mock_db.cycles.get.return_value = None
   
     # 2. Teach Mock Tradier to return a "junk" position (Short DTE)
-    short_term_date = datetime.date.today() + datetime.timedelta(days=5)
+    short_term_date = dt.date.today() + dt.timedelta(days=5)
   
     self.mock_t.account.get_positions.return_value = [{'symbol': 'SPY_JUNK', 'id': 123}]
     self.mock_t.quotes.get.return_value = {
@@ -132,24 +132,6 @@ class TestScanner(unittest.TestCase):
     self.assertEqual(leg_args['OCCSymbol'], 'SPXW251219P05500000') # New Column Check
 
 @anvil.server.callable
-def run_scanner_tests():
-  """
-    Call this function to run the tests and see the report.
-    """
-  # Create a Test Suite
-  suite = unittest.TestLoader().loadTestsFromTestCase(TestScanner)
-
-  # Run the tests and capture output to a string buffer
-  stream = StringIO()
-  runner = unittest.TextTestRunner(stream=stream, verbosity=2)
-  result = runner.run(suite)
-
-  # Print the report to the Anvil logs
-  print(stream.getvalue())
-
-  return f"Tests Run: {result.testsRun}, Errors: {len(result.errors)}, Failures: {len(result.failures)}"
-
-@anvil.server.callable
 def skeleton_test_1():
   # 1. SETUP: Get a valid RuleSet ID (Assuming you have at least one row)
   # If this fails, add a row to your 'RuleSets' table first!
@@ -193,3 +175,98 @@ def skeleton_test_1():
       print("   Success! Cycle is closed and cleared from dashboard.")
     else:
       print(f"   Warning: Dashboard still returns: {final_check}")
+
+@anvil.server.callable
+def create_test_cycle_hierarchy():
+  # 1. Get RuleSet (Corrected table name)
+  rules = app_tables.rule_sets.get(name="Standard_0DTE") 
+  if not rules:
+    print("RuleSet 'Standard_0DTE' not found.")
+    return
+
+    # 2. Create Cycle
+  cycle = app_tables.cycles.add_row(
+    account="Test_Account_01",
+    rule_set=rules,
+    underlying="SPX",
+    status="active",
+    start_date=dt.date.today(),
+    total_pnl=0.0,
+    notes="Automated Test Cycle"
+  )
+
+  # 3. Create Trade
+  trade = app_tables.trades.add_row(
+    cycle=cycle,
+    role="spread",
+    status="open",
+    open_date=dt.now(),
+    quantity=1,
+    entry_price=0.85, 
+    capital_required=2500.0,
+    target_harvest_price=0.40,
+    roll_trigger_price=None,
+    pnl=0.0,
+    order_id_external="ORD_123_PARENT"
+  )
+
+  # 4. Create the OPENING Transaction
+  open_trans = app_tables.transactions.add_row(
+    trade=trade,
+    action="STO",
+    price=0.85,
+    quantity=1,
+    timestamp=dt.now(),
+    fees=1.50,
+    order_id_external="ORD_123_EXEC"
+  )
+
+  # 5. Create Legs (Linked to opening_transaction)
+  # Note: closing_transaction is left None (Empty) because it's currently open
+  app_tables.legs.add_row(
+    trade=trade,
+    opening_transaction=open_trans,  # <--- LINKED HERE
+    closing_transaction=None,        # <--- EMPTY (Still Open)
+    side=config.LEG_SIDE_SHORT,
+    quantity=1,
+    occ_symbol="SPXW230501P04000000",
+    option_type="put",
+    expiry=dt.date.today(),
+    strike=4000,
+    active=True,
+    id_external="LEG_A_1"
+  )
+
+  app_tables.legs.add_row(
+    trade=trade,
+    opening_transaction=open_trans,  # <--- LINKED HERE
+    closing_transaction=None,        # <--- EMPTY
+    side=config.LEG_SIDE_LONG,
+    quantity=1,
+    occ_symbol="SPXW230501P03975000",
+    option_type="put",
+    expiry=dt.date.today(),
+    strike=3975,
+    active=True,
+    id_external="LEG_B_1"
+  )
+
+  print(f"Test Hierarchy Created! Cycle ID: {cycle.get_id()}")
+
+@anvil.server.callable
+def run_scanner_tests():
+  """
+    Call this function to run the tests and see the report.
+    """
+  # Create a Test Suite
+  suite = unittest.TestLoader().loadTestsFromTestCase(TestScanner)
+
+  # Run the tests and capture output to a string buffer
+  stream = StringIO()
+  runner = unittest.TextTestRunner(stream=stream, verbosity=2)
+  result = runner.run(suite)
+
+  # Print the report to the Anvil logs
+  print(stream.getvalue())
+
+  return f"Tests Run: {result.testsRun}, Errors: {len(result.errors)}, Failures: {len(result.failures)}"

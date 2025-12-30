@@ -1,6 +1,84 @@
 allow_embedding: false
 db_schema:
-  automationlogs:
+  cycles:
+    client: none
+    columns:
+    - admin_ui: {width: 73}
+      name: account
+      type: string
+    - admin_ui: {width: 120}
+      name: rule_set
+      target: rulesets
+      type: link_single
+    - admin_ui: {width: 89}
+      name: underlying
+      type: string
+    - admin_ui: {width: 61}
+      name: status
+      type: string
+    - admin_ui: {width: 89}
+      name: start_date
+      type: date
+    - admin_ui: {width: 130}
+      name: hedge_trade
+      target: trades
+      type: link_single
+    - admin_ui: {width: 129}
+      name: daily_hedge_ref
+      type: number
+    - admin_ui: {width: 84}
+      name: end_date
+      type: date
+    - admin_ui: {width: 80}
+      name: total_pnl
+      type: number
+    - admin_ui: {width: 200}
+      name: notes
+      type: string
+    server: full
+    title: cycles
+  legs:
+    client: none
+    columns:
+    - admin_ui: {width: 200}
+      name: trade
+      target: trades
+      type: link_single
+    - admin_ui: {order: 0, width: 200}
+      name: opening_transaction
+      target: transactions
+      type: link_single
+    - admin_ui: {width: 86}
+      name: side
+      type: string
+    - admin_ui: {width: 76}
+      name: quantity
+      type: number
+    - admin_ui: {width: 200}
+      name: occ_symbol
+      type: string
+    - admin_ui: {width: 94}
+      name: option_type
+      type: string
+    - admin_ui: {width: 83}
+      name: expiry
+      type: date
+    - admin_ui: {width: 56}
+      name: strike
+      type: number
+    - admin_ui: {width: 60}
+      name: active
+      type: bool
+    - admin_ui: {width: 200}
+      name: id_external
+      type: string
+    - admin_ui: {order: 10, width: 200}
+      name: closing_transaction
+      target: transactions
+      type: link_single
+    server: full
+    title: legs
+  logs:
     client: none
     columns:
     - admin_ui: {width: 200}
@@ -22,84 +100,7 @@ db_schema:
       name: environment
       type: string
     server: full
-    title: AutomationLogs
-  cycles:
-    client: none
-    columns:
-    - admin_ui: {width: 73}
-      name: Account
-      type: string
-    - admin_ui: {width: 58}
-      name: Name
-      type: string
-    - admin_ui: {width: 120}
-      name: RuleSet
-      target: rulesets
-      type: link_single
-    - admin_ui: {width: 89}
-      name: Underlying
-      type: string
-    - admin_ui: {width: 61}
-      name: Status
-      type: string
-    - admin_ui: {width: 81}
-      name: StartDate
-      type: date
-    - admin_ui: {width: 130}
-      name: HedgeTrade
-      target: trades
-      type: link_single
-    - admin_ui: {width: 113}
-      name: DailyHedgeRef
-      type: number
-    - admin_ui: {width: 73}
-      name: EndDate
-      type: date
-    - admin_ui: {width: 55}
-      name: NetPL
-      type: number
-    server: full
-    title: Cycles
-  legs:
-    client: none
-    columns:
-    - admin_ui: {width: 200}
-      name: Trade
-      target: trades
-      type: link_single
-    - admin_ui: {width: 200}
-      name: Transaction
-      target: transactions
-      type: link_single
-    - admin_ui: {width: 86}
-      name: Action
-      type: string
-    - admin_ui: {width: 76}
-      name: Quantity
-      type: number
-    - admin_ui: {width: 200}
-      name: OCCSymbol
-      type: string
-    - admin_ui: {width: 94}
-      name: OptionType
-      type: string
-    - admin_ui: {width: 83}
-      name: Expiration
-      type: date
-    - admin_ui: {width: 56}
-      name: Strike
-      type: number
-    - admin_ui: {width: 60}
-      name: active
-      type: bool
-    - admin_ui: {width: 89}
-      name: Underlying
-      type: string
-    - admin_ui: {width: 200}
-      name: LegID
-      type: string
-    server: full
-    title: Legs
+    title: logs
   rule_sets:
     client: none
     columns:
@@ -215,62 +216,74 @@ db_schema:
     client: none
     columns:
     - admin_ui: {width: 93}
-      name: Cycle
+      name: cycle
       target: cycles
       type: link_single
     - admin_ui: {width: 113}
-      name: Role
+      name: role
       type: string
     - admin_ui: {width: 107}
-      name: Status
+      name: status
       type: string
     - admin_ui: {width: 121}
-      name: OpenDate
+      name: open_date
       type: date
     - admin_ui: {width: 76}
-      name: Quantity
+      name: quantity
       type: number
-    - admin_ui: {width: 92}
-      name: EntryCredit
+    - admin_ui: {width: 100}
+      name: entry_price
       type: number
     - admin_ui: {width: 124}
-      name: CapitalRequired
+      name: capital_required
       type: number
     - admin_ui: {width: 143}
-      name: TargetHarvestPrice
+      name: target_harvest_price
       type: number
     - admin_ui: {width: 120}
-      name: RollTriggerPrice
+      name: roll_trigger_price
       type: number
     - admin_ui: {width: 116}
-      name: CloseDate
+      name: close_date
       type: date
     - admin_ui: {width: 119}
-      name: TotalPL
+      name: pnl
+      type: number
+    - admin_ui: {width: 200}
+      name: order_id_external
+      type: string
+    - admin_ui: {width: 200}
+      name: exit_price
       type: number
     server: full
-    title: Trades
+    title: trades
   transactions:
     client: none
     columns:
     - admin_ui: {width: 200}
-      name: Trade
+      name: trade
       target: trades
       type: link_single
     - admin_ui: {width: 200}
-      name: TransactionDate
-      type: date
-    - admin_ui: {width: 200}
-      name: TransactionType
+      name: action
       type: string
     - admin_ui: {width: 200}
-      name: CreditDebit
+      name: price
       type: number
     - admin_ui: {width: 114}
-      name: TradierOrderID
+      name: order_id_external
       type: string
+    - admin_ui: {width: 200}
+      name: quantity
+      type: number
+    - admin_ui: {width: 200}
+      name: timestamp
+      type: datetime
+    - admin_ui: {width: 200}
+      name: fees
+      type: number
     server: full
-    title: Transactions
+    title: transactions
 dependencies: []
 metadata: {logo_img: 'asset:IKTC_logo.png', title: Iron Keep Trading Company}
 name: IronKeepTradingCompany

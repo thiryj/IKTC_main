@@ -9,13 +9,13 @@ import datetime as dt
 @anvil.server.callable
 def print_entire_db_schema():
   print({k: [c['name'] for c in v.list_columns()] for k, v in {
-    'Cycles': app_tables.cycles, 
-    'Legs': app_tables.legs, 
-    'Trades': app_tables.trades, 
-    'Transactions': app_tables.transactions,
-    'Settings': app_tables.settings,
-    'RuleSets': app_tables.rulesets,
-    'AutomationLogs': app_tables.automationlogs
+    'cycles': app_tables.cycles, 
+    'legs': app_tables.legs, 
+    'trades': app_tables.trades, 
+    'transactions': app_tables.transactions,
+    'settings': app_tables.settings,
+    'rule_sets': app_tables.rule_sets,
+    'logs': app_tables.logs
   }.items()})
 
 @anvil.server.callable
