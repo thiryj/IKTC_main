@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 import datetime as dt
 from io import StringIO
 
-# IMPORTANT: Adjust this import if your function is in a different module
+
 from server_helpers import scan_and_initialize_cycle 
 from shared import config
 from . import server_libs
@@ -446,3 +446,97 @@ def test_premium_and_sizing() -> None:
     print(f"FAIL: High price sizing. Expected 2, Got {qty}")
 
   print("--- Test Complete ---")
+
+
+# --- MOCKS ---
+class MockRow(dict):
+  def get_id(self): return "123"
+
+class MockCycle:
+  def __init__(self, hedge_qty=None):
+    self.hedge_trade = MockWrapper({'quantity': hedge_qty}) if hedge_qty else None
+
+class MockWrapper:
+  def __init__(self, row):
+    self.quantity = row.get('quantity')
+
+# --- TEST SUITE ---
+class TestEntryLogic(unittest.TestCase):
+
+  def setUp(self):
+    # Match keys to what evaluate_entry expects
+    self.rules = {
+      'trade_start_delay': 15,
+      'gap_down_thresh': 0.01,
+      'spread_target_delta': 0.20,  # Matches your function's key
+      'spread_width': 25,
+      'spread_min_premium': 1.00,
+      'spread_max_premium': 1.20,
+      'spread_size_factor': 5.0
+    }
+
+    self.open_price = 5000.0
+    self.prev_close = 5000.0
+    self.valid_time = dt.datetime(2025, 1, 1, 9, 50, 0) 
+
+    # Mock Chain
+    self.chain = [
+      {'strike': 4900, 'delta': -0.15, 'bid': 5.0, 'ask': 5.2, 'option_type': 'put'},
+      {'strike': 4925, 'delta': -0.20, 'bid': 6.0, 'ask': 6.2, 'option_type': 'put'}, # Short
+      {'strike': 4950, 'delta': -0.25, 'bid': 7.0, 'ask': 7.2, 'option_type': 'put'},
+
+      {'strike': 4875, 'delta': -0.10, 'bid': 4.0, 'ask': 4.2, 'option_type': 'put'}, 
+      {'strike': 4900, 'delta': -0.15, 'bid': 5.0, 'ask': 5.2, 'option_type': 'put'}, # Long
+    ]
+
+  def test_entry_success(self):
+    """Test a perfect setup."""
+    cycle = MockCycle(hedge_qty=1)
+
+    # Call the function
+    is_valid, data, msg = server_libs.evaluate_entry(
+      cycle=cycle,
+      current_time=self.valid_time,
+      current_price=5000.0,
+      open_price=self.open_price,
+      previous_close=self.prev_close,
+      option_chain=self.chain,
+      rules=self.rules
+    )
+
+    self.assertTrue(is_valid)
+    self.assertEqual(data['quantity'], 5)
+    self.assertEqual(data['short_strike'], 4925)
+    self.assertEqual(msg, "Entry Valid")
+
+  def test_entry_fails_premium(self):
+    """Test entry blocked if credit is too low."""
+    # Short (6.1) - Long (5.6) = 0.50 Credit
+    self.chain[4]['bid'] = 5.4 
+    self.chain[4]['ask'] = 5.8 
+
+    cycle = MockCycle(hedge_qty=1)
+    is_valid, data, msg = server_libs.evaluate_entry(
+      cycle, self.valid_time, 5000.0, 5000.0, 5000.0, self.chain, self.rules
+    )
+
+    self.assertFalse(is_valid)
+    self.assertIn("below min", msg)
+
+  def test_entry_fails_no_hedge(self):
+    """Test entry blocked if no hedge exists."""
+    cycle = MockCycle(hedge_qty=None)
+
+    is_valid, data, msg = server_libs.evaluate_entry(
+      cycle, self.valid_time, 5000.0, 5000.0, 5000.0, self.chain, self.rules
+    )
+
+    self.assertFalse(is_valid)
+    self.assertIn("No active hedge", msg)
+
+# Function to run in Anvil
+@anvil.server.callable
+def run_tests():
+  suite = unittest.TestLoader().loadTestsFromTestCase(TestEntryLogic)
+  runner = unittest.TextTestRunner(verbosity=2)
+  runner.run(suite)

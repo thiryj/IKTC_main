@@ -216,3 +216,87 @@ def get_spread_quantity(
     return 0
   raw_qty = int(hedge_quantity * rules['spread_size_factor'] / spread_price)
   return raw_qty
+
+def evaluate_entry(
+  cycle: Cycle,
+  current_time: dt.datetime,
+  current_price: float,
+  open_price: float,
+  previous_close: float,
+  option_chain: list[dict],
+  rules: dict
+) -> tuple[bool, dict, str]:
+  """
+    Master function to check ALL entry conditions.
+    Returns: (is_valid, trade_data_dict, reason_message)
+    """
+
+  # 1. Broad Market Checks (Time, Gaps)
+  # We pass the full rules dict as requested
+  valid_market, market_msg = check_entry_conditions(
+    current_price=current_price,
+    open_price=open_price,
+    previous_close=previous_close,
+    current_time=current_time,
+    rules=rules
+  )
+
+  if not valid_market:
+    return False, {}, market_msg
+
+    # 2. Strike Selection
+  strikes = calculate_spread_strikes(
+    chain=option_chain,
+    target_delta=rules['spread_target_delta'],
+    spread_width=rules['spread_width'],
+    option_type="put" # Hardcoded for Put Credit Spread strategy
+  )
+
+  if not strikes:
+    return False, {}, "Could not find valid strikes (Check Delta/Width)"
+
+  short_strike, long_strike = strikes
+
+  # 3. Fetch Leg Data for Pricing
+  # Helper to find the specific leg dicts again (optimized in real implementation)
+  short_leg = next(opt for opt in option_chain if opt['strike'] == short_strike and opt['option_type'] == 'put')
+  long_leg = next(opt for opt in option_chain if opt['strike'] == long_strike and opt['option_type'] == 'put')
+
+  # 4. Premium Validation
+  valid_prem, net_credit, prem_msg = validate_premium_and_size(
+    short_leg=short_leg,
+    long_leg=long_leg,
+    rules=rules
+  )
+
+  if not valid_prem:
+    return False, {}, prem_msg
+
+    # 5. Sizing Calculation
+    # We need the hedge quantity. If no hedge trade exists, we can default to 0 or block.
+    # Assuming cycle.hedge_trade is populated if status is Active.
+  hedge_qty = cycle.hedge_trade.quantity if cycle.hedge_trade else 0
+
+  if hedge_qty == 0:
+    return False, {}, "No active hedge quantity found to size against"
+
+  quantity = get_spread_quantity(
+    hedge_quantity=hedge_qty,
+    spread_price=net_credit,
+    rules=rules
+  )
+
+  if quantity == 0:
+    return False, {}, "Calculated quantity is 0 (Price too high?)"
+
+    # 6. Success - Package the Data
+  trade_data = {
+    'short_strike': short_strike,
+    'long_strike': long_strike,
+    'net_credit': net_credit,
+    'quantity': quantity,
+    'short_leg_data': short_leg, # Passing full leg data for ID tracking later
+    'long_leg_data': long_leg
+  }
+
+  return True, trade_data, "Entry Valid"
