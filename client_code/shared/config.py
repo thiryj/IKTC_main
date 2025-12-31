@@ -1,3 +1,4 @@
+import datetime as dt
 # Cycle Status
 STATUS_NEW = 'NEW'
 STATUS_OPEN = 'OPEN'
@@ -24,3 +25,10 @@ STATE_IDLE = 'IDLE'
 # Alert Levels
 ALERT_CRITICAL = 'CRITICAL'
 ALERT_INFO = 'INFO'
+
+# Tradier API enums
+TRADIER_OPTION_TYPE_PUT = 'put'
+TRADIER_OPTION_TYPE_CALL = 'call'
+
+# Misc statics
+MARKET_OPEN_TIME = dt.time(9, 30)

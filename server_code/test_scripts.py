@@ -7,6 +7,7 @@ from io import StringIO
 # IMPORTANT: Adjust this import if your function is in a different module
 from server_helpers import scan_and_initialize_cycle 
 from shared import config
+from . import server_libs
 
 from . server_client import start_new_cycle, get_campaign_dashboard, run_auto, close_campaign_manual
 from anvil.tables import app_tables
@@ -271,3 +272,125 @@ def run_scanner_tests():
   print(stream.getvalue())
 
   return f"Tests Run: {result.testsRun}, Errors: {len(result.errors)}, Failures: {len(result.failures)}"
+
+@anvil.server.callable
+def test_entry_conditions() -> None:
+  print("--- Unit Testing: Entry Conditions ---")
+
+  # Mock Data
+  mock_rules = {
+    'trade_start_delay': 15,     # 15 minutes
+    'gap_down_thresh': 0.02      # 2% limit
+  }
+
+  # Reference: Today at Market Open (09:30)
+  # Note: Ensure shared.config.MARKET_OPEN_TIME is set to dt.time(9, 30)
+  today = dt.date.today()
+  base_open = dt.datetime.combine(today, dt.time(9, 30))
+
+  # --- Test 1: Too Early (09:35) ---
+  test_time = base_open + dt.timedelta(minutes=5)
+  allowed, msg = server_libs.check_entry_conditions(
+    current_price=4000.0, open_price=4000.0, previous_close=4000.0,
+    current_time=test_time, rules=mock_rules
+  )
+  if not allowed and "Wait time" in msg:
+    print("PASS: Early entry blocked.")
+  else:
+    print(f"FAIL: Early entry logic. Got: {allowed}, {msg}")
+
+    # --- Test 2: Overnight Gap Down (-3%) ---
+  test_time = base_open + dt.timedelta(minutes=30)
+  allowed, msg = server_libs.check_entry_conditions(
+    current_price=3880.0, open_price=3880.0, previous_close=4000.0,
+    current_time=test_time, rules=mock_rules
+  )
+  if not allowed and "Overnight gap" in msg:
+    print("PASS: Overnight gap blocked.")
+  else:
+    print(f"FAIL: Overnight gap logic. Got: {allowed}, {msg}")
+
+    # --- Test 3: Intraday Crash (-3% since open) ---
+  allowed, msg = server_libs.check_entry_conditions(
+    current_price=3880.0, open_price=4000.0, previous_close=4000.0,
+    current_time=test_time, rules=mock_rules
+  )
+  if not allowed and "Intraday drop" in msg:
+    print("PASS: Intraday crash blocked.")
+  else:
+    print(f"FAIL: Intraday crash logic. Got: {allowed}, {msg}")
+
+    # --- Test 4: Valid Entry ---
+  allowed, msg = server_libs.check_entry_conditions(
+    current_price=4005.0, open_price=4000.0, previous_close=4000.0,
+    current_time=test_time, rules=mock_rules
+  )
+  if allowed:
+    print("PASS: Valid entry accepted.")
+  else:
+    print(f"FAIL: Valid entry rejected. Got: {msg}")
+
+  print("--- Test Complete ---")
+
+@anvil.server.callable
+def test_strike_selection() -> None:
+  print("--- Unit Testing: Strike Selection ---")
+
+  # Mock Option Chain (SPX-like structure)
+  # Note: Puts have negative deltas
+  mock_chain = [
+    {'strike': 4000, 'delta': -0.50, 'option_type': 'put'},
+    {'strike': 3975, 'delta': -0.30, 'option_type': 'put'},
+    {'strike': 3950, 'delta': -0.20, 'option_type': 'put'}, # Target for Test 1
+    {'strike': 3925, 'delta': -0.12, 'option_type': 'put'},
+    {'strike': 3900, 'delta': -0.05, 'option_type': 'put'},
+
+    # Call side just for verification
+    {'strike': 4050, 'delta': 0.20, 'option_type': 'call'},
+    {'strike': 4075, 'delta': 0.10, 'option_type': 'call'},
+  ]
+
+  # --- Test 1: Standard Put Spread (Target Delta 0.20, Width 25) ---
+  # Expected: Short 3950 (-0.20 delta), Long 3925 (3950 - 25)
+  result = server_libs.calculate_spread_strikes(
+    chain=mock_chain,
+    target_delta=0.20,
+    spread_width=25,
+    option_type="put"
+  )
+
+  if result == (3950, 3925):
+    print(f"PASS: Standard Put Spread found {result}")
+  else:
+    print(f"FAIL: Standard Put Spread. Got {result}, Expected (3950, 3925)")
+
+    # --- Test 2: Closest Delta Match (Target 0.10) ---
+    # Expected: Short 3925 (-0.12) is closer to 0.10 than 3900 (-0.05)
+    # Long: 3900 (3925 - 25)
+  result = server_libs.calculate_spread_strikes(
+    chain=mock_chain,
+    target_delta=0.10,
+    spread_width=25,
+    option_type="put"
+  )
+
+  if result == (3925, 3900):
+    print(f"PASS: Closest Delta logic found {result}")
+  else:
+    print(f"FAIL: Closest Delta logic. Got {result}, Expected (3925, 3900)")
+
+    # --- Test 3: Missing Long Leg (Broken Wing) ---
+    # Target 0.20 (Short 3950), Width 100 -> Target Long 3850 (Does not exist)
+  result = server_libs.calculate_spread_strikes(
+    chain=mock_chain,
+    target_delta=0.20,
+    spread_width=100, 
+    option_type="put"
+  )
+
+  if result is None:
+    print("PASS: Missing leg correctly returned None")
+  else:
+    print(f"FAIL: Missing leg validation. Got {result}")
+
+  print("--- Test Complete ---")

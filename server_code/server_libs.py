@@ -102,6 +102,34 @@ def alert_human(message, level=config.ALERT_INFO):
   print(f"ALERT [{level}]: {message}")
 
 # ... Add other stubs (select_hedge_strike, calculate_roll_legs) as we hit them
+# in chronological order of usage
+
+def check_entry_conditions(
+  current_price: float,
+  open_price: float,
+  previous_close: float,
+  current_time: dt.datetime,
+  rules: dict
+) -> tuple[bool, str]:
+
+  # 1. Time Check: Ensure minimum minutes after open have passed
+  market_open_dt = dt.datetime.combine(current_time.date(), config.MARKET_OPEN_TIME)
+  minutes_since_open = (current_time - market_open_dt).total_seconds() / 60.0
+
+  if minutes_since_open < rules['trade_start_delay']:
+    return False, "Wait time active"
+
+    # 2. Overnight Gap Check: Did market open significantly lower?
+  overnight_drop_pct = (open_price - previous_close) / previous_close
+  if overnight_drop_pct < -rules['gap_down_thresh']:
+    return False, f"Overnight gap {overnight_drop_pct:.1%} exceeds limit of {rules['gap_down_thresh']*100}%"
+
+    # 3. Intraday Drop Check: Has market crashed since open?
+  intraday_drop_pct = (current_price - open_price) / open_price
+  if intraday_drop_pct < -rules['gap_down_thresh']:
+    return False, f"Intraday drop {intraday_drop_pct:.1%} exceeds limit"
+
+  return True, "Entry valid"
 
 def select_hedge_strike(chain):
   pass
@@ -112,4 +140,41 @@ def get_target_hedge_date(cycle: Cycle, current_date:Optional[dt.date]=None)->dt
     current_date = dt.datetime.now().date()
     target_days = cycle.rules['target_hedge_dte']
   return current_date + dt.timedelta(days=target_days)
+
+def calculate_spread_strikes(
+  chain: list[dict],
+  target_delta: float,
+  spread_width: float,
+  option_type: str = config.TRADIER_OPTION_TYPE_PUT
+) -> tuple[float, float] | None:
+  """
+    Scans the chain for the strike closest to target_delta.
+    Verifies the protection strike (width) exists.
+    Returns (short_strike, long_strike) or None.
+    """
+  # 1. Filter for the requested side (put/call)
+  side_chain = [opt for opt in chain if opt['option_type'] == option_type]
+
+  if not side_chain:
+    return None
+
+  # 2. Find Short Strike (Closest to Target Delta)
+  # We use abs() so 0.25 target matches -0.25 delta on puts
+  short_leg = min(side_chain, key=lambda x: abs(abs(x['delta']) - target_delta))
+  short_strike = short_leg['strike']
+
+  # 3. Calculate Target Long Strike
+  if option_type == config.TRADIER_OPTION_TYPE_PUT:
+    long_strike = short_strike - spread_width
+  else: # call
+    long_strike = short_strike + spread_width
+
+    # 4. Verify Long Strike Exists in the Data
+    # Exact match required to maintain strict risk profile
+  long_leg = next((opt for opt in side_chain if opt['strike'] == long_strike), None)
+
+  if long_leg:
+    return short_strike, long_strike
+
+  return None
 
