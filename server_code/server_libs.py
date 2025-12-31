@@ -178,3 +178,41 @@ def calculate_spread_strikes(
 
   return None
 
+def validate_premium_and_size(
+  short_leg: dict,
+  long_leg: dict,
+  rules: dict
+) -> tuple[bool, float, str]:
+  """
+    Calculates spread mid-price, validates against rules, and determines size.
+    Returns: (is_valid, quantity, net_credit, message)
+    """
+  # 1. Calculate Mid Prices
+  short_mid = (short_leg['bid'] + short_leg['ask']) / 2.0
+  long_mid = (long_leg['bid'] + long_leg['ask']) / 2.0
+
+  # 2. Calculate Net Credit (Short - Long)
+  net_credit = short_mid - long_mid
+
+  # 3. Validate against RuleSet limits
+  if net_credit < rules['spread_min_premium']:
+    return False, net_credit, f"Credit {net_credit:.2f} below min {rules['spread_min_premium']}"
+
+  if net_credit > rules['spread_max_premium']:
+    return False, net_credit, f"Credit {net_credit:.2f} exceeds max {rules['spread_max_premium']}"
+
+  return True, net_credit, "Premium Valid"
+
+def get_spread_quantity(
+  hedge_quantity: int,
+  spread_price: float,
+  rules: dict
+) -> int:
+  """
+    Calculates trade size based on hedge ratio and spread price.
+    Formula: (Hedge_Qty * Size_Factor) / Spread_Price
+    """
+  if spread_price <= 0:
+    return 0
+  raw_qty = int(hedge_quantity * rules['spread_size_factor'] / spread_price)
+  return raw_qty

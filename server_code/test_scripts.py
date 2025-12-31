@@ -394,3 +394,55 @@ def test_strike_selection() -> None:
     print(f"FAIL: Missing leg validation. Got {result}")
 
   print("--- Test Complete ---")
+
+@anvil.server.callable
+def test_premium_and_sizing() -> None:
+  print("--- Unit Testing: Premium & Sizing ---")
+
+  # Mock Rules
+  mock_rules = {
+    'spread_min_premium': 0.50,
+    'spread_max_premium': 2.50,
+    'spread_size_factor': 5.0 
+  }
+
+  # Mock Legs for Premium Check
+  # Short: 5.00, Long: 4.00 -> Credit: 1.00 (Valid)
+  leg_short = {'bid': 4.90, 'ask': 5.10} # Mid 5.00
+  leg_long =  {'bid': 3.90, 'ask': 4.10} # Mid 4.00
+
+  # --- Test 1: Valid Premium ---
+  valid, credit, msg = server_libs.validate_premium_and_size(leg_short, leg_long, mock_rules)
+  if valid and credit == 1.0:
+    print(f"PASS: Valid Premium accepted ({credit}).")
+  else:
+    print(f"FAIL: Valid Premium logic. Got {valid}, {credit}")
+
+    # --- Test 2: Premium Too Low (< 0.50) ---
+    # Short: 5.00, Long: 4.70 -> Credit: 0.30
+  leg_long_expensive = {'bid': 4.60, 'ask': 4.80} # Mid 4.70
+  valid, credit, msg = server_libs.validate_premium_and_size(leg_short, leg_long_expensive, mock_rules)
+  if not valid and "below min" in msg:
+    print(f"PASS: Low premium blocked ({credit}).")
+  else:
+    print(f"FAIL: Low premium logic. Got {valid}, {msg}")
+
+    # --- Test 3: Sizing Logic ---
+    # User Scenario: Hedge=2, Factor=5, Price=1.00 -> Expect 10
+  qty = server_libs.get_spread_quantity(hedge_quantity=2, spread_price=1.00, rules=mock_rules)
+
+  if qty == 10:
+    print(f"PASS: Sizing calc correct (Qty: {qty}).")
+  else:
+    print(f"FAIL: Sizing calc. Expected 10, Got {qty}")
+
+    # --- Test 4: Sizing with Higher Price ---
+    # Hedge=1, Factor=5, Price=2.50 -> (1*5)/2.5 = 2
+  qty = server_libs.get_spread_quantity(hedge_quantity=1, spread_price=2.50, rules=mock_rules)
+
+  if qty == 2:
+    print(f"PASS: High price sizing correct (Qty: {qty}).")
+  else:
+    print(f"FAIL: High price sizing. Expected 2, Got {qty}")
+
+  print("--- Test Complete ---")
