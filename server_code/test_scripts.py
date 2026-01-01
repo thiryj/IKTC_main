@@ -8,6 +8,7 @@ from io import StringIO
 from server_helpers import scan_and_initialize_cycle 
 from shared import config
 from . import server_libs
+from . import server_api
 
 from . server_client import start_new_cycle, get_campaign_dashboard, run_auto, close_campaign_manual
 from anvil.tables import app_tables
@@ -540,3 +541,75 @@ def run_tests():
   suite = unittest.TestLoader().loadTestsFromTestCase(TestEntryLogic)
   runner = unittest.TextTestRunner(verbosity=2)
   runner.run(suite)
+
+
+@anvil.server.callable
+def run_api_tests():
+  print("=== STARTING TRADIER API DIAGNOSTICS ===")
+
+  # 1. Environment & Auth Check
+  print("\n--- TEST 1: Environment & Auth ---")
+  try:
+    env_status = server_api.get_environment_status()
+    print(f"Status: {env_status['status']}")
+    print(f"Message: {env_status['status_message']}")
+    print(f"Current Env: {env_status.get('current_env', 'UNKNOWN')}")
+    print(f"Target Underlying: {env_status.get('target_underlying', 'UNKNOWN')}")
+
+    if env_status['status_message'].startswith("API Error"):
+      print("CRITICAL: Auth failed. Check API Keys.")
+      return
+  except Exception as e:
+    print(f"CRITICAL: Connection Error: {e}")
+    return
+
+    # 2. Data Fetching Check (Real Chain)
+  target = env_status.get('target_underlying')
+  print(f"\n--- TEST 2: Fetching {target} Option Chain ---")
+
+  # Use tomorrow/next week to ensure data exists
+  test_date = dt.date.today() + dt.timedelta(days=7) 
+  # Adjust to nearest Friday if needed, but usually 7 days out works for SPY/SPX
+
+  chain = server_api.get_option_chain(date=test_date)
+
+  if chain:
+    print(f"SUCCESS: Received {len(chain)} options for {test_date}")
+    print(f"Sample: {chain[0]['symbol']} | Bid: {chain[0]['bid']} | Delta: {chain[0].get('delta', 'N/A')}")
+
+    # Pick 2 legs for the Order Test
+    short_leg = chain[0] # Just grab first one
+    long_leg = chain[1] if len(chain) > 1 else chain[0]
+  else:
+    print("FAILURE: Chain returned empty. (Is the market data subscription active for this env?)")
+    # Try fetching underlying quote as fallback check
+    print("Attempting to fetch underlying quote...")
+    try:
+      t = server_api._get_client()
+      q = server_api._get_quote_direct(t, target)
+      print(f"Quote Result: {q}")
+    except:
+      pass
+    return
+
+    # 3. Order Construction & Preview Check
+  print("\n--- TEST 3: Order Logic & Preview ---")
+
+  # Construct a dummy trade_data dict matching what 'evaluate_entry' produces
+  dummy_trade = {
+    'quantity': 1,
+    'net_credit': 0.50,
+    'short_leg_data': short_leg,
+    'long_leg_data': long_leg
+  }
+
+  print(f"Testing open_spread_position with: {short_leg['symbol']} / {long_leg['symbol']}")
+  try:
+    result = server_api.open_spread_position(dummy_trade, preview=True)
+    print("SUCCESS: Order Preview Accepted!")
+    print(f"API Response: {result}")
+
+  except Exception as e:
+    print(f"CRITICAL: Order Preview Failed: {e}")
+
+  print("\n=== DIAGNOSTICS COMPLETE ===")

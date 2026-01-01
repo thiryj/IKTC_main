@@ -33,6 +33,12 @@ def run_automation_routine():
   if not server_libs.can_run_automation(env_status, cycle):
     print(f"LOG: Automation skipped. Reason: {env_status['status_message']}")
     return
+    
+  expected_symbol = env_status['target_underlying']
+  if cycle and cycle.underlying != expected_symbol:
+    print(f"WARNING: Cycle is {cycle.underlying} but Environment is {env_status['current_env']} ({expected_symbol}).")
+    return
+  
 
   # 3. SYNC REALITY (Dirty)
   # Ensure DB matches Tradier before making decisions
