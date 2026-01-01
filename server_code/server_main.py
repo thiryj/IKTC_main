@@ -18,12 +18,15 @@ def run_automation_routine():
   # 1. LOAD CONTEXT (Dirty)
   # Fetch the one active campaign. 
   # Logic: There should only be one 'OPEN' cycle at a time.
-  cycle_row = app_tables.cycles.get(Status=config.STATUS_OPEN)
+  cycle_row = app_tables.cycles.get(status=config.STATUS_OPEN)
 
   # Hydrate the Cycle object (or None if we are starting fresh)
   # Note: If no cycle exists, we create a dummy one or handle it in logic
   cycle = Cycle(cycle_row) if cycle_row else None
-  print("In main loop:  cycle: \n" + "\n".join(f"{k} : {v}" for k, v in vars(cycle).items()))
+  if cycle:
+    print("In main loop:  cycle: \n" + "\n".join(f"{k} : {v}" for k, v in vars(cycle).items()))
+  else:
+    print("In main loop: No active cycle found (cycle is None)")
 
   # 2. PRECONDITIONS (Clean check of Dirty Data)
   # Get environment data (Time, Market Open/Close, Holiday)
@@ -56,7 +59,7 @@ def run_automation_routine():
     server_libs.alert_human("Panic Harvest Executed!", level=config.ALERT_CRITICAL)
     # Update DB
     if cycle_row:
-      cycle_row['Status'] = config.STATUS_CLOSED
+      cycle_row['status'] = config.STATUS_CLOSED
 
   elif decision_state == config.STATE_ROLL_REQUIRED:
     # Strategy: Roll the income spread (Logic: Ask > 3x Credit)
