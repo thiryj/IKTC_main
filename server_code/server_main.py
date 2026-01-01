@@ -8,6 +8,7 @@ from shared import config
 from shared.classes import Cycle
 from . import server_libs  # The Brains (Clean Stubs)
 from . import server_api  # The Hands (Dirty Stubs)
+from . import server_db
 
 @anvil.server.callable
 @anvil.server.background_task
@@ -26,10 +27,10 @@ def run_automation_routine():
 
   # 2. PRECONDITIONS (Clean check of Dirty Data)
   # Get environment data (Time, Market Open/Close, Holiday)
-  env = server_api.get_environment_status()
+  env_status = server_api.get_environment_status()
 
-  if not server_libs.can_run_automation(env, cycle):
-    print(f"LOG: Automation skipped. Reason: {env['status_message']}")
+  if not server_libs.can_run_automation(env_status, cycle):
+    print(f"LOG: Automation skipped. Reason: {env_status['status_message']}")
     return
 
   # 3. SYNC REALITY (Dirty)
@@ -79,11 +80,41 @@ def run_automation_routine():
     server_api.buy_option(leg_to_buy)
 
   elif decision_state == config.STATE_SPREAD_MISSING:
-    # Strategy: Sell the 0DTE spread
+    print("LOG: Attempting to enter new spread...")
+    
     # Only if hedge is present (checked inside determine_cycle_state)
-    chain = server_api.get_option_chain(date=env['today'])
-    legs_to_sell = server_libs.select_spread_strikes(chain)
-    server_api.open_spread_position(legs_to_sell)
+    chain = server_api.get_option_chain(date=env_status['today'])
+    
+    # 2. Evaluate Entry
+    is_valid, trade_data, reason = server_libs.evaluate_entry(
+      cycle=cycle,
+      current_time=env_status['now'],
+      current_price=market_data['price'],
+      open_price=market_data['open'],
+      previous_close=market_data['previous_close'],
+      option_chain=chain,
+      rules=cycle.rule_set._row # Pass the raw dictionary from the wrapper
+    )
+    if is_valid:
+      print(f"LOG: Entry Valid! Qty: {trade_data['quantity']} Credit: {trade_data['net_credit']}")
+
+      # 3. Execute Order (API)
+      order_res = server_api.open_spread_position(trade_data)
+
+      # 4. Record to DB (Persistence)
+      # Note: We import server_db at the top of main
+      server_db.record_new_trade(
+        cycle_row=cycle_row, # The raw row
+        role=config.ROLE_INCOME,
+        trade_dict=trade_data,
+        order_id=order_res['id'],
+        fill_price=order_res['price'],
+        fill_time=order_res['time']
+      )
+      print("LOG: Trade recorded successfully.")
+
+    else:
+      print(f"LOG: Entry Logic Rejected: {reason}")
 
   elif decision_state == config.STATE_HEDGE_ADJUSTMENT_NEEDED:
     # Strategy: Roll to fresh 90 DTE / 25 Delta Put

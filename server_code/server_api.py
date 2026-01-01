@@ -8,9 +8,7 @@ from shared import config
 IS_MOCK_MODE = True 
 
 def get_environment_status() -> dict:
-  """
-  Returns environment data required by the orchestrator.
-  """
+  """Returns environment data required by the orchestrator"""
   now = dt.datetime.now()
   # Mocking a valid trading time (e.g., 10:00 AM)
   # In production, this would be actual server time
