@@ -44,9 +44,7 @@ def get_market_data_snapshot(cycle) -> dict:
   }
 
 def get_option_chain(date: dt.date) -> list[dict]:
-  """
-  Returns a mock option chain with enough data to pass evaluate_entry.
-  """
+  """Returns a mock option chain with enough data to pass evaluate_entry."""
   print(f"API: Fetching mock chain for {date}")
 
   # Generate a valid chain around 5000 SPX
@@ -60,7 +58,7 @@ def get_option_chain(date: dt.date) -> list[dict]:
     'symbol': 'SPXW_MOCK_SHORT',
     'strike': 4925,
     'option_type': 'put',
-    'delta': -0.20,
+    'greeks':{'delta': -0.20},
     'bid': 6.0,
     'ask': 6.2, # Mid 6.10
     'expiration_date': date
@@ -71,7 +69,7 @@ def get_option_chain(date: dt.date) -> list[dict]:
     'symbol': 'SPXW_MOCK_LONG',
     'strike': 4900,
     'option_type': 'put',
-    'delta': -0.15,
+    'greeks': {'delta': -0.15},
     'bid': 5.0,
     'ask': 5.2, # Mid 5.10
     'expiration_date': date
@@ -110,5 +108,12 @@ def execute_roll(trade, new_legs):
 def close_position(trade):
   print(f"API: Closing Trade {trade.id}")
 
-def buy_option(leg):
-  print(f"API: Buying leg {leg}")
+def buy_option(leg: dict)->dict:
+  """Simulates buying a single option"""
+  print(f"API: Buying Hedge {leg['symbol']}...")
+  return {
+    'id': f"ORD_HEDGE_{random.randint(1000,9999)}",
+    'price': leg['ask'], # We pay the Ask
+    'time': dt.datetime.now(),
+    'status': 'filled'
+  }

@@ -71,7 +71,7 @@ def setup_test_scenario():
     rule_set=rules,
     notes="Automated Test Scenario"
   )
-
+  '''
   # 3. Create Hedge Trade
   print("Creating Hedge Trade...")
   hedge_trade = app_tables.trades.add_row(
@@ -99,7 +99,7 @@ def setup_test_scenario():
     active=True,
     occ_symbol="SPX_HEDGE_SEED"
   )
-
+  '''
   print(f"--- SEED COMPLETE ---")
   print(f"Cycle ID: {cycle_row.get_id()}")
   print("You can now run 'run_automation_routine()'")

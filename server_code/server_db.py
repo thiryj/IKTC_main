@@ -114,9 +114,10 @@ def record_new_trade(
 ) -> Trade:
   """
     Persists a fully executed trade to the database.
-    Creates: Trade -> Transaction -> Legs (2).
+    Creates: Trade -> Transaction -> Legs (1 or 2 depending on role).
     """
-
+  rules = cycle_row['rule_set']  #needed for exit strat calcs
+  
   # 1. Create the Trade Row
   trade_row = app_tables.trades.add_row(
     cycle=cycle_row,
@@ -129,12 +130,12 @@ def record_new_trade(
     pnl=0.0,
 
     # Strategy Logic: Set targets based on role
-    target_harvest_price=fill_price * 0.50 if role == config.ROLE_INCOME else None,
-    roll_trigger_price=fill_price * 3.0 if role == config.ROLE_INCOME else None,
+    target_harvest_price=fill_price * rules['profit_target_pct'] if role == config.ROLE_INCOME else None,
+    roll_trigger_price=fill_price * rules['roll_trigger_mult'] if role == config.ROLE_INCOME else None,
 
     # Calculate capital required (Width * 100 * Qty)
     capital_required=(
-      trade_dict['quantity'] * 100 * abs(trade_dict['short_strike'] - trade_dict['long_strike']) 
+      trade_dict['quantity'] * config.DEFAULT_MULTIPLIER * abs(trade_dict['short_strike'] - trade_dict['long_strike']) 
       if role == config.ROLE_INCOME else 0.0
     )
   )
@@ -155,19 +156,20 @@ def record_new_trade(
   long_data = trade_dict['long_leg_data']
 
   # Short Leg
-  app_tables.legs.add_row(
-    trade=trade_row,
-    opening_transaction=open_txn,
-    closing_transaction=None,
-    side=config.LEG_SIDE_SHORT,
-    quantity=trade_dict['quantity'],
-    strike=trade_dict['short_strike'],
-    option_type=config.TRADIER_OPTION_TYPE_PUT,
-    # Handle API key variations safely
-    expiry=short_data.get('expiration_date') or short_data.get('expiry'), 
-    occ_symbol=short_data.get('symbol') or short_data.get('occ_symbol'),
-    active=True
-  )
+  
+  if role == config.ROLE_INCOME and short_data:
+    app_tables.legs.add_row(
+      trade=trade_row,
+      opening_transaction=open_txn,
+      closing_transaction=None,
+      side=config.LEG_SIDE_SHORT,
+      quantity=trade_dict['quantity'],
+      strike=trade_dict['short_strike'],
+      option_type=config.TRADIER_OPTION_TYPE_PUT,
+      expiry=short_data.get('expiration_date') or short_data.get('expiry'), 
+      occ_symbol=short_data.get('symbol') or short_data.get('occ_symbol'),
+      active=True
+    )
 
   # Long Leg
   app_tables.legs.add_row(
@@ -192,7 +194,7 @@ def _hydrate_cycle_children(cycle, cycle_row):
   # Schema: 'cycle' (column in trades table)
   trade_rows = app_tables.trades.search(cycle=cycle_row)
   cycle.trades = []
-
+  cycle.hedge_trade_link = None 
   for t_row in trade_rows:
     trade_obj = Trade(t_row)
 

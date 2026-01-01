@@ -104,7 +104,7 @@ db_schema:
   rule_sets:
     client: none
     columns:
-    - admin_ui: {width: 71}
+    - admin_ui: {order: 0, width: 116}
       name: name
       type: string
     - admin_ui: {width: 92}

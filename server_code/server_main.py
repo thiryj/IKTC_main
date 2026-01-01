@@ -17,13 +17,11 @@ def run_automation_routine():
 
   # 1. LOAD CONTEXT (Dirty)
   # Fetch the one active campaign. 
-  # Logic: There should only be one 'OPEN' cycle at a time.
-  cycle_row = app_tables.cycles.get(status=config.STATUS_OPEN)
+  # Use server_db to fetch and FULLY HYDRATE the cycle (links trades, legs, hedge)
+  cycle = server_db.get_active_cycle()
 
-  # Hydrate the Cycle object (or None if we are starting fresh)
-  # Note: If no cycle exists, we create a dummy one or handle it in logic
-  cycle = Cycle(cycle_row) if cycle_row else None
   if cycle:
+    cycle_row = cycle._row
     print("In main loop:  cycle: \n" + "\n".join(f"{k} : {v}" for k, v in vars(cycle).items()))
   else:
     print("In main loop: No active cycle found (cycle is None)")
@@ -76,12 +74,39 @@ def run_automation_routine():
     server_api.close_position(spread_trade)
 
   elif decision_state == config.STATE_HEDGE_MISSING:
+    print("LOG: Hedge missing. Attempting to buy protection...")
     # Strategy: Buy the 90 DTE / 25 Delta put
-    target_expiry = server_libs.get_target_hedge_date(cycle)
-    chain = server_api.get_option_chain(target_expiry)
-    leg_to_buy = server_libs.select_hedge_strike(chain)
-    server_api.buy_option(leg_to_buy)
+    target_expiry = server_libs.get_target_hedge_date(cycle, env_status['today'])
+    chain = server_api.get_option_chain(date=target_expiry)
+    leg_to_buy = server_libs.select_hedge_strike(chain, target_delta=cycle.rule_set._row['hedge_target_delta'])
+    if leg_to_buy:
+      print(f"LOG: Selected Hedge: {leg_to_buy['symbol']} Delta: {leg_to_buy['greeks']['delta']}")
 
+      # 4. Prepare Trade Data (Simulate a 'Trade Dict' for the recorder)
+      # We construct this manually since we don't have an evaluate_hedge function yet
+      trade_data = {
+        'quantity': 1, # Always 1 unit per decision loop for now, or based on account size
+        'short_strike': 0, # N/A
+        'long_strike': leg_to_buy['strike'],
+        'short_leg_data': {}, 
+        'long_leg_data': leg_to_buy
+      }
+      order_res = server_api.buy_option(leg_to_buy)
+      
+      # 6. Record (DB)
+      new_trade_obj = server_db.record_new_trade(
+        cycle_row=cycle_row,
+        role=config.ROLE_HEDGE,
+        trade_dict=trade_data,
+        order_id=order_res['id'],
+        fill_price=order_res['price'], # Debit is positive price in this context? Or negative?
+        fill_time=order_res['time']
+      )
+      cycle_row['hedge_trade'] = new_trade_obj._row
+      print("LOG: Hedge executed, recorded, and linked to Cycle.")
+    else:
+      print("LOG: Could not find suitable hedge strike.")
+      
   elif decision_state == config.STATE_SPREAD_MISSING:
     print("LOG: Attempting to enter new spread...")
     

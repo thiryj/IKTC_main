@@ -68,9 +68,7 @@ def _check_roll_needed(cycle, market_data):
   return False
 
 def _check_hedge_maintenance(cycle, market_data):
-  """
-  Rule: If Hedge Delta < 15 or > 40, OR DTE < 60.
-  """
+  """Rule: If Hedge Delta < 15 or > 40, OR DTE < 60"""
   # STUB
   if not cycle.hedge_trade_link:
     return False
@@ -78,9 +76,7 @@ def _check_hedge_maintenance(cycle, market_data):
   return False
 
 def _check_profit_target(cycle, market_data):
-  """
-  Rule: If Spread Profit >= 50% of max profit.
-  """
+  """Rule: If Spread Profit >= 50% of max profit"""
   # STUB
   return False
 
@@ -91,12 +87,15 @@ def _check_hedge_missing(cycle):
   return cycle.hedge_trade_link is None
 
 def _check_spread_missing(cycle):
-  """
-  Rule: Hedge exists, but no active Income Trade (Spread) exists.
-  """
+  """Rule: Hedge exists, but no active Income Trade (Spread) exists."""
   # We check if there are any active trades tagged as 'INCOME'
-  # Assuming cycle.spread_trades is populated by the Cycle class
-  return len(cycle.spread_trades) == 0
+  # cycle.spread_trades is populated by server_db.get_active_cycle
+  open_spreads = [
+    t for t in cycle.trades 
+    if t.role == config.ROLE_INCOME and t.status == config.STATUS_OPEN
+  ]
+  # If we have 0 open spreads, we are "missing" the spread
+  return len(open_spreads) == 0
 
 def alert_human(message, level=config.ALERT_INFO):
   print(f"ALERT [{level}]: {message}")
@@ -131,14 +130,28 @@ def check_entry_conditions(
 
   return True, "Entry valid"
 
-def select_hedge_strike(chain):
-  pass
+def select_hedge_strike(chain: list[dict], target_delta: float = 0.25) -> dict | None:
+  """Finds the Put option closest to the target delta (e.g., 0.25)"""
+  # 1. Filter for Puts
+  puts = [opt for opt in chain if opt['option_type'] == config.TRADIER_OPTION_TYPE_PUT]
+  if not puts:
+    return None
+
+  # 2. Find Closest Delta
+  def get_delta(opt):
+    greeks = opt.get('greeks')
+    return abs(greeks.get('delta', 0.0)) if greeks else 0.0
+  # Note: Puts have negative delta, so we look for abs(delta) ~ 0.25
+  # Example: -0.25 target.
+  best_leg = min(puts, key=lambda x: abs(get_delta(x) - target_delta))
+
+  return best_leg
 
 def get_target_hedge_date(cycle: Cycle, current_date:Optional[dt.date]=None)->dt.date:
   """Calculates the target expiration date based on the Cycle's RuleSet."""
   if not current_date:
     current_date = dt.datetime.now().date()
-    target_days = cycle.rules['target_hedge_dte']
+  target_days = cycle.rule_set._row['hedge_target_dte']
   return current_date + dt.timedelta(days=target_days)
 
 def calculate_spread_strikes(
@@ -158,9 +171,14 @@ def calculate_spread_strikes(
   if not side_chain:
     return None
 
+  # Helper for safe delta access
+  def get_delta(opt):
+    greeks = opt.get('greeks')
+    return abs(greeks.get('delta', 0.0)) if greeks else 0.0
+    
   # 2. Find Short Strike (Closest to Target Delta)
   # We use abs() so 0.25 target matches -0.25 delta on puts
-  short_leg = min(side_chain, key=lambda x: abs(abs(x['delta']) - target_delta))
+  short_leg = min(side_chain, key=lambda x: abs(get_delta(x) - target_delta))
   short_strike = short_leg['strike']
 
   # 3. Calculate Target Long Strike

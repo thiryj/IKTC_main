@@ -32,3 +32,4 @@ TRADIER_OPTION_TYPE_CALL = 'call'
 
 # Misc statics
 MARKET_OPEN_TIME = dt.time(9, 30)
+DEFAULT_MULTIPLIER = 100
