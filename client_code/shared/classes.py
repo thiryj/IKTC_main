@@ -46,7 +46,8 @@ class Cycle:
         'spread_min_premium', 
         'spread_max_premium', 
         'roll_max_debit', 
-        'panic_threshold_dpu'
+        'panic_threshold_dpu',
+        'spread_size_factor'
       ]
   
       for k in scale_keys:

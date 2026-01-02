@@ -25,7 +25,7 @@ def _get_client() -> TradierAPI:
 
   api_key = anvil.secrets.get_secret(f'{env_prefix}_TRADIER_API_KEY')
   account_id = anvil.secrets.get_secret(f'{env_prefix}_TRADIER_ACCOUNT')
-  endpoint_url = anvil.secrets.get_secret(f'{env_prefix}_ENDPOINT_URL')
+  endpoint_url = anvil.secrets.get_secret(f'{env_prefix}_ENDPOINT_URL').rstrip('/')
 
   if not api_key or not account_id:
     raise ValueError(f"Missing API Credentials for {env_prefix}")
@@ -273,6 +273,9 @@ def _submit_order(t: TradierAPI, payload: Dict) -> Dict:
   try:
     print(f"API: Submitting Order -> {payload}")
     resp = t.session.post(url, data=payload, headers={'Accept': 'application/json'})
+    if resp.status_code >= 400:
+      print(f"API FAILED ({resp.status_code}): {resp.text}")
+
     resp.raise_for_status()
 
     data = resp.json()
