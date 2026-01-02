@@ -111,11 +111,13 @@ def get_market_data_snapshot(cycle) -> Dict:
   except Exception as e:
     print(f"Error fetching underlying quote: {e}")
 
-    # 2. Fetch Hedge Quote (if exists)
-  if cycle.hedge_trade and cycle.hedge_trade.legs:
+  # 2. Fetch Hedge Quote (if exists)
+  hedge = getattr(cycle, 'hedge_trade_link', None)
+
+  if hedge and hasattr(hedge, 'legs') and hedge.legs:
     try:
       # Assume first leg is the long put
-      symbol = cycle.hedge_trade.legs[0].occ_symbol
+      symbol = hedge.legs[0].occ_symbol
       h_quote = _get_quote_direct(t, symbol)
       if h_quote:
         snapshot['hedge_last'] = float(h_quote.get('last') or 0)
