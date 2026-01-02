@@ -271,8 +271,8 @@ def _submit_order(t: TradierAPI, payload: Dict) -> Dict:
   url = f"{t.endpoint}/accounts/{t.default_account_id}/orders"
 
   try:
-    print(f"API: Submitting Order -> {payload}")
-    resp = t.session.post(url, data=payload, headers={'Accept': 'application/json'})
+    print(f"API: Submitting Order -> {payload} to {url}")
+    resp = t.session.post(url, data=payload, headers={'accept': 'application/json'})
     if resp.status_code >= 400:
       print(f"API FAILED ({resp.status_code}): {resp.text}")
 
