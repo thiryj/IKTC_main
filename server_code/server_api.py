@@ -105,9 +105,26 @@ def get_market_data_snapshot(cycle) -> Dict:
     # Use your robust legacy method
     quote = _get_quote_direct(t, cycle.underlying)
     if quote:
-      snapshot['price'] = float(quote.get('last') or 0)
-      snapshot['open'] = float(quote.get('open') or 0)
-      snapshot['previous_close'] = float(quote.get('prevclose') or 0)
+      last = float(quote.get('last') or 0)
+      open_px = float(quote.get('open') or 0)
+      prev_close = float(quote.get('prevclose') or 0)
+      if last == 0:
+        print(f"WARNING: API returned 0 for {cycle.underlying} 'last' price.")
+
+        # If Open is 0 (common in Sandbox), assume Open = Last (No Gap)
+      if open_px == 0:
+        open_px = last
+
+        # If Prev Close is 0, assume Prev Close = Last (No Gap)
+      if prev_close == 0:
+        prev_close = last
+
+      snapshot['price'] = last
+      snapshot['open'] = open_px
+      snapshot['previous_close'] = prev_close
+
+      # Debug Print to confirm what the bot sees
+      print(f"Market Data: Last={last} Open={open_px} Prev={prev_close}")
   except Exception as e:
     print(f"Error fetching underlying quote: {e}")
 

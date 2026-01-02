@@ -187,6 +187,9 @@ def calculate_spread_strikes(
   else: # call
     long_strike = short_strike + spread_width
 
+  print(f"DEBUG: Short Strike: {short_strike} (Delta {get_delta(short_leg):.2f})")
+  print(f"DEBUG: Target Width: {spread_width} -> Looking for Long Strike: {long_strike}")
+  
     # 4. Verify Long Strike Exists in the Data
     # Exact match required to maintain strict risk profile
   long_leg = next((opt for opt in side_chain if opt['strike'] == long_strike), None)
@@ -194,6 +197,13 @@ def calculate_spread_strikes(
   if long_leg:
     return short_strike, long_strike
 
+  # --- DEBUG START ---
+  print("DEBUG: Long Strike NOT found in chain.")
+  # Optional: Print nearby strikes to see what WAS available
+  nearby = [o['strike'] for o in side_chain if abs(o['strike'] - long_strike) < 5]
+  print(f"DEBUG: Nearby strikes: {nearby}")
+  # --- DEBUG END ---
+  
   return None
 
 def validate_premium_and_size(

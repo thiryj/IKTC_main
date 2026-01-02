@@ -1,3 +1,4 @@
+from . import config
 
 class RuleSet:
   def __init__(self, row):
@@ -21,6 +22,41 @@ class Cycle:
     # Link Wrappers (Data Navigation Only)
     self.rule_set = RuleSet(row['rule_set']) if row['rule_set'] else None
     self.hedge_trade = Trade(row['hedge_trade']) if row['hedge_trade'] else None
+    self.trades = []
+    self.hedge_trade_link = None 
+
+  @property
+  def rules(self) -> dict:
+    """
+    Returns the Effective Rules as a dictionary.
+    Automatically handles scaling for SPY (1/10th) vs SPX.
+    """
+    if not self.rule_set:
+      return {}
+  
+    # Convert anvil Row to mutable dict
+    r = dict(self.rule_set._row)
+  
+    # Sandbox/SPY Scaling Logic
+    if self.underlying == config.TARGET_UNDERLYING[config.ENV_SANDBOX]:
+  
+      # List of keys that need to be divided by 10 for SPY
+      scale_keys = [
+        'spread_width', 
+        'spread_min_premium', 
+        'spread_max_premium', 
+        'roll_max_debit', 
+        'panic_threshold_dpu'
+      ]
+  
+      for k in scale_keys:
+        if r.get(k) is not None:
+          val = r[k] / 10.0
+          if k == 'spread_width':
+            r[k] = round(val)
+          else:
+            r[k] = val
+    return r
 
 class Trade:
   def __init__(self, row):

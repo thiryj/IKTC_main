@@ -193,8 +193,8 @@ def _hydrate_cycle_children(cycle, cycle_row):
   """Populate trades and legs into the cycle object."""
   # Schema: 'cycle' (column in trades table)
   trade_rows = app_tables.trades.search(cycle=cycle_row)
-  cycle.trades = []
   cycle.hedge_trade_link = None 
+  cycle.trades = []
   for t_row in trade_rows:
     trade_obj = Trade(t_row)
 

@@ -127,7 +127,7 @@ def run_automation_routine():
       open_price=market_data['open'],
       previous_close=market_data['previous_close'],
       option_chain=chain,
-      rules=cycle.rule_set._row # Pass the raw dictionary from the wrapper
+      rules=cycle.rules # Pass the raw dictionary from the wrapper
     )
     if is_valid:
       print(f"LOG: Entry Valid! Qty: {trade_data['quantity']} Credit: {trade_data['net_credit']}")
