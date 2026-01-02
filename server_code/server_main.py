@@ -76,8 +76,12 @@ def run_automation_routine():
 
   elif decision_state == config.STATE_HARVEST_TARGET_HIT:
     # Strategy: Close spread at 50% profit
-    spread_trade = server_libs.get_winning_spread(cycle)
-    server_api.close_position(spread_trade)
+    spread_trade = server_libs.get_winning_spread(cycle, market_data)
+    if spread_trade:
+      print(f"LOG: Harvest Target Hit! Trade {spread_trade.id}. Closing...")
+      server_api.close_position(spread_trade)
+    else:
+      print("LOG: Harvest State detected but no winning trade returned (odd).")
 
   elif decision_state == config.STATE_HEDGE_MISSING:
     print("LOG: Hedge missing. Attempting to buy protection...")

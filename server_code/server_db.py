@@ -1,4 +1,5 @@
 import anvil.server
+import anvil.tables
 from anvil.tables import app_tables
 import datetime as dt
 
@@ -103,6 +104,7 @@ def save_trade(trade_obj):
     exit_time=trade_obj.exit_time
   )
 
+@anvil.tables.in_transaction
 def record_new_trade(
   cycle_row,
   role: str,
@@ -113,10 +115,21 @@ def record_new_trade(
   fees: float = 0.0
 ) -> Trade:
   """
-    Persists a fully executed trade to the database.
-    Creates: Trade -> Transaction -> Legs (1 or 2 depending on role).
-    """
+  Persists a fully executed trade to the database.
+  Creates: Trade -> Transaction -> Legs (1 or 2 depending on role).
+  """
   rules = cycle_row['rule_set']  #needed for exit strat calcs
+  
+  def _parse_date(val):
+    if not val: return None
+    if isinstance(val, dt.date): return val
+    if isinstance(val, dt.datetime): return val.date()
+    if isinstance(val, str):
+      try:
+        return dt.datetime.strptime(val, "%Y-%m-%d").date()
+      except ValueError:
+        return None
+    return None
   
   # 1. Create the Trade Row
   trade_row = app_tables.trades.add_row(
@@ -166,7 +179,7 @@ def record_new_trade(
       quantity=trade_dict['quantity'],
       strike=trade_dict['short_strike'],
       option_type=config.TRADIER_OPTION_TYPE_PUT,
-      expiry=short_data.get('expiration_date') or short_data.get('expiry'), 
+      expiry=_parse_date(short_data.get('expiration_date') or short_data.get('expiry')), 
       occ_symbol=short_data.get('symbol') or short_data.get('occ_symbol'),
       active=True
     )
@@ -180,11 +193,10 @@ def record_new_trade(
     quantity=trade_dict['quantity'],
     strike=trade_dict['long_strike'],
     option_type=config.TRADIER_OPTION_TYPE_PUT,
-    expiry=long_data.get('expiration_date') or long_data.get('expiry'),
+    expiry=_parse_date(long_data.get('expiration_date') or long_data.get('expiry')),
     occ_symbol=long_data.get('symbol') or long_data.get('occ_symbol'),
     active=True
   )
-
   return Trade(trade_row)
 
 # --- INTERNAL HYDRATION HELPERS ---

@@ -77,7 +77,16 @@ def _check_hedge_maintenance(cycle, market_data):
 
 def _check_profit_target(cycle, market_data):
   """Rule: If Spread Profit >= 50% of max profit"""
-  # STUB
+  marks = market_data.get('spread_marks', {})
+
+  for trade in cycle.trades:
+    if trade.role == config.ROLE_INCOME and trade.status == config.STATUS_OPEN:
+      current_cost = marks.get(trade.id)
+
+      # If we have a valid price and it is CHEAPER than our target debit
+      # Example: Target 0.15. Current Cost 0.06.  0.06 <= 0.15 -> TRUE.
+      if current_cost is not None and current_cost <= (trade.target_harvest_price or 0):
+        return True
   return False
 
 def _check_hedge_missing(cycle):
@@ -328,3 +337,16 @@ def evaluate_entry(
   }
 
   return True, trade_data, "Entry Valid"
+
+def get_winning_spread(cycle, market_data) -> Optional[Trade]:
+  """
+    Returns the specific trade that hit its profit target.
+    """
+  marks = market_data.get('spread_marks', {})
+
+  for trade in cycle.trades:
+    if trade.role == config.ROLE_INCOME and trade.status == config.STATUS_OPEN:
+      current_cost = marks.get(trade.id)
+      if current_cost is not None and current_cost <= (trade.target_harvest_price or 0):
+        return trade
+  return None
