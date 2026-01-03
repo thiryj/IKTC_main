@@ -184,10 +184,15 @@ def get_option_chain(date: dt.date, symbol: str = None) -> List[Dict]:
     # Raw GET request
     resp = t.session.get(f"{t.endpoint}/markets/options/chains", params=params, headers={'Accept': 'application/json'})
     data = resp.json()
+    #print(f"in get_option_chain.  response data: {data}")
+    if data is None:
+      return []
+    options_container = data.get('options')
+    if options_container is None:
+      return []
 
-    # Handle Tradier's messy response structure
-    options_list = data.get('options', {}).get('option', [])
-
+    options_list = options_container.get('option', [])
+    
     # Normalize to list
     if isinstance(options_list, dict): 
       options_list = [options_list]
@@ -285,6 +290,127 @@ def buy_option(leg_data: Dict) -> Dict:
 
   return _submit_order(t, payload)
 
+def execute_roll(old_trade, new_short, new_long, net_price: float) -> dict:
+  """
+    Submits a 4-Leg Order (Iron Condor style logic, effectively).
+    Closes Old, Opens New.
+    """
+  t = _get_client()
+
+  # 1. Identify Old Legs
+  old_short = next(l for l in old_trade.legs if l.side == config.LEG_SIDE_SHORT)
+  old_long = next(l for l in old_trade.legs if l.side == config.LEG_SIDE_LONG)
+
+  legs_list = []
+
+  # LEG 1: Buy to Close Old Short
+  legs_list.append({
+    'symbol': old_short.occ_symbol,
+    'side': 'buy_to_close',
+    'quantity': str(old_trade.quantity)
+  })
+
+  # LEG 2: Sell to Close Old Long
+  legs_list.append({
+    'symbol': old_long.occ_symbol,
+    'side': 'sell_to_close',
+    'quantity': str(old_trade.quantity)
+  })
+
+  # LEG 3: Sell to Open New Short
+  legs_list.append({
+    'symbol': new_short['symbol'],
+    'side': 'sell_to_open',
+    'quantity': str(old_trade.quantity)
+  })
+
+  # LEG 4: Buy to Open New Long
+  legs_list.append({
+    'symbol': new_long['symbol'],
+    'side': 'buy_to_open',
+    'quantity': str(old_trade.quantity)
+  })
+
+  # 2. Build Payload
+  root = config.TARGET_UNDERLYING[CURRENT_ENV]
+
+  payload = {
+    'class': 'multileg',
+    'symbol': root,
+    'duration': 'day',
+    # Net Price: If Positive, we collect credit. If 0.00, it's "even".
+    'type': 'credit' if net_price >= 0 else 'debit',
+    'price': f"{abs(net_price):.2f}"
+  }
+
+  # Sandbox Stability
+  if 'sandbox' in t.endpoint:
+    payload['type'] = 'market'
+
+  for i, leg in enumerate(legs_list):
+    payload[f'option_symbol[{i}]'] = leg['symbol']
+    payload[f'side[{i}]'] = leg['side']
+    payload[f'quantity[{i}]'] = leg['quantity']
+
+  return _submit_order(t, payload)
+
+def close_position(trade) -> Dict:
+  """
+    Closes a position (Spread or Hedge).
+    Logic: Inverse of open (Buy Short, Sell Long).
+    """
+  t = _get_client()
+
+  # 1. Identify Legs
+  short_leg = next((l for l in trade.legs if l.side == config.LEG_SIDE_SHORT), None)
+  long_leg = next((l for l in trade.legs if l.side == config.LEG_SIDE_LONG), None)
+
+  legs_list = []
+
+  # If Spread: Buy to Close Short, Sell to Close Long
+  if short_leg:
+    legs_list.append({
+      'symbol': short_leg.occ_symbol,
+      'side': 'buy_to_close',
+      'quantity': str(trade.quantity)
+    })
+
+  if long_leg:
+    legs_list.append({
+      'symbol': long_leg.occ_symbol,
+      'side': 'sell_to_close', # Closing the long leg
+      'quantity': str(trade.quantity)
+    })
+
+    # 2. Dynamic Symbol Resolution
+  root = config.TARGET_UNDERLYING[CURRENT_ENV]
+  if short_leg and 'SPX' in short_leg.occ_symbol: root = 'SPX'
+  if short_leg and 'SPY' in short_leg.occ_symbol: root = 'SPY'
+
+    # 3. Build Payload
+  payload = {
+    'class': 'multileg',
+    'symbol': root,
+    'duration': 'day',
+    'type': 'debit', # Paying to close
+    'price': f"{trade.target_harvest_price:.2f}" # Limit at our target price (or market)
+  }
+
+  # SANDBOX STABILITY: Force Market order to avoid 500 errors
+  if 'sandbox' in t.endpoint:
+    payload['type'] = 'market'
+    # payload['price'] is ignored for market
+
+  for i, leg in enumerate(legs_list):
+    payload[f'option_symbol[{i}]'] = leg['symbol']
+    payload[f'side[{i}]'] = leg['side']
+    payload[f'quantity[{i}]'] = leg['quantity']
+
+    # 4. Submit
+  res = _submit_order(t, payload)
+
+  return res
+
 # --- PRIVATE HELPERS ---
 
 def _submit_order(t: TradierAPI, payload: Dict) -> Dict:
@@ -347,60 +473,3 @@ def _get_quote_direct(t: TradierAPI, symbol: str) -> Optional[Dict]:
     return None
   except Exception:
     return None
-
-def close_position(trade) -> Dict:
-  """
-    Closes a position (Spread or Hedge).
-    Logic: Inverse of open (Buy Short, Sell Long).
-    """
-  t = _get_client()
-
-  # 1. Identify Legs
-  short_leg = next((l for l in trade.legs if l.side == config.LEG_SIDE_SHORT), None)
-  long_leg = next((l for l in trade.legs if l.side == config.LEG_SIDE_LONG), None)
-
-  legs_list = []
-
-  # If Spread: Buy to Close Short, Sell to Close Long
-  if short_leg:
-    legs_list.append({
-      'symbol': short_leg.occ_symbol,
-      'side': 'buy_to_close',
-      'quantity': str(trade.quantity)
-    })
-
-  if long_leg:
-    legs_list.append({
-      'symbol': long_leg.occ_symbol,
-      'side': 'sell_to_close', # Closing the long leg
-      'quantity': str(trade.quantity)
-    })
-
-    # 2. Dynamic Symbol Resolution
-  root = config.TARGET_UNDERLYING[CURRENT_ENV]
-  if short_leg and 'SPX' in short_leg.occ_symbol: root = 'SPX'
-  if short_leg and 'SPY' in short_leg.occ_symbol: root = 'SPY'
-
-    # 3. Build Payload
-  payload = {
-    'class': 'multileg',
-    'symbol': root,
-    'duration': 'day',
-    'type': 'debit', # Paying to close
-    'price': f"{trade.target_harvest_price:.2f}" # Limit at our target price (or market)
-  }
-
-  # SANDBOX STABILITY: Force Market order to avoid 500 errors
-  if 'sandbox' in t.endpoint:
-    payload['type'] = 'market'
-    # payload['price'] is ignored for market
-
-  for i, leg in enumerate(legs_list):
-    payload[f'option_symbol[{i}]'] = leg['symbol']
-    payload[f'side[{i}]'] = leg['side']
-    payload[f'quantity[{i}]'] = leg['quantity']
-
-    # 4. Submit
-  res = _submit_order(t, payload)
-
-  return res

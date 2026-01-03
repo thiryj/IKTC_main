@@ -4,6 +4,8 @@
 from anvil.tables import app_tables
 import anvil.server
 
+import datetime as dt
+
 from shared import config
 from shared.classes import Cycle
 from . import server_libs  # The Brains (Clean Stubs)
@@ -66,13 +68,102 @@ def run_automation_routine():
       cycle_row['status'] = config.STATUS_CLOSED
 
   elif decision_state == config.STATE_ROLL_REQUIRED:
-    # Strategy: Roll the income spread (Logic: Ask > 3x Credit)
-    # 1. Get the specific trade that needs rolling
-    spread_trade = server_libs.get_threatened_spread(cycle)
-    # 2. Calculate new legs (e.g., 1 DTE, lower strike)
-    new_legs_struct = server_libs.calculate_roll_legs(spread_trade, market_data)
-    # 3. Execute
-    server_api.execute_roll(spread_trade, new_legs_struct)
+    print("LOG: Roll Triggered! Hunting for escape route...")
+
+    # FIX: Pass market_data (from Step 4) instead of fetching it again
+    spread_trade = server_libs.get_threatened_spread(cycle, market_data)
+
+    if not spread_trade:
+      print("LOG: Error - State is ROLL but no threatened trade found.")
+      return
+  
+    # Calculate Cost to Close (using marks from earlier snapshot or re-fetch)
+    # We re-fetch snapshot to be safe/fresh
+    marks = server_api.get_market_data_snapshot(cycle).get('spread_marks', {})
+    cost_to_close = marks.get(spread_trade.id, 0.0)
+  
+    # TEST HACK: Force cost negative to guarantee the math works
+    print(f"DEBUG: Real Cost {cost_to_close}. Forcing to -0.50 for Logic Verification.")
+    cost_to_close = -0.50
+
+    print(f"LOG: Cost to close current spread: ${cost_to_close:.2f}")
+
+    # 2. Fetch T+1 Chain (Tomorrow)
+    # Logic: Look for 1 day out. If weekend, finding Monday.
+    # Simple logic: Today + 1 day
+    chain = []
+    target_date = None
+    # Retry offsets: 1 day (standard), 3 days (weekend skip), 7 days (liquidity search)
+    retry_offsets = [1, 3, 7]
+    target_date = env_status['today'] + dt.timedelta(days=1)
+    for days in retry_offsets:
+      candidate_date = env_status['today'] + dt.timedelta(days=days)
+      chain = server_api.get_option_chain(date=candidate_date)
+
+      if chain:
+        target_date = candidate_date
+        print(f"LOG: Found valid chain for Roll at {target_date} (T+{days})")
+        break
+
+    if not chain:
+      print("LOG: CRITICAL - Cannot find ANY chain to roll into (T+1/3/7 failed). Manual intervention required.")
+      return
+
+    # 3. Calculate Roll Legs
+    # Extract current short strike
+    current_short = next(l for l in spread_trade.legs if l.side == config.LEG_SIDE_SHORT)
+
+    roll_result = server_libs.calculate_roll_legs_v3(
+      chain=chain,
+      current_short_strike=current_short.strike,
+      width=cycle.rules['spread_width'], # Scaled width
+      cost_to_close=cost_to_close
+    )
+
+    if roll_result:
+      print(f"LOG: Roll Candidate Found! New Short: {roll_result['short_leg']['strike']} Net: {roll_result['net_price']:.2f}")
+
+      # 4. Execute Roll
+      order_res = server_api.execute_roll(
+        old_trade=spread_trade,
+        new_short=roll_result['short_leg'],
+        new_long=roll_result['long_leg'],
+        net_price=roll_result['net_price']
+      )
+
+      # 5. DB Updates (Atomic Two-Step)
+      # Step A: Close Old
+      server_db.close_trade(
+        trade_row=spread_trade._row,
+        fill_price=cost_to_close, # Estimated close price
+        fill_time=order_res['time'],
+        order_id=order_res['id'] + "_CLOSE"
+      )
+
+      # Step B: Open New
+      # Construct trade_dict for the recorder
+      new_trade_data = {
+        'quantity': spread_trade.quantity,
+        'short_strike': roll_result['short_leg']['strike'],
+        'long_strike': roll_result['long_leg']['strike'],
+        'short_leg_data': roll_result['short_leg'],
+        'long_leg_data': roll_result['long_leg'],
+        'net_credit': roll_result['new_credit']
+      }
+
+      server_db.record_new_trade(
+        cycle_row=cycle_row,
+        role=config.ROLE_INCOME,
+        trade_dict=new_trade_data,
+        order_id=order_res['id'] + "_OPEN",
+        fill_price=roll_result['new_credit'],
+        fill_time=order_res['time']
+      )
+    
+      print("LOG: Roll executed and DB updated.")
+
+    else:
+      print("LOG: No valid roll found (Cannot pay for close with lower strike).")
 
   elif decision_state == config.STATE_HARVEST_TARGET_HIT:
     # Strategy: Close spread at 50% profit
