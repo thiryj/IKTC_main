@@ -616,24 +616,52 @@ def run_api_tests():
 
 @anvil.server.callable
 def seed_spread_for_harvest():
-  print("--- SEEDING SPREAD FOR HARVEST TEST ---")
+  print("--- SEEDING HARVEST TEST (SMART & FIXED) ---")
 
-  # 1. Get the Active Cycle
   cycle_row = app_tables.cycles.get(status=config.STATUS_OPEN)
   if not cycle_row:
-    print("Error: No Active Cycle found to attach spread to.")
+    print("Error: No Active Cycle found.")
     return
 
-    # 2. Define Parameters (Matches your Sandbox context)
+    # 1. Fetch REAL Chain
+  target_date = dt.date.today() + dt.timedelta(days=10)
+  chain = server_api.get_option_chain(date=target_date)
+
+  # Fallback search
+  if not chain:
+    for d in range(5, 15):
+      check_date = dt.date.today() + dt.timedelta(days=d)
+      chain = server_api.get_option_chain(date=check_date)
+      if chain: break
+
+  if not chain or len(chain) < 2:
+    print("CRITICAL: Could not find any valid option chain.")
+    return
+
+    # 2. Pick Legs
+  puts = [o for o in chain if o.get('option_type') == 'put']
+  if len(puts) < 2: return
+  puts.sort(key=lambda x: x['strike'], reverse=True)
+  short_leg = puts[0]
+  long_leg = puts[1]
+
+  print(f"Selected: {short_leg['symbol']} / {long_leg['symbol']}")
+
+  # --- FIX: PARSE DATES ---
+  def parse_api_date(val):
+    if isinstance(val, str):
+      return dt.datetime.strptime(val, "%Y-%m-%d").date()
+    return val # Assume it's already a date if not string
+
+    # Pre-calculate expiries
+  short_expiry = parse_api_date(short_leg.get('expiration_date'))
+  long_expiry = parse_api_date(long_leg.get('expiration_date'))
+  # ------------------------
+
+  # 3. Create Rows
   entry_credit = 0.31
   qty = 1
-  # Use the symbols/expiry from your previous log to ensure API can quote them
-  expiry = dt.date(2026, 1, 2) 
-  short_sym = "SPY260102P00679000"
-  long_sym = "SPY260102P00677000"
 
-  # 3. Create Trade Row
-  print("Creating Trade Row...")
   trade_row = app_tables.trades.add_row(
     cycle=cycle_row,
     role=config.ROLE_INCOME,
@@ -642,52 +670,43 @@ def seed_spread_for_harvest():
     entry_price=entry_credit,
     entry_time=dt.datetime.now(),
     pnl=0.0,
-    order_id_external="SEED_SPREAD_HARVEST",
-
-    # Strategy Targets
-    target_harvest_price=entry_credit * 0.50, # 0.155
+    order_id_external="SEED_SMART_HARVEST",
+    target_harvest_price=entry_credit * 0.50,
     roll_trigger_price=entry_credit * 3.0,
-    capital_required=qty * 100 * 2.0 # Width 2
+    capital_required=qty * 100 * abs(short_leg['strike'] - long_leg['strike'])
   )
 
-  # 4. Create Transaction
   txn = app_tables.transactions.add_row(
     trade=trade_row,
     action="OPEN_SPREAD",
     price=entry_credit,
     quantity=qty,
     timestamp=dt.datetime.now(),
-    order_id_external="SEED_SPREAD_HARVEST"
+    order_id_external="SEED_SMART_HARVEST"
   )
 
-  # 5. Create Legs
-  print("Creating Legs...")
-  # Short
   app_tables.legs.add_row(
     trade=trade_row,
     opening_transaction=txn,
     side=config.LEG_SIDE_SHORT,
     quantity=qty,
-    strike=679.0,
+    strike=short_leg['strike'],
     option_type='put',
-    expiry=expiry,
-    occ_symbol=short_sym,
+    expiry=short_expiry, # <--- Uses Object
+    occ_symbol=short_leg['symbol'],
     active=True
   )
 
-  # Long
   app_tables.legs.add_row(
     trade=trade_row,
     opening_transaction=txn,
     side=config.LEG_SIDE_LONG,
     quantity=qty,
-    strike=677.0,
+    strike=long_leg['strike'],
     option_type='put',
-    expiry=expiry,
-    occ_symbol=long_sym,
+    expiry=long_expiry, # <--- Uses Object
+    occ_symbol=long_leg['symbol'],
     active=True
   )
 
-  print(f"Seed Complete. Trade ID: {trade_row.get_id()}")
-  print(f"Target Harvest Price: {trade_row['target_harvest_price']}")
-  print("Run 'run_automation_routine()' now.")
+  print("Seed Complete.")

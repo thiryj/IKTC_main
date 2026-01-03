@@ -199,6 +199,48 @@ def record_new_trade(
   )
   return Trade(trade_row)
 
+@anvil.tables.in_transaction
+def close_trade(trade_row, fill_price: float, fill_time: dt.datetime, order_id: str, fees: float = 0.0):
+  """Finalizes a trade: Records closing transaction, deactivates legs, updates trade status/PnL"""
+  # 1. Determine Action String
+  action_type = "CLOSE_SPREAD" if trade_row['role'] == config.ROLE_INCOME else "CLOSE_HEDGE"
+
+  # 2. Create Closing Transaction
+  close_txn = app_tables.transactions.add_row(
+    trade=trade_row,
+    action=action_type,
+    price=fill_price,
+    quantity=trade_row['quantity'],
+    fees=fees,
+    timestamp=fill_time,
+    order_id_external=order_id
+  )
+
+  # 3. Update Legs (Deactivate & Link)
+  # Fetch all active legs linked to this trade
+  legs = app_tables.legs.search(trade=trade_row, active=True)
+  for leg in legs:
+    leg['active'] = False
+    leg['closing_transaction'] = close_txn
+
+    # 4. Update Trade Row
+  entry_price = trade_row['entry_price'] or 0.0
+
+  # Calculate PnL based on Role
+  if trade_row['role'] == config.ROLE_INCOME:
+    # Credit Spread: Profit = Entry Credit - Exit Debit
+    pnl = entry_price - fill_price
+  else:
+    # Long Hedge: Profit = Exit Credit - Entry Debit
+    pnl = fill_price - entry_price
+
+  trade_row.update(
+    status=config.STATUS_CLOSED,
+    exit_price=fill_price,
+    exit_time=fill_time,
+    pnl=pnl
+  )
+
 # --- INTERNAL HYDRATION HELPERS ---
 
 def _hydrate_cycle_children(cycle, cycle_row):

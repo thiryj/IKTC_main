@@ -162,7 +162,7 @@ def get_market_data_snapshot(cycle) -> Dict:
               # Net Debit
               cost = s_ask - l_bid
               snapshot['spread_marks'][trade.id] = cost
-              # print(f"DEBUG: Trade {trade.id} Cost: {cost:.2f} (Target: {trade.target_harvest_price})")
+              print(f"DEBUG: Trade {trade.id} Cost: {cost:.2f} (Target: {trade.target_harvest_price})")
         except Exception as e:
           print(f"Error calculating mark for trade {trade.id}: {e}")
   return snapshot
@@ -402,13 +402,5 @@ def close_position(trade) -> Dict:
 
     # 4. Submit
   res = _submit_order(t, payload)
-
-  # 5. Update DB Status immediately (Optimistic UI)
-  if res.get('status') in ['filled', 'ok']:
-    trade._row['status'] = config.STATUS_CLOSED
-    trade._row['exit_price'] = res['price']
-    trade._row['exit_time'] = res['time']
-    # PnL = Entry Credit - Exit Debit
-    trade._row['pnl'] = (trade.entry_price or 0) - res['price']
 
   return res

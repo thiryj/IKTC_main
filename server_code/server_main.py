@@ -79,7 +79,15 @@ def run_automation_routine():
     spread_trade = server_libs.get_winning_spread(cycle, market_data)
     if spread_trade:
       print(f"LOG: Harvest Target Hit! Trade {spread_trade.id}. Closing...")
-      server_api.close_position(spread_trade)
+      order_res = server_api.close_position(spread_trade)
+      
+      server_db.close_trade(
+        trade_row=spread_trade._row,
+        fill_price=order_res['price'],
+        fill_time=order_res['time'],
+        order_id=order_res['id']
+      )
+      print(f"LOG: Trade closed and DB updated. Exit Price: {order_res['price']}")
     else:
       print("LOG: Harvest State detected but no winning trade returned (odd).")
 
