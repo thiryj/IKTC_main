@@ -7,6 +7,7 @@ import anvil.server
 import datetime as dt
 
 from shared import config
+from . import server_api
 
 @anvil.server.callable
 def print_entire_db_schema():
@@ -158,3 +159,85 @@ def populate_default_rules():
     panic_threshold_dpu=350.0    # dollars per unit to trigger a cycle liquidation event
   )
   print("Default rules populated.")
+
+@anvil.server.callable
+def seed_panic_scenario():
+  print("--- SEEDING PANIC SCENARIO ---")
+
+  # 1. Fetch Valid Symbols (for API compatibility)
+  target_date = dt.date.today() + dt.timedelta(days=10)
+  chain = server_api.get_option_chain(date=target_date)
+  if not chain:
+    print("Error: No chain found to seed symbols.")
+    return
+
+  puts = [o for o in chain if o.get('option_type') == 'put']
+  if len(puts) < 3: return
+  puts.sort(key=lambda x: x['strike'], reverse=True)
+
+  # Pick Hedge (Way OTM) and Spread (ATM)
+  hedge_leg = puts[-1] # Lowest strike
+  short_leg = puts[0]
+  long_leg = puts[1]
+
+  # 2. Create Cycle with "Magic" Reference Price
+  print("Creating Cycle with manipulated Hedge Reference...")
+  rules = app_tables.rule_sets.get(name="Standard_0DTE")
+
+  cycle_row = app_tables.cycles.add_row(
+    account="TEST_ACC",
+    underlying="SPY",
+    status=config.STATUS_OPEN,
+    start_date=dt.date.today(),
+    total_pnl=0.0,
+    daily_hedge_ref=-50.0, # <--- THE TRICK: Forces a +$50 calculation
+    rule_set=rules,
+    notes="Panic Test"
+  )
+
+  # 3. Create Hedge Trade
+  hedge_trade = app_tables.trades.add_row(
+    cycle=cycle_row,
+    role=config.ROLE_HEDGE,
+    status=config.STATUS_OPEN,
+    quantity=1,
+    entry_price=1.0,
+    entry_time=dt.datetime.now(),
+    pnl=0.0,
+    order_id_external="SEED_PANIC_HEDGE"
+  )
+  cycle_row['hedge_trade'] = hedge_trade
+
+  # Hedge Leg
+  app_tables.legs.add_row(
+    trade=hedge_trade,
+    side=config.LEG_SIDE_LONG,
+    quantity=1,
+    strike=hedge_leg['strike'],
+    option_type='put',
+    expiry=dt.datetime.strptime(hedge_leg['expiration_date'], "%Y-%m-%d").date(),
+    occ_symbol=hedge_leg['symbol'],
+    active=True
+  )
+
+  # 4. Create Spread Trade
+  spread_trade = app_tables.trades.add_row(
+    cycle=cycle_row,
+    role=config.ROLE_INCOME,
+    status=config.STATUS_OPEN,
+    quantity=1,
+    entry_price=0.50,
+    entry_time=dt.datetime.now(),
+    pnl=0.0,
+    order_id_external="SEED_PANIC_SPREAD",
+    target_harvest_price=0.25,
+    roll_trigger_price=1.50
+  )
+
+  # Spread Legs
+  txn = app_tables.transactions.add_row(trade=spread_trade, action="OPEN", price=0.50, quantity=1, timestamp=dt.datetime.now())
+
+  app_tables.legs.add_row(trade=spread_trade, opening_transaction=txn, side=config.LEG_SIDE_SHORT, quantity=1, strike=short_leg['strike'], option_type='put', occ_symbol=short_leg['symbol'], expiry=dt.datetime.strptime(short_leg['expiration_date'], "%Y-%m-%d").date(), active=True)
+  app_tables.legs.add_row(trade=spread_trade, opening_transaction=txn, side=config.LEG_SIDE_LONG, quantity=1, strike=long_leg['strike'], option_type='put', occ_symbol=long_leg['symbol'], expiry=dt.datetime.strptime(long_leg['expiration_date'], "%Y-%m-%d").date(), active=True)
+
+  print("Seed Complete. Hedge Ref is -50.0. Panic should trigger.")

@@ -357,17 +357,17 @@ def execute_roll(old_trade, new_short, new_long, net_price: float) -> dict:
 def close_position(trade) -> Dict:
   """
     Closes a position (Spread or Hedge).
-    Logic: Inverse of open (Buy Short, Sell Long).
+    Dynamically switches between 'option' and 'multileg' endpoints.
     """
   t = _get_client()
 
   # 1. Identify Legs
-  short_leg = next((l for l in trade.legs if l.side == config.LEG_SIDE_SHORT), None)
-  long_leg = next((l for l in trade.legs if l.side == config.LEG_SIDE_LONG), None)
+  legs = getattr(trade, 'legs', [])
+  short_leg = next((l for l in legs if l.side == config.LEG_SIDE_SHORT), None)
+  long_leg = next((l for l in legs if l.side == config.LEG_SIDE_LONG), None)
 
   legs_list = []
 
-  # If Spread: Buy to Close Short, Sell to Close Long
   if short_leg:
     legs_list.append({
       'symbol': short_leg.occ_symbol,
@@ -378,39 +378,58 @@ def close_position(trade) -> Dict:
   if long_leg:
     legs_list.append({
       'symbol': long_leg.occ_symbol,
-      'side': 'sell_to_close', # Closing the long leg
+      'side': 'sell_to_close',
       'quantity': str(trade.quantity)
     })
 
     # 2. Dynamic Symbol Resolution
   root = config.TARGET_UNDERLYING[CURRENT_ENV]
-  if short_leg and 'SPX' in short_leg.occ_symbol: root = 'SPX'
-  if short_leg and 'SPY' in short_leg.occ_symbol: root = 'SPY'
+  check_leg = short_leg or long_leg
+  if check_leg:
+    if 'SPX' in check_leg.occ_symbol: root = 'SPX'
+    if 'SPY' in check_leg.occ_symbol: root = 'SPY'
 
     # 3. Build Payload
-  payload = {
-    'class': 'multileg',
-    'symbol': root,
-    'duration': 'day',
-    'type': 'debit', # Paying to close
-    'price': f"{trade.target_harvest_price:.2f}" # Limit at our target price (or market)
-  }
+  num_legs = len(legs_list)
 
-  # SANDBOX STABILITY: Force Market order to avoid 500 errors
-  if 'sandbox' in t.endpoint:
-    payload['type'] = 'market'
-    # payload['price'] is ignored for market
+  if num_legs == 1:
+    # --- SINGLE LEG LOGIC (Hedge) ---
+    payload = {
+      'class': 'option',
+      'symbol': root,
+      'duration': 'day',
+      'type': 'market', # Always market for single leg close safety
+      'option_symbol': legs_list[0]['symbol'],
+      'side': legs_list[0]['side'],
+      'quantity': legs_list[0]['quantity']
+    }
 
-  for i, leg in enumerate(legs_list):
-    payload[f'option_symbol[{i}]'] = leg['symbol']
-    payload[f'side[{i}]'] = leg['side']
-    payload[f'quantity[{i}]'] = leg['quantity']
+  else:
+    # --- MULTI LEG LOGIC (Spread) ---
+    # Determine pricing direction (Debit/Credit) NOT used for Market orders but good practice
+    order_type = 'debit' if trade.role == config.ROLE_INCOME else 'credit'
+    price_val = trade.target_harvest_price if trade.target_harvest_price is not None else 0.00
 
-    # 4. Submit
-  res = _submit_order(t, payload)
+    payload = {
+      'class': 'multileg',
+      'symbol': root,
+      'duration': 'day',
+      'type': order_type,
+      'price': f"{price_val:.2f}" 
+    }
 
-  return res
+    # Sandbox Stability
+    if 'sandbox' in t.endpoint:
+      payload['type'] = 'market'
 
+    for i, leg in enumerate(legs_list):
+      payload[f'option_symbol[{i}]'] = leg['symbol']
+      payload[f'side[{i}]'] = leg['side']
+      payload[f'quantity[{i}]'] = leg['quantity']
+
+  # 4. Submit
+  result = _submit_order(t, payload)
+  return result
 # --- PRIVATE HELPERS ---
 
 def _submit_order(t: TradierAPI, payload: Dict) -> Dict:

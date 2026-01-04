@@ -60,12 +60,32 @@ def run_automation_routine():
 
   # 5. EXECUTE (Dirty)
   if decision_state == config.STATE_PANIC_HARVEST:
-    # Strategy: "Close everything immediately"
-    server_api.close_all_positions(cycle)
-    server_libs.alert_human("Panic Harvest Executed!", level=config.ALERT_CRITICAL)
-    # Update DB
+    print("LOG: PANIC HARVEST TRIGGERED! Closing all positions...")
+    
+    # Iterate through ALL open trades (Hedge AND Spreads)
+    for trade in cycle.trades:
+      if trade.status == config.STATUS_OPEN:
+        print(f"LOG: Emergency Closing Trade {trade.id} ({trade.role})")
+    
+        # 1. Execute via API
+        try:
+          order_res = server_api.close_position(trade)
+    
+          # 2. Record via DB
+          server_db.close_trade(
+            trade_row=trade._row,
+            fill_price=order_res['price'],
+            fill_time=order_res['time'],
+            order_id=order_res['id']
+          )
+        except Exception as e:
+          print(f"CRITICAL: Failed to close trade {trade.id}: {e}")
+    
+        server_libs.alert_human("Panic Harvest Executed!", level=config.ALERT_CRITICAL)
+    
     if cycle_row:
       cycle_row['status'] = config.STATUS_CLOSED
+      print("LOG: Cycle Status updated to CLOSED.")
 
   elif decision_state == config.STATE_ROLL_REQUIRED:
     print("LOG: Roll Triggered! Hunting for escape route...")
