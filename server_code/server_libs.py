@@ -104,12 +104,27 @@ def _check_hedge_maintenance(cycle: Cycle, market_data: MarketData) -> bool:
   """
   Rule: If Hedge Delta < 15 or > 40, OR DTE < 60.
   """
-  # STUB: This logic requires fetching the Greeks for the existing hedge position.
-  # market_data currently only provides 'hedge_last' (price).
-  # TODO: Enhance market_data snapshot to include hedge greeks, or fetch them here.
-  # Logic: 
-  #   if hedge_delta < 0.15 or hedge_delta > 0.40: return True
-  #   if hedge_dte < 60: return True
+  if not cycle.hedge_trade_link:
+    return False
+
+  # 1. Check Time (DTE)
+  current_dte = market_data.get('hedge_dte', 999)
+  min_dte = cycle.rules.get('hedge_min_dte', 60)
+
+  if current_dte < min_dte:
+    print(f"DEBUG: Hedge DTE {current_dte} < Limit {min_dte}")
+    return True
+
+  # 2. Check Delta
+  # Puts have negative delta, use ABS
+  current_delta = abs(market_data.get('hedge_delta', 0.25))
+  min_delta = cycle.rules.get('hedge_min_delta', 0.15)
+  max_delta = cycle.rules.get('hedge_max_delta', 0.40)
+
+  if current_delta < min_delta or current_delta > max_delta:
+    print(f"DEBUG: Hedge Delta {current_delta} out of bounds ({min_delta}-{max_delta})")
+    return True
+
   return False
 
 def _check_profit_target(cycle: Cycle, market_data: MarketData) -> bool:

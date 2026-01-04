@@ -60,18 +60,59 @@ def run_automation_routine():
 
   # 5. EXECUTE (Dirty)
   if decision_state == config.STATE_PANIC_HARVEST:
-    print("LOG: PANIC HARVEST TRIGGERED! Closing all positions...")
-    
-    # Iterate through ALL open trades (Hedge AND Spreads)
-    for trade in cycle.trades:
-      if trade.status == config.STATUS_OPEN:
-        print(f"LOG: Emergency Closing Trade {trade.id} ({trade.role})")
-    
-        # 1. Execute via API
+    print("LOG: PANIC HARVEST TRIGGERED! Executing Sequential Close...")
+
+    # 1. Sort Trades by Risk Profile
+    income_trades = [t for t in cycle.trades if t.role == config.ROLE_INCOME and t.status == config.STATUS_OPEN]
+    hedge_trades = [t for t in cycle.trades if t.role == config.ROLE_HEDGE and t.status == config.STATUS_OPEN]
+
+    liabilities_cleared = True
+
+    # 2. Phase 1: Close Liabilities (Spreads)
+    # We MUST clear these before selling the shield.
+    for trade in income_trades:
+      print(f"LOG: Emergency Closing Liability {trade.id}...")
+      try:
+        # A. Submit
+        order_res = server_api.close_position(trade)
+        order_id = order_res.get('id')
+
+        if not order_id:
+          print(f"CRITICAL: API rejected submission for {trade.id}")
+          liabilities_cleared = False
+          break # Stop processing liabilities
+
+          # B. VERIFY FILL (The Safety Pause)
+          # Wait up to 5 seconds for confirmation
+        is_filled = server_api.wait_for_order_fill(order_id, timeout_seconds=5)
+
+        if not is_filled:
+          print(f"CRITICAL: Close Order {order_id} did not fill. Aborting Sequence.")
+          liabilities_cleared = False
+          break # STOP EVERYTHING. Do not close other spreads. Do not close hedge.
+
+          # C. Record via DB (Only if filled)
+        server_db.close_trade(
+          trade_row=trade._row,
+          fill_price=order_res['price'], # Note: Ideally we fetch the *actual* fill price from the polling result
+          fill_time=dt.datetime.now(),
+          order_id=order_id
+        )
+
+      except Exception as e:
+        print(f"CRITICAL: Exception closing Income Trade {trade.id}: {e}")
+        liabilities_cleared = False
+        break
+
+    # 3. Phase 2: Close Assets (Hedge)
+    # ONLY proceed if we successfully submitted close orders for all liabilities
+    if liabilities_cleared:
+      print("LOG: Liabilities cleared. Closing Hedges...")
+      for trade in hedge_trades:
+        print(f"LOG: Closing Hedge Asset {trade.id}...")
         try:
           order_res = server_api.close_position(trade)
-    
-          # 2. Record via DB
+
           server_db.close_trade(
             trade_row=trade._row,
             fill_price=order_res['price'],
@@ -79,13 +120,19 @@ def run_automation_routine():
             order_id=order_res['id']
           )
         except Exception as e:
-          print(f"CRITICAL: Failed to close trade {trade.id}: {e}")
-    
-        server_libs.alert_human("Panic Harvest Executed!", level=config.ALERT_CRITICAL)
-    
-    if cycle_row:
-      cycle_row['status'] = config.STATUS_CLOSED
-      print("LOG: Cycle Status updated to CLOSED.")
+          # If hedge fails to close, it's annoying but safe (we still own the option)
+          print(f"ERROR: Failed to close Hedge {trade.id}: {e}")
+
+        # Only mark Cycle closed if everything worked
+      if cycle_row:
+        cycle_row['status'] = config.STATUS_CLOSED
+        print("LOG: Cycle Status updated to CLOSED.")
+
+    else:
+      # SAFETY INTERLOCK
+      print("CRITICAL: Liabilities NOT cleared. ABORTING Hedge Close.")
+      print("LOG: System holding Hedge to protect against naked exposure.")
+      server_libs.alert_human("Panic Close Failed - HEDGE HELD!", level=config.ALERT_CRITICAL)
 
   elif decision_state == config.STATE_ROLL_REQUIRED:
     print("LOG: Roll Triggered! Hunting for escape route...")
@@ -274,23 +321,83 @@ def run_automation_routine():
       print(f"LOG: Entry Logic Rejected: {reason}")
 
   elif decision_state == config.STATE_HEDGE_ADJUSTMENT_NEEDED:
-    # Strategy: Roll to fresh 90 DTE / 25 Delta Put
-    print("LOG: Executing Hedge Reset...")
+    print("LOG: Hedge Adjustment Required. Rolling position...")
 
-    # 1. Identify the old hedge
-    old_hedge_trade = cycle.hedge_trade_link
+    old_hedge = cycle.hedge_trade_link
 
-    # 2. Find the new target (90 days out, 25 delta)
-    target_expiry = server_libs.get_target_hedge_date()
-    chain = server_api.get_option_chain(target_expiry)
-    new_leg_struct = server_libs.select_hedge_strike(chain)
+    # 1. Close Old Hedge
+    print(f"LOG: Closing old hedge {old_hedge.id}...")
+    close_res = server_api.close_position(old_hedge)
 
-    # 3. Execute the Roll (Close Old, Open New)
-    server_api.execute_roll(old_hedge_trade, new_leg_struct)
+    # Record Close
+    server_db.close_trade(
+      trade_row=old_hedge._row,
+      fill_price=close_res['price'],
+      fill_time=close_res['time'],
+      order_id=close_res['id']
+    )
 
-    # 4. Update the Cycle's DailyHedgeRef to the new price?
-    # Note: We likely need to reset the reference price since we changed the instrument
-    # cycle.daily_hedge_ref = new_leg_struct['price'] (To be implemented)
+    # ... inside STATE_HEDGE_ADJUSTMENT_NEEDED ...
+
+    # 2. Buy New Hedge
+    # Logic: Scan for valid chain near target DTE
+    target_days = cycle.rules['hedge_target_dte'] # e.g. 90
+    found_chain = []
+
+    # Scan range: Target +/- 20 days to find a valid expiration (Monthly)
+    # We step by 5 days to speed it up (looking for Fridays)
+    print(f"LOG: Scanning for new hedge around {target_days} DTE...")
+
+    start_scan = target_days - 20
+    end_scan = target_days + 30
+
+    for d in range(start_scan, end_scan, 5):
+      candidate_date = env_status['today'] + dt.timedelta(days=d)
+      chain = server_api.get_option_chain(date=candidate_date)
+      if chain:
+        found_chain = chain
+        print(f"LOG: Found valid chain at {candidate_date} ({d} DTE)")
+        break
+
+    if not found_chain:
+      print("CRITICAL: Closed old hedge but could not find ANY new chain to enter.")
+      # Optional: Alert human here
+      return
+
+    # Select Strike
+    leg_to_buy = server_libs.select_hedge_strike(
+      found_chain, 
+      target_delta=cycle.rules['hedge_target_delta']
+    )
+
+    if leg_to_buy:
+      print(f"LOG: Buying new hedge: {leg_to_buy['symbol']}")
+      buy_res = server_api.buy_option(leg_to_buy)
+
+      # Record Open
+      trade_data = {
+        'quantity': 1, # Reset to 1 unit
+        'short_strike': 0,
+        'long_strike': leg_to_buy['strike'],
+        'short_leg_data': {}, 
+        'long_leg_data': leg_to_buy
+      }
+
+      new_trade_obj = server_db.record_new_trade(
+        cycle_row=cycle_row,
+        role=config.ROLE_HEDGE,
+        trade_dict=trade_data,
+        order_id=buy_res['id'],
+        fill_price=buy_res['price'],
+        fill_time=buy_res['time']
+      )
+
+      # Link new hedge to cycle
+      cycle_row['hedge_trade'] = new_trade_obj._row
+      print("LOG: Hedge Roll Complete.")
+
+    else:
+      print("CRITICAL: Chain found, but no suitable strike selected!")
 
   elif decision_state == config.STATE_IDLE:
     print("LOG: No action required.")

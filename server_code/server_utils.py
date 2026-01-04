@@ -241,3 +241,116 @@ def seed_panic_scenario():
   app_tables.legs.add_row(trade=spread_trade, opening_transaction=txn, side=config.LEG_SIDE_LONG, quantity=1, strike=long_leg['strike'], option_type='put', occ_symbol=long_leg['symbol'], expiry=dt.datetime.strptime(long_leg['expiration_date'], "%Y-%m-%d").date(), active=True)
 
   print("Seed Complete. Hedge Ref is -50.0. Panic should trigger.")
+
+@anvil.server.callable
+def seed_fresh_cycle():
+  print("--- SEEDING FRESH CYCLE (SMART SCAN) ---")
+
+  # 1. Clean up old mess (Optional)
+  # app_tables.legs.delete_all_rows()
+  # app_tables.transactions.delete_all_rows()
+  # app_tables.trades.delete_all_rows()
+  # app_tables.cycles.delete_all_rows()
+
+  # 2. SCAN for a valid Chain (Sandbox friendly)
+  # We look for ANY chain between 45 and 120 days out.
+  # We step by 1 day because we don't know which specific Fridays exist in Sandbox.
+  found_chain = []
+  found_date = None
+
+  print("Scanning for valid expiration (45-120 DTE)...")
+  for d in range(45, 120):
+    check_date = dt.date.today() + dt.timedelta(days=d)
+    # Only check Fridays to save API calls (usually where the volume is)
+    if check_date.weekday() != 4: 
+      continue
+
+    print(f"Checking {check_date}...", end="\r")
+    chain = server_api.get_option_chain(date=check_date)
+    if chain:
+      found_chain = chain
+      found_date = check_date
+      print(f"\nFOUND valid chain at {check_date} (DTE: {d})")
+      break
+
+  if not found_chain:
+    print("\nCRITICAL: No valid option chain found in scan range.")
+    return
+
+    # Filter Puts
+  puts = [o for o in found_chain if o.get('option_type') == 'put']
+  if not puts: 
+    print("Chain found but no Puts inside.")
+    return
+
+    # Sort High Strike -> Low Strike
+  puts.sort(key=lambda x: x['strike'], reverse=True)
+
+  # Pick a "Hedge-like" leg (approx 25 delta or mid-pack)
+  hedge_leg = puts[len(puts)//2]
+
+  # --- TOGGLE FOR MAINTENANCE TEST ---
+  # Uncomment next line to force the bot to think the hedge is expiring tomorrow
+  # hedge_leg['expiration_date'] = (dt.date.today() + dt.timedelta(days=1)).strftime('%Y-%m-%d')
+  # -----------------------------------
+
+  print(f"Selected Hedge: {hedge_leg['symbol']}")
+
+  # 3. Create Cycle
+  rules = app_tables.rule_sets.get(name="Standard_0DTE")
+  if not rules:
+    print("Error: 'Standard_0DTE' rule set missing.")
+    return
+
+  current_hedge_price = float(hedge_leg.get('ask', 1.0) or 1.0)
+
+  cycle_row = app_tables.cycles.add_row(
+    account="TEST_ACC",
+    underlying="SPY", 
+    status=config.STATUS_OPEN,
+    start_date=dt.date.today(),
+    total_pnl=0.0,
+    daily_hedge_ref=current_hedge_price, 
+    rule_set=rules,
+    notes="Fresh Start Seed"
+  )
+
+  # 4. Create Hedge Trade
+  hedge_trade = app_tables.trades.add_row(
+    cycle=cycle_row,
+    role=config.ROLE_HEDGE,
+    status=config.STATUS_OPEN,
+    quantity=1,
+    entry_price=current_hedge_price,
+    entry_time=dt.datetime.now(),
+    pnl=0.0,
+    order_id_external="SEED_FRESH_HEDGE"
+  )
+  cycle_row['hedge_trade'] = hedge_trade
+
+  # 5. Create Hedge Leg
+  txn = app_tables.transactions.add_row(
+    trade=hedge_trade, 
+    action="OPEN_HEDGE", 
+    price=current_hedge_price, 
+    quantity=1, 
+    timestamp=dt.datetime.now()
+  )
+
+  def parse_date(val):
+    if isinstance(val, str): return dt.datetime.strptime(val, "%Y-%m-%d").date()
+    return val
+
+  app_tables.legs.add_row(
+    trade=hedge_trade,
+    opening_transaction=txn,
+    side=config.LEG_SIDE_LONG,
+    quantity=1,
+    strike=hedge_leg['strike'],
+    option_type='put',
+    expiry=parse_date(hedge_leg['expiration_date']),
+    occ_symbol=hedge_leg['symbol'],
+    active=True
+  )
+
+  print("Seed Complete.")
