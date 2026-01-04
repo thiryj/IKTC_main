@@ -113,7 +113,7 @@ def run_automation_routine():
     # Extract current short strike
     current_short = next(l for l in spread_trade.legs if l.side == config.LEG_SIDE_SHORT)
 
-    roll_result = server_libs.calculate_roll_legs_v3(
+    roll_result = server_libs.calculate_roll_legs(
       chain=chain,
       current_short_strike=current_short.strike,
       width=cycle.rules['spread_width'], # Scaled width

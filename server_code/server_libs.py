@@ -1,19 +1,20 @@
 from shared import config
 from shared import types
 from shared.classes import Cycle, Trade
+from shared.types import MarketData
 
 import datetime as dt
 from typing import Optional
 
-def can_run_automation(env, cycle):
+def can_run_automation(env, cycle: Cycle):
   # STUB: Always say yes for testing
   return True
 
-def is_db_consistent(cycle, positions):
+def is_db_consistent(cycle: Cycle, positions):
   # STUB: Assume DB is perfect
   return True
 
-def determine_cycle_state(cycle, market_data: types.MarketData)->str:
+def determine_cycle_state(cycle: Cycle, market_data: types.MarketData)->str:
   """
   The "Policy Manager".
   It runs checks in priority order. The first one to return a state wins.
@@ -49,7 +50,7 @@ def determine_cycle_state(cycle, market_data: types.MarketData)->str:
   # 6. DEFAULT
   return config.STATE_IDLE
 
-def get_threatened_spread(cycle, market_data: dict) -> Optional[Trade]:
+def get_threatened_spread(cycle: Cycle, market_data: dict) -> Optional[Trade]:
   """
   Returns the specific trade that needs rolling.
   """
@@ -64,24 +65,23 @@ def get_threatened_spread(cycle, market_data: dict) -> Optional[Trade]:
         return trade
   return None
 
-# DEBUG version - 
-def calculate_roll_legs_v3(
+def calculate_roll_legs(
   chain: list[dict],
   current_short_strike: float,
   width: float,
   cost_to_close: float
 ) -> dict | None:
   """
-    Scans for a 'Down & Out' roll.
-    V3 - Maximizes Distance by continuing search.
-    """
-  print(f"DEBUG: Entering calculate_roll_legs_v3. Chain Size: {len(chain)}")
+  Scans for a 'Down & Out' roll.
+  Maximizes distance by finding the lowest strike that generates sufficient credit
+  """
+  #print(f"DEBUG: Entering calculate_roll_legs_v3. Chain Size: {len(chain)}")
 
   # Filter for Puts
   puts = [o for o in chain if o.get('option_type') == 'put']
   if not puts: return None
 
-    # Sort by Strike (High to Low)
+  # Sort by Strike (High to Low)
   puts.sort(key=lambda x: x['strike'], reverse=True)
 
   best_candidate = None
@@ -91,26 +91,20 @@ def calculate_roll_legs_v3(
     if val is None or val == 0: val = opt.get('last', 0)
     return float(val)
 
-  print(f"DEBUG ROLL: Scanning {len(puts)} puts. Current Short: {current_short_strike}.")
-
+  #print(f"DEBUG ROLL: Scanning {len(puts)} puts. Current Short: {current_short_strike}.")
   for short_candidate in puts:
     short_strike = short_candidate['strike']
-
-    # CONSTRAINT: Down
     if short_strike >= current_short_strike:
       continue
 
-      # Find matching Long Leg
+    # Find matching Long Leg
     target_long = short_strike - width
     long_candidate = next((p for p in puts if abs(p['strike'] - target_long) < 0.05), None)
-
     if not long_candidate:
       continue
 
-      # Calculate Economics
+    # Calculate Economics
     credit_new = get_price(short_candidate, 'bid') - get_price(long_candidate, 'ask')
-
-    # --- LOGIC FIX START ---
     if credit_new >= cost_to_close:
       # This is a valid escape. OVERWRITE the last best one.
       # By the end of the loop, this will hold the LOWEST strike that was valid.
@@ -120,96 +114,54 @@ def calculate_roll_legs_v3(
         'new_credit': credit_new,
         'net_price': credit_new - cost_to_close
       }
-      # DO NOT break. Continue searching lower.
     else:
       # If we were previously finding winners, but now the credit is too low,
       # we can stop because lower strikes will pay even less.
-      if best_candidate is not None:
-        break
-        # --- LOGIC FIX END ---
-
-  if best_candidate:
-    print(f"DEBUG ROLL: Winner! Strike {best_candidate['short_leg']['strike']} (Maximizing Distance)")
-  else:
-    print("DEBUG ROLL: Scan finished. No winner.")
-
+      if best_candidate:  break
+        
   return best_candidate
-'''
-# production version - needs validation
-def calculate_roll_legs(
-  chain: list[dict],
-  current_short_strike: float,
-  width: float,
-  cost_to_close: float
-) -> dict | None:
-  """
-    Scans the T+1 chain for a 'Down & Out' roll.
-    Finds the LOWEST strike spread that generates enough credit to cover 'cost_to_close'.
-    """
-  # 1. Filter for Puts
-  puts = [o for o in chain if o.get('option_type') == 'put']
-  if not puts: return None
 
-    # 2. Sort by Strike (High to Low)
-  puts.sort(key=lambda x: x['strike'], reverse=True)
-
-  best_candidate = None
-
-  # Helper to get price safely
-  def get_price(opt, side):
-    val = opt.get(side)
-    if val is None or val == 0: val = opt.get('last', 0)
-    return float(val)
-
-  for short_candidate in puts:
-    short_strike = short_candidate['strike']
-
-    # CONSTRAINT: Down (Strike must be lower than current)
-    if short_strike >= current_short_strike:
-      continue
-
-      # Find matching Long Leg (maintain width)
-    target_long = short_strike - width
-
-    # Fuzzy match for long leg (within 0.05)
-    long_candidate = next((p for p in puts if abs(p['strike'] - target_long) < 0.05), None)
-
-    if not long_candidate:
-      continue
-
-      # Calculate Economics
-      # We Sell Short (Bid) and Buy Long (Ask)
-    credit_new = get_price(short_candidate, 'bid') - get_price(long_candidate, 'ask')
-
-    # CONSTRAINT: Zero Debit (New Credit >= Cost to Close)
-    # We accept a new credit that pays for the close
-    if credit_new >= cost_to_close:
-
-      # Since we iterate High->Low, and premiums drop as we go lower,
-      # we want to keep searching for the LOWEST valid strike that still pays.
-      best_candidate = {
-        'short_leg': short_candidate,
-        'long_leg': long_candidate,
-        'new_credit': credit_new,
-        'net_price': credit_new - cost_to_close # Should be >= 0
-      }
-    else:
-      # If this strike doesn't pay enough, lower strikes definitely won't.
-      break
-
-  return best_candidate
-'''
 # --- ATOMIC PREDICATE FUNCTIONS ---
 
-def _check_panic_harvest(cycle, market_data):
-  """
-  Rule: If Net Unit PnL (Hedge Daily Gain + Spread PnL) > $350 per unit.
-  """
-  # STUB
-  # Calculation: (current_hedge_mark - cycle.daily_hedge_ref) + spread_pl
-  return False
+def _check_panic_harvest(cycle: Cycle, market_data: MarketData)->bool:
+  """Rule: If Net Unit PnL (Hedge Daily Gain + Spread PnL) > Panic Threshold ($350)"""
+  if not cycle.hedge_trade_link:
+    return False
 
-def _check_roll_needed(cycle, market_data):
+  # 1. Calculate Hedge PnL (Daily)
+  # Daily Gain = Current Price - Daily Reference Price
+  hedge_current = market_data.get('hedge_last', 0.0)
+  hedge_ref = cycle.daily_hedge_ref or 0.0
+
+  if hedge_ref == 0: 
+    return False # Cannot calculate without reference
+
+  hedge_pnl = (hedge_current - hedge_ref) * config.DEFAULT_MULTIPLIER * cycle.hedge_trade_link.quantity
+
+  # 2. Calculate Spread PnL (Total Open)
+  # Spread PnL = (Entry Credit - Current Debit) * Qty * 100
+  spread_pnl = 0.0
+  marks = market_data.get('spread_marks', {})
+
+  for trade in cycle.trades:
+    if trade.role == config.ROLE_INCOME and trade.status == config.STATUS_OPEN:
+      current_debit = marks.get(trade.id, 0.0)
+      entry_credit = trade.entry_price or 0.0
+      trade_pnl = (entry_credit - current_debit) * config.DEFAULT_MULTIPLIER * trade.quantity
+      spread_pnl += trade_pnl
+
+  # 3. Check Threshold
+  net_unit_pnl = hedge_pnl + spread_pnl
+
+  # Threshold logic (Scale for SPY if needed)
+  threshold = cycle.rules['panic_threshold_dpu'] * cycle.hedge_trade_link.quantity
+
+  # DEBUG LOG (Optional)
+  print(f"DEBUG PANIC: Net PnL ${net_unit_pnl:.2f} vs Threshold ${threshold:.2f}")
+
+  return net_unit_pnl > threshold
+
+def _check_roll_needed(cycle: Cycle, market_data: MarketData)->bool:
   """Rule: If Spread Ask Price > 3.0 * Initial Credit"""
   marks = market_data.get('spread_marks', {})
 
@@ -228,7 +180,7 @@ def _check_roll_needed(cycle, market_data):
 
   return False
 
-def _check_hedge_maintenance(cycle, market_data):
+def _check_hedge_maintenance(cycle: Cycle, market_data: MarketData)->bool:
   """Rule: If Hedge Delta < 15 or > 40, OR DTE < 60"""
   # STUB
   if not cycle.hedge_trade_link:
@@ -236,7 +188,7 @@ def _check_hedge_maintenance(cycle, market_data):
   # Logic: Check delta/dte from market_data['hedge_greeks']
   return False
 
-def _check_profit_target(cycle, market_data):
+def _check_profit_target(cycle: Cycle, market_data: MarketData)->bool:
   """Rule: If Spread Profit >= 50% of max profit"""
   marks = market_data.get('spread_marks', {})
 
@@ -250,13 +202,11 @@ def _check_profit_target(cycle, market_data):
         return True
   return False
 
-def _check_hedge_missing(cycle):
-  """
-  Rule: Cycle is OPEN but has no active Hedge Trade linked.
-  """
+def _check_hedge_missing(cycle: Cycle)->bool:
+  """Rule: Cycle is OPEN but has no active Hedge Trade linked"""
   return cycle.hedge_trade_link is None
 
-def _check_spread_missing(cycle):
+def _check_spread_missing(cycle: Cycle)->bool:
   """Rule: Hedge exists, but no active Income Trade (Spread) exists."""
   # We check if there are any active trades tagged as 'INCOME'
   # cycle.spread_trades is populated by server_db.get_active_cycle
@@ -499,7 +449,7 @@ def evaluate_entry(
 
   return True, trade_data, "Entry Valid"
 
-def get_winning_spread(cycle, market_data) -> Optional[Trade]:
+def get_winning_spread(cycle: Cycle, market_data: MarketData) -> Optional[Trade]:
   """
     Returns the specific trade that hit its profit target.
     """
@@ -511,74 +461,3 @@ def get_winning_spread(cycle, market_data) -> Optional[Trade]:
       if current_cost is not None and current_cost <= (trade.target_harvest_price or 0):
         return trade
   return None
-
-def calculate_roll_legs(
-  chain: list[dict],
-  current_short_strike: float,
-  width: float,
-  cost_to_close: float
-) -> dict | None:
-  """
-    Scans the T+1 chain for a 'Down & Out' roll.
-    Finds the LOWEST strike spread that generates enough credit to cover 'cost_to_close'.
-    """
-  # 1. Filter for Puts
-  puts = [o for o in chain if o.get('option_type') == 'put']
-  if not puts: return None
-
-    # 2. Sort by Strike (High to Low)
-    # We want to find the lowest possible strike, so we will iterate down
-    # and keep the last valid one we find.
-  puts.sort(key=lambda x: x['strike'], reverse=True)
-
-  best_candidate = None
-
-  # 3. Helper to get price safely
-  def get_price(opt, side):
-    # side 'ask' (buying) or 'bid' (selling)
-    # Sandbox fallback to 'last'
-    val = opt.get(side)
-    if val is None or val == 0: val = opt.get('last', 0)
-    return float(val)
-
-  for short_candidate in puts:
-    short_strike = short_candidate['strike']
-
-    # CONSTRAINT: Down (Strike must be lower than current)
-    if short_strike >= current_short_strike:
-      continue
-
-      # Find matching Long Leg (maintain width)
-    target_long = short_strike - width
-
-    # Fuzzy match for long leg (within 0.05)
-    long_candidate = next((p for p in puts if abs(p['strike'] - target_long) < 0.05), None)
-
-    if not long_candidate:
-      continue
-
-    # Calculate Economics
-    # We Sell Short (Bid) and Buy Long (Ask)
-    credit_new = get_price(short_candidate, 'bid') - get_price(long_candidate, 'ask')
-
-    # CONSTRAINT: Zero Debit (New Credit >= Cost to Close)
-    # We assume a tiny buffer (e.g. 0.01) is fine, or strict >=
-    if credit_new >= cost_to_close:
-      # This is a valid escape!
-      # Since we are iterating High->Low strikes, and premiums drop as we go lower,
-      # The FIRST valid one we hit (highest strike) pays the MOST.
-      # The LAST valid one we hit (lowest strike) pays the LEAST (but still enough).
-      # Therefore, we want the LAST valid candidate in this loop.
-
-      best_candidate = {
-        'short_leg': short_candidate,
-        'long_leg': long_candidate,
-        'new_credit': credit_new,
-        'net_price': credit_new - cost_to_close # Should be >= 0
-      }
-    else:
-      # If this strike doesn't pay enough, lower strikes definitely won't.
-      # So we can stop searching.
-      break
-
-  return best_candidate
