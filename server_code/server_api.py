@@ -362,10 +362,11 @@ def execute_roll(old_trade, new_short, new_long, net_price: float) -> dict:
 
   return _submit_order(t, payload)
 
-def close_position(trade) -> Dict:
+def close_position(trade, order_type: str = 'limit') -> Dict:
   """
     Closes a position (Spread or Hedge).
     Dynamically switches between 'option' and 'multileg' endpoints.
+    order_type: 'limit' (default, uses target price) or 'market' (for panic).
     """
   t = _get_client()
 
@@ -425,7 +426,10 @@ def close_position(trade) -> Dict:
       'type': order_type,
       'price': f"{price_val:.2f}" 
     }
-
+    if order_type == 'market':
+      payload['type'] = 'market'
+      if 'price' in payload: del payload['price'] # Market orders have no price
+        
     # Sandbox Stability
     if 'sandbox' in t.endpoint:
       payload['type'] = 'market'

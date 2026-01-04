@@ -74,7 +74,7 @@ def run_automation_routine():
       print(f"LOG: Emergency Closing Liability {trade.id}...")
       try:
         # A. Submit
-        order_res = server_api.close_position(trade)
+        order_res = server_api.close_position(trade, order_type='market')
         order_id = order_res.get('id')
 
         if not order_id:
@@ -302,6 +302,16 @@ def run_automation_routine():
     if is_valid:
       print(f"LOG: Entry Valid! Qty: {trade_data['quantity']} Credit: {trade_data['net_credit']}")
 
+      # We lock in the hedge price NOW to measure relative performance for Panic Logic
+      current_hedge_price = market_data.get('hedge_last', 0.0)
+      if current_hedge_price > 0:
+        cycle.daily_hedge_ref = current_hedge_price
+        # Persist to DB
+        cycle_row['daily_hedge_ref'] = current_hedge_price
+        print(f"LOG: Hedge Reference set to ${current_hedge_price:.2f}")
+      else:
+        print("WARNING: Hedge price is 0. Panic Logic might be inaccurate.")
+        
       # 3. Execute Order (API)
       order_res = server_api.open_spread_position(trade_data)
 
