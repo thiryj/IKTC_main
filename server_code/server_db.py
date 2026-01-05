@@ -8,7 +8,7 @@ from shared import config
 
 # --- READS (fetching and hydrating) ---
 
-def get_active_cycle():
+def get_active_cycle()-> Cycle | None:
   """
   Fetches the single 'OPEN' cycle and fully hydrates its graph.
   Returns None if no open cycle exists.

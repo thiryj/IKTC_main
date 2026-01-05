@@ -6,9 +6,15 @@ import datetime as dt
 
 # --- ORCHESTRATION HELPERS ---
 
-def can_run_automation(env_status: dict, cycle: Optional[Cycle]) -> bool:
-  # TODO: Add check for Market Holidays or Early Close
-  # TODO: Add check for Global "Kill Switch" in Settings
+def can_run_automation(env_status: dict, settings:dict) -> bool:
+  """Checks if the bot is allowed to run based on Market Status and Settings"""
+  if not settings or not settings.get('automation_enabled'): 
+    return False
+    
+  # 1. Market Hours Check
+  if env_status.get('status') != 'OPEN':
+    return False
+  
   return True
 
 def is_db_consistent(cycle: Optional[Cycle], positions: List[dict]) -> bool:
@@ -101,26 +107,28 @@ def _check_roll_needed(cycle: Cycle, market_data: MarketData) -> bool:
   return False
 
 def _check_hedge_maintenance(cycle: Cycle, market_data: MarketData) -> bool:
-  """
-  Rule: If Hedge Delta < 15 or > 40, OR DTE < 60.
-  """
+  """Rule: If Hedge Delta < 15 or > 40, OR DTE < 60"""
   if not cycle.hedge_trade_link:
     return False
 
   # 1. Check Time (DTE)
   current_dte = market_data.get('hedge_dte', 999)
   min_dte = cycle.rules.get('hedge_min_dte', 60)
-
   if current_dte < min_dte:
     print(f"DEBUG: Hedge DTE {current_dte} < Limit {min_dte}")
     return True
 
   # 2. Check Delta
   # Puts have negative delta, use ABS
-  current_delta = abs(market_data.get('hedge_delta', 0.25))
+  # Handle Sandbox/Data Glitch where delta is exactly 0.0
+  raw_delta = market_data.get('hedge_delta')
+  # FIX: If delta is 0 or None, assume data is stale and DO NOT roll.
+  if not raw_delta: 
+    # print("DEBUG: Hedge delta 0 or missing. Skipping check.")
+    return False
+  current_delta = abs(raw_delta)
   min_delta = cycle.rules.get('hedge_min_delta', 0.15)
   max_delta = cycle.rules.get('hedge_max_delta', 0.40)
-
   if current_delta < min_delta or current_delta > max_delta:
     print(f"DEBUG: Hedge Delta {current_delta} out of bounds ({min_delta}-{max_delta})")
     return True
@@ -179,6 +187,15 @@ def get_winning_spread(cycle: Cycle, market_data: MarketData) -> Optional[Trade]
   return None
 
 # --- CALCULATION LOGIC (ROLLS & ENTRY) ---
+def find_closest_expiration(valid_dates: List[dt.date], target_dte: int) -> Optional[dt.date]:
+  """Given a list of valid dates, finds the one closest to Today + Target DTE"""
+  if not valid_dates: 
+    return None
+
+  today = dt.date.today()
+  target_date = today + dt.timedelta(days=target_dte)
+
+  return min(valid_dates, key=lambda d: abs((d - target_date).days))
 
 def calculate_roll_legs(
   chain: List[Dict],
@@ -343,15 +360,13 @@ def get_spread_quantity(
   spread_price: float,
   rules: Dict
 ) -> int:
-  """
-  Calculates position size using '5/C' rule (or scaled equivalent).
-  """
+  """Calculates position size using '5/C' rule (or scaled equivalent)"""
   if spread_price <= 0: return 0
 
   raw_qty = int(round(hedge_quantity * rules['spread_size_factor'] / spread_price))
 
   # Apply Safety Cap
-  capped_qty = min(raw_qty, config.MAX_SPREAD_QUANTITY)
+  capped_qty = min(raw_qty, hedge_quantity * config.MAX_SPREAD_TO_HEDGE_RATIO)
   return max(1, capped_qty)
 
 def evaluate_entry(

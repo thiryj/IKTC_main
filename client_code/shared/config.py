@@ -1,4 +1,10 @@
 import datetime as dt
+
+# Risk Management
+# Hard cap on leverage. Even if spreads are $0.05, we limit the ratio.
+# Example: 1 Hedge -> Max 6 Spreads. 5 Hedges -> Max 30 Spreads.
+MAX_SPREAD_TO_HEDGE_RATIO = 6
+
 # Cycle Status
 STATUS_NEW = 'NEW'
 STATUS_OPEN = 'OPEN'
@@ -39,3 +45,4 @@ TARGET_UNDERLYING = {
   ENV_PROD: 'SPX',
   ENV_SANDBOX: 'SPY'
 }
+ACTIVE_RULESET = 'Standard_0DTE'

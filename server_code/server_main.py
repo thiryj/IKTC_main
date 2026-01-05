@@ -16,32 +16,53 @@ from . import server_db
 @anvil.server.background_task
 def run_automation_routine():
   print("LOG: Starting Automation Run...")
-
-  # 1. LOAD CONTEXT (Dirty)
-  # Fetch the one active campaign. 
-  # Use server_db to fetch and FULLY HYDRATE the cycle (links trades, legs, hedge)
-  cycle = server_db.get_active_cycle()
-
-  if cycle:
-    cycle_row = cycle._row
-    print("In main loop:  cycle: \n" + "\n".join(f"{k} : {v}" for k, v in vars(cycle).items()))
-  else:
-    print("In main loop: No active cycle found (cycle is None)")
-
-  # 2. PRECONDITIONS (Clean check of Dirty Data)
-  # Get environment data (Time, Market Open/Close, Holiday)
+  
+  # 1. GLOBAL PRECONDITIONS
+  # Check environment status (Market Open/Closed) and kill switch false BEFORE touching DB
   env_status = server_api.get_environment_status()
 
-  if not server_libs.can_run_automation(env_status, cycle):
-    print(f"LOG: Automation skipped. Reason: {env_status['status_message']}")
+  # Fetch global settings (Singleton row)
+  # Assuming 'settings' table has exactly one row
+  settings_row = app_tables.settings.get() 
+  system_settings = dict(settings_row) if settings_row else {}
+  
+  # Pass cycle=None because we haven't loaded it yet. 
+  # This check is now purely for "Is the Market Open?" / "Is Bot Enabled globally?"
+  if not server_libs.can_run_automation(env_status, system_settings):
+    print(f"LOG: Automation skipped. Market: {env_status.get('status')} | Enabled: {system_settings['automation_enabled']}")
     return
+    
+  # 2. LOAD CONTEXT (or auto seed)
+  cycle = server_db.get_active_cycle()
+  if not cycle:
+    print("LOG: System Idle - No Active Cycle found. Seeding empty cycle for autmoation to populate.")
+    rules = app_tables.rule_sets.get(name=config.ACTIVE_RULESET)
+    if not rules:
+      print(f"Error: RuleSet {config.ACTIVE_RULESET} not found.")
+      return
+    symbol = config.TARGET_UNDERLYING[server_api.CURRENT_ENV]
+
+    app_tables.cycles.add_row(
+      account="AUTO_BOT",
+      underlying=symbol,
+      status=config.STATUS_OPEN,
+      start_date=dt.date.today(),
+      total_pnl=0.0,
+      daily_hedge_ref=0.0, # Will be set when spread opens
+      rule_set=rules,
+      notes="Seeded Empty Cycle"
+    )
+
+    cycle = server_db.get_active_cycle()
+    print(f"Cycle {cycle.id} created and hydrated. Proceeding immediately.")
+  cycle_row = cycle._row
+  print("In main loop:  cycle: \n" + "\n".join(f"{k} : {v}" for k, v in vars(cycle).items()))
     
   expected_symbol = env_status['target_underlying']
   if cycle and cycle.underlying != expected_symbol:
     print(f"WARNING: Cycle is {cycle.underlying} but Environment is {env_status['current_env']} ({expected_symbol}).")
     return
   
-
   # 3. SYNC REALITY (Dirty)
   # Ensure DB matches Tradier before making decisions
   positions = server_api.get_current_positions()
@@ -252,8 +273,20 @@ def run_automation_routine():
   elif decision_state == config.STATE_HEDGE_MISSING:
     print("LOG: Hedge missing. Attempting to buy protection...")
     # Strategy: Buy the 90 DTE / 25 Delta put
-    target_expiry = server_libs.get_target_hedge_date(cycle, env_status['today'])
-    chain = server_api.get_option_chain(date=target_expiry)
+    # 1. Get Valid Expirations
+    valid_dates = server_api.get_expirations()
+    target_dte = cycle.rules['hedge_target_dte'] # e.g. 90
+    #target_expiry = server_libs.get_target_hedge_date(cycle, env_status['today'])
+    
+    # 2. Pick Best Date
+    best_date = server_libs.find_closest_expiration(valid_dates, target_dte)
+    if not best_date:
+      print("CRITICAL: API returned NO valid expirations.")
+      return
+    print(f"LOG: Target {target_dte} DTE. Selected Expiry: {best_date}")
+    
+    # 3. Fetch Chain & Select Strike (Standard logic follows...)
+    chain = server_api.get_option_chain(date=best_date)
     leg_to_buy = server_libs.select_hedge_strike(chain, target_delta=cycle.rule_set._row['hedge_target_delta'])
     if leg_to_buy:
       print(f"LOG: Selected Hedge: {leg_to_buy['symbol']} Delta: {leg_to_buy['greeks']['delta']}")
@@ -292,11 +325,11 @@ def run_automation_routine():
     # 2. Evaluate Entry
     is_valid, trade_data, reason = server_libs.evaluate_entry(
       cycle=cycle,
-      current_time=env_status['now'],
+      chain=chain,
       current_price=market_data['price'],
       open_price=market_data['open'],
       previous_close=market_data['previous_close'],
-      option_chain=chain,
+      current_time=env_status['now'],
       rules=cycle.rules # Pass the raw dictionary from the wrapper
     )
     if is_valid:
@@ -347,36 +380,27 @@ def run_automation_routine():
       order_id=close_res['id']
     )
 
-    # ... inside STATE_HEDGE_ADJUSTMENT_NEEDED ...
-
     # 2. Buy New Hedge
-    # Logic: Scan for valid chain near target DTE
-    target_days = cycle.rules['hedge_target_dte'] # e.g. 90
-    found_chain = []
+    # 1. Get Valid Expirations
+    valid_dates = server_api.get_expirations()
+    target_dte = cycle.rules['hedge_target_dte'] # e.g. 90
 
-    # Scan range: Target +/- 20 days to find a valid expiration (Monthly)
-    # We step by 5 days to speed it up (looking for Fridays)
-    print(f"LOG: Scanning for new hedge around {target_days} DTE...")
-
-    start_scan = target_days - 20
-    end_scan = target_days + 30
-
-    for d in range(start_scan, end_scan, 5):
-      candidate_date = env_status['today'] + dt.timedelta(days=d)
-      chain = server_api.get_option_chain(date=candidate_date)
-      if chain:
-        found_chain = chain
-        print(f"LOG: Found valid chain at {candidate_date} ({d} DTE)")
-        break
-
-    if not found_chain:
+    # 2. Pick Best Date
+    best_date = server_libs.find_closest_expiration(valid_dates, target_dte)
+    if not best_date:
+      print("CRITICAL: API returned NO valid expirations.")
+      return
+    print(f"LOG: Target {target_dte} DTE. Selected Expiry: {best_date}")
+    
+    chain = server_api.get_option_chain(date=best_date)
+    if not chain:
       print("CRITICAL: Closed old hedge but could not find ANY new chain to enter.")
       # Optional: Alert human here
       return
 
     # Select Strike
     leg_to_buy = server_libs.select_hedge_strike(
-      found_chain, 
+      chain, 
       target_delta=cycle.rules['hedge_target_delta']
     )
 

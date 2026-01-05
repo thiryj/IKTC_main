@@ -57,6 +57,7 @@ class Cycle:
             r[k] = round(val)
           else:
             r[k] = val
+      r['spread_min_premium'] = 0.0
     return r
 
 class Trade:

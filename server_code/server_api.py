@@ -76,9 +76,7 @@ def get_environment_status() -> dict:
 # --- DATA FETCHING ---
 
 def get_current_positions() -> List[Dict]:
-  """
-    Fetches raw position list.
-    """
+  """Fetches raw position list"""
   t = _get_client()
   try:
     # Use library helper if it works, or fallback to raw
@@ -96,9 +94,9 @@ def get_current_positions() -> List[Dict]:
 
 def get_market_data_snapshot(cycle) -> Dict:
   """
-    Fetches quotes for underlying, hedge, AND active spreads.
-    Now includes Greeks for Hedge Maintenance checks.
-    """
+  Fetches quotes for underlying, hedge, AND active spreads.
+  Now includes Greeks for Hedge Maintenance checks.
+  """
   t = _get_client()
   snapshot = {
     'price': 0.0, 'open': 0.0, 'previous_close': 0.0, 
@@ -177,9 +175,9 @@ def get_market_data_snapshot(cycle) -> Dict:
   
 def get_option_chain(date: dt.date, symbol: str = None) -> List[Dict]:
   """
-    Fetches chain for a specific date using your resilient legacy parsing.
-    If symbol is None, defaults to the current environment's target (SPY/SPX).
-    """
+  Fetches chain for a specific date using your resilient legacy parsing.
+  If symbol is None, defaults to the current environment's target (SPY/SPX).
+  """
   t = _get_client()
   if symbol is None:
     symbol = config.TARGET_UNDERLYING[CURRENT_ENV]
@@ -234,6 +232,39 @@ def get_option_chain(date: dt.date, symbol: str = None) -> List[Dict]:
     print(f"API Error fetching chain for {date}: {e}")
 
   return clean_chain
+
+def get_expirations(symbol: str = None) -> List[dt.date]:
+  """Fetches ALL valid expiration dates for a symbol"""
+  t = _get_client()
+  if symbol is None: symbol = config.TARGET_UNDERLYING[CURRENT_ENV]
+
+  try:
+    # Endpoint: /v1/markets/options/expirations
+    params = {'symbol': symbol, 'include_all_roots': 'true'}
+    resp = t.session.get(f"{t.endpoint}/markets/options/expirations", params=params, headers={'Accept': 'application/json'})
+    data = resp.json()
+
+    # Handle "expiration" key (could be list or dict)
+    if not data or 'expirations' not in data:
+      return []
+
+    dates_raw = data['expirations'].get('date', [])
+
+    # Normalize to list
+    if isinstance(dates_raw, str): dates_raw = [dates_raw]
+
+    valid_dates = []
+    for d_str in dates_raw:
+      try:
+        valid_dates.append(dt.datetime.strptime(d_str, "%Y-%m-%d").date())
+      except ValueError:
+        continue
+
+    return sorted(valid_dates)
+
+  except Exception as e:
+    print(f"API Error fetching expirations: {e}")
+    return []
 
 # --- EXECUTION ---
 
