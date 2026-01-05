@@ -136,16 +136,14 @@ def _check_hedge_maintenance(cycle: Cycle, market_data: MarketData) -> bool:
   return False
 
 def _check_profit_target(cycle: Cycle, market_data: MarketData) -> bool:
-  """
-  Rule: Spread Cost <= Target Harvest Price (50% of credit).
-  """
+  """Rule: Spread Cost <= Target Harvest Price (50% of credit)"""
   marks = market_data.get('spread_marks', {})
 
   for trade in cycle.trades:
     if trade.role == config.ROLE_INCOME and trade.status == config.STATUS_OPEN:
       current_cost = marks.get(trade.id)
       target = trade.target_harvest_price
-
+      print(f"current_cost: {current_cost}, target: {target}")
       if current_cost is not None and target and current_cost <= target:
         return True
   return False
