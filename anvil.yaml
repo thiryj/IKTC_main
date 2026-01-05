@@ -263,12 +263,12 @@ runtime_options:
   server_version: python3-sandbox
   version: 2
 scheduled_tasks:
-- job_id: BPKTPYTX
-  task_name: run_automation_cycle
+- job_id: YHCQGGON
+  task_name: run_automation_routine
   time_spec:
     at: {}
     every: minute
-    n: 5
+    n: 10
 secrets:
   IRA_TRADIER_ACCOUNT:
     type: secret
