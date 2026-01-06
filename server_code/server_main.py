@@ -319,17 +319,14 @@ def run_automation_routine():
   elif decision_state == config.STATE_SPREAD_MISSING:
     print("LOG: Attempting to enter new spread...")
     
-    # Only if hedge is present (checked inside determine_cycle_state)
     chain = server_api.get_option_chain(date=env_status['today'])
     
     # 2. Evaluate Entry
     is_valid, trade_data, reason = server_libs.evaluate_entry(
       cycle=cycle,
       chain=chain,
-      current_price=market_data['price'],
-      open_price=market_data['open'],
-      previous_close=market_data['previous_close'],
-      current_time=env_status['now'],
+      market_data=market_data,
+      env_status=env_status,
       rules=cycle.rules # Pass the raw dictionary from the wrapper
     )
     if is_valid:

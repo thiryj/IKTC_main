@@ -1,6 +1,6 @@
 from shared import config
 from shared.classes import Cycle, Trade
-from shared.types import MarketData
+from shared.types import MarketData, EnvStatus, RuleSetDict
 from typing import Optional, Tuple, Dict, List
 import datetime as dt
 
@@ -254,33 +254,89 @@ def calculate_roll_legs(
   return best_candidate
 
 def check_entry_conditions(
-  current_price: float,
-  open_price: float,
-  previous_close: float,
-  current_time: dt.datetime,
-  rules: Dict
+  cycle: Cycle,
+  market_data: MarketData,
+  env_status: EnvStatus,
+  rules: RuleSetDict
 ) -> Tuple[bool, str]:
+  '''
+  Validates if a new spread entry is allowed.
+  Order: Time -> Gaps -> Short Day -> Frequency.
+  '''
+  current_time = env_status['now']
+  # --- DEBUG START ---
+  print(f"DEBUG CHECKS: Now={current_time.strftime('%H:%M:%S')}")
 
-  # 1. Time Check
+  # --- 1. TIME WINDOW CHECKS (Fastest fail) ---
+  # A. Start Delay (e.g. 9:45 AM)
   market_open_dt = dt.datetime.combine(current_time.date(), config.MARKET_OPEN_TIME)
   minutes_since_open = (current_time - market_open_dt).total_seconds() / 60.0
-
-  if minutes_since_open < rules['trade_start_delay']:
+  
+  if minutes_since_open < rules.get('trade_start_delay', 15):
     return False, "Wait time active"
 
-  # 2. Overnight Gap Check
-  if previous_close > 0:
-    overnight_drop_pct = (open_price - previous_close) / previous_close
-    if overnight_drop_pct < -rules['gap_down_thresh']:
+  # B. Late Cutoff (e.g. 11:00 AM)
+  cutoff_val = rules.get('max_entry_time') 
+  print(f"DEBUG CHECKS: DB cutoff_val='{cutoff_val}' (Type: {type(cutoff_val)})")
+  # Default to 11:30 if missing
+  cutoff_time = dt.time(11, 30)
+  if isinstance(cutoff_val, dt.time):
+    cutoff_time = cutoff_val
+  elif isinstance(cutoff_val, str):
+    try:
+      h, m = map(int, cutoff_val.split(':'))
+      cutoff_time = dt.time(h, m)
+    except: pass
+
+  cutoff_dt = dt.datetime.combine(current_time.date(), cutoff_time)
+  print(f"DEBUG CHECKS: Comparing {current_time} > {cutoff_dt} ?")
+  if current_time > cutoff_dt:
+    return False, f"Time {current_time.strftime('%H:%M')} past cutoff {cutoff_time.strftime('%H:%M')}"
+
+  # --- 2. MARKET GAP CHECKS (Fast Math) ---
+  open_price = market_data.get('open', 0)
+  prev_close = market_data.get('previous_close', 0)
+  current_price = market_data.get('price', 0)
+  gap_thresh = rules.get('gap_down_thresh', 0.01) # Default 1%
+
+  # Overnight Gap
+  if prev_close > 0:
+    overnight_drop_pct = (open_price - prev_close) / prev_close
+    if overnight_drop_pct < -gap_thresh:
       return False, f"Overnight gap {overnight_drop_pct:.1%} exceeds limit"
 
-  # 3. Intraday Drop Check
+  # Intraday Crash
   if open_price > 0:
     intraday_drop_pct = (current_price - open_price) / open_price
-    if intraday_drop_pct < -rules['gap_down_thresh']:
+    if intraday_drop_pct < -gap_thresh:
       return False, f"Intraday drop {intraday_drop_pct:.1%} exceeds limit"
 
-  # TODO: Add VIX check if required by strategy
+  # --- 3. SHORT DAY CHECK (Logic) ---
+  # Tradier 'next_state_change' is usually "HH:MM" (24h)
+  # Standard close is 16:00. Early close is usually 13:00.
+  next_change_str = env_status.get('next_state_change', '16:00')
+
+  try:
+    # Parse hour from string "13:00"
+    close_hour = int(next_change_str.split(':')[0])
+
+    # If market closes before 15:00 (3 PM), it's a Short Day.
+    if close_hour < 15:
+      return False, f"Market closes early ({next_change_str}) - Entry Blocked"
+  except (ValueError, IndexError):
+    # If format is weird, assume standard day and proceed, or log warning
+    pass
+
+  # --- 4. FREQUENCY CHECK (only one spread open per day) ---
+  today_date = env_status['today']
+
+  trades_today = [
+    t for t in cycle.trades 
+    if t.role == config.ROLE_INCOME 
+    and t.entry_time.date() == today_date
+  ]
+  if len(trades_today) > 0:
+    return False, "Daily limit reached (1 spread per day)"
 
   return True, "Entry valid"
 
@@ -370,10 +426,8 @@ def get_spread_quantity(
 def evaluate_entry(
   cycle: Cycle,
   chain: List[Dict],
-  current_price: float,
-  open_price: float,
-  previous_close: float,
-  current_time: dt.datetime,
+  market_data: MarketData,
+  env_status: Dict,
   rules: Dict
 ) -> Tuple[bool, Dict, str]:
   """
@@ -383,7 +437,10 @@ def evaluate_entry(
 
   # 1. Broad Market Checks
   is_valid_env, env_reason = check_entry_conditions(
-    current_price, open_price, previous_close, current_time, rules
+    cycle,
+    market_data,
+    env_status,
+    rules
     )
   if not is_valid_env:
       return False, {}, env_reason

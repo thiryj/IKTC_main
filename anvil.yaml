@@ -164,6 +164,9 @@ db_schema:
     - admin_ui: {width: 162}
       name: panic_threshold_dpu
       type: number
+    - admin_ui: {order: 20, width: 200}
+      name: max_entry_time
+      type: string
     server: full
     title: rule_sets
   settings:

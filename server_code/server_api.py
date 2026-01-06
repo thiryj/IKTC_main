@@ -6,6 +6,7 @@ import requests
 from urllib.parse import urljoin
 from typing import Dict, List, Any, Optional
 import time 
+import pytz
 
 from tradier_python import TradierAPI
 from shared import config
@@ -37,30 +38,38 @@ def _get_client() -> TradierAPI:
 # --- ENVIRONMENT & MARKET STATUS ---
 
 def get_environment_status() -> dict:
-  """
-    Checks market clock and returns operational status.
-    """
+  """Checks market clock and returns operational status"""
   t = _get_client()
-  now = dt.datetime.now()
+  
+  # 1. Get Timezone-Aware UTC
+  utc_now = dt.datetime.now(pytz.utc)
+  # 2. Convert to US/Eastern
+  eastern = pytz.timezone('US/Eastern')
+  et_now = utc_now.astimezone(eastern)
+
+  # 3. Strip Timezone Info (Make it Naive)
+  # This prevents "can't compare offset-naive and offset-aware" errors downstream
+  # and ensures 9:30 AM ET looks like 09:30:00 to the bot.
+  wall_clock_now = et_now.replace(tzinfo=None)
 
   status_data = {
     'status': 'CLOSED',
     'status_message': 'Market is Closed',
-    'today': now.date(),
-    'now': now,
+    'today': wall_clock_now.date(),
+    'now': wall_clock_now,
     'is_holiday': False,
+    'next_state_change': '00:00',
     'current_env': CURRENT_ENV,
     'target_underlying': config.TARGET_UNDERLYING[CURRENT_ENV]
   }
 
   try:
-    # Raw call to avoid wrapper bugs
-    # Endpoint: /v1/markets/clock
     response = t.session.get(f"{t.endpoint}/markets/clock", headers={'Accept': 'application/json'})
     if response.status_code == 200:
       clock = response.json().get('clock', {})
       state = clock.get('state')
-
+      status_data['next_state_change'] = str(clock.get('next_change', '16:00'))
+    
       if state == 'open':
         status_data['status'] = 'OPEN'
         status_data['status_message'] = 'Market is Open'
