@@ -389,7 +389,7 @@ def calculate_spread_strikes(
 def validate_premium_and_size(
   short_leg: Dict,
   long_leg: Dict,
-  rules: Dict
+  rules: RuleSetDict
 ) -> Tuple[bool, float, str]:
 
   # Logic: Calculate Credit using Mids (Fallback to Last if 0)
