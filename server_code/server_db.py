@@ -6,6 +6,11 @@ import datetime as dt
 from shared.classes import Cycle, Trade, Leg, Transaction
 from shared import config
 
+def _fmt(val):
+  """Rounds price to 2 decimal places for clean DB storage."""
+  if val is None: return None
+  return round(float(val), 2)
+
 # --- READS (fetching and hydrating) ---
 
 def get_active_cycle()-> Cycle | None:
@@ -137,7 +142,7 @@ def record_new_trade(
     role=role,
     status=config.STATUS_OPEN,
     quantity=trade_dict['quantity'],
-    entry_price=fill_price,
+    entry_price=_fmt(fill_price),
     entry_time=fill_time,
     order_id_external=order_id,
     pnl=0.0,
@@ -157,9 +162,9 @@ def record_new_trade(
   open_txn = app_tables.transactions.add_row(
     trade=trade_row,
     action="OPEN_SPREAD" if role == config.ROLE_INCOME else "OPEN_HEDGE",
-    price=fill_price,
+    price=_fmt(fill_price),
     quantity=trade_dict['quantity'],
-    fees=fees,
+    fees=_fmt(fees),
     timestamp=fill_time,
     order_id_external=order_id
   )
@@ -209,9 +214,9 @@ def close_trade(trade_row, fill_price: float, fill_time: dt.datetime, order_id: 
   close_txn = app_tables.transactions.add_row(
     trade=trade_row,
     action=action_type,
-    price=fill_price,
+    price=_fmt(fill_price),
     quantity=trade_row['quantity'],
-    fees=fees,
+    fees=_fmt(fees),
     timestamp=fill_time,
     order_id_external=order_id
   )
@@ -236,9 +241,69 @@ def close_trade(trade_row, fill_price: float, fill_time: dt.datetime, order_id: 
 
   trade_row.update(
     status=config.STATUS_CLOSED,
-    exit_price=fill_price,
+    exit_price=_fmt(fill_price),
     exit_time=fill_time,
-    pnl=pnl
+    pnl=_fmt(pnl)
+  )
+  
+@anvil.tables.in_transaction
+def settle_zombie_trade(trade_row):
+  """
+    Settles a missing trade using WORST CASE assumption.
+    - Income Spread: Assumes Max Loss (Exit Price = Strike Width).
+    - Hedge: Assumes Expired Worthless (Exit Price = 0).
+    User must manually reconcile with the actual overnight outcome.
+    """
+  print(f"DB: Settling Zombie Trade {trade_row.get_id()} as MAX LOSS.")
+
+  # 1. Determine Worst Case Exit Price
+  exit_price = 0.0
+
+  if trade_row['role'] == config.ROLE_INCOME:
+    # For a credit spread, Max Loss happens if we buy it back at full width
+    # Fetch legs to calculate width
+    legs = app_tables.legs.search(trade=trade_row)
+    short_leg = next((l for l in legs if l['side'] == config.LEG_SIDE_SHORT), None)
+    long_leg = next((l for l in legs if l['side'] == config.LEG_SIDE_LONG), None)
+
+    if short_leg and long_leg:
+      width = abs(short_leg['strike'] - long_leg['strike'])
+      exit_price = width
+    else:
+      # Data corruption fallback: Assume a painful default (e.g. $5.00) or 0
+      exit_price = 0.0 
+  else:
+    # For a long Hedge, worst case is expiring worthless ($0.00)
+    exit_price = 0.0
+
+    # 2. Record "Administrative" Transaction
+  app_tables.transactions.add_row(
+    trade=trade_row,
+    action="ZOMBIE_SETTLE",
+    price=_fmt(exit_price),
+    quantity=trade_row['quantity'],
+    timestamp=dt.datetime.now(),
+    order_id_external="MANUAL_AUDIT_REQ"
+  )
+
+  # 3. Deactivate Legs
+  for leg in app_tables.legs.search(trade=trade_row, active=True):
+    leg['active'] = False
+
+    # 4. Update Trade Row
+  entry_price = trade_row['entry_price'] or 0.0
+
+  if trade_row['role'] == config.ROLE_INCOME:
+    pnl = entry_price - exit_price # e.g., 0.50 - 2.50 = -2.00
+  else:
+    pnl = exit_price - entry_price # e.g., 0.00 - 5.00 = -5.00
+
+  trade_row.update(
+    status=config.STATUS_CLOSED,
+    exit_price=_fmt(exit_price),
+    exit_time=dt.datetime.now(),
+    pnl=_fmt(pnl),
+    notes=f"{trade_row['notes'] or ''} [ZOMBIE: MAX LOSS APPLIED]"
   )
 
 # --- INTERNAL HYDRATION HELPERS ---

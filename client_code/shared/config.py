@@ -5,6 +5,9 @@ import datetime as dt
 # Example: 1 Hedge -> Max 6 Spreads. 5 Hedges -> Max 30 Spreads.
 MAX_SPREAD_TO_HEDGE_RATIO = 6
 
+# Order Execution Limits
+ORDER_TIMEOUT_SECONDS = 15
+
 # Cycle Status
 STATUS_NEW = 'NEW'
 STATUS_OPEN = 'OPEN'

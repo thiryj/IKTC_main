@@ -7,7 +7,7 @@ import anvil.server
 import datetime as dt
 
 from shared import config
-from . import server_api
+from . import server_api, server_db
 
 @anvil.server.callable
 def print_entire_db_schema():
@@ -354,3 +354,112 @@ def seed_fresh_cycle():
   )
 
   print("Seed Complete.")
+
+@anvil.server.callable
+def seed_active_spread():
+  print("--- SEEDING ACTIVE SPREAD (SMART) ---")
+
+  # 1. Get Context
+  cycle = server_db.get_active_cycle()
+  if not cycle:
+    print("Error: No Active Cycle found. Run 'seed_fresh_cycle' first.")
+    return
+
+  if not cycle.hedge_trade_link:
+    print("Error: Cycle exists but has no Hedge.")
+    return
+
+    # 2. Fetch Real Chain (Target ~7 days out for liquidity)
+    # We want real symbols so the API accepts the Close order later
+  target_date = dt.date.today() + dt.timedelta(days=7)
+  chain = server_api.get_option_chain(date=target_date)
+
+  # Fallback scan if specific date is empty in Sandbox
+  if not chain:
+    for d in range(3, 15):
+      check_date = dt.date.today() + dt.timedelta(days=d)
+      chain = server_api.get_option_chain(date=check_date)
+      if chain: break
+
+  if not chain or len(chain) < 2:
+    print("CRITICAL: No valid option chain found to seed from.")
+    return
+
+    # 3. Pick Strikes (Puts)
+  puts = [o for o in chain if o.get('option_type') == 'put']
+  if len(puts) < 2: return
+
+    # Sort High to Low
+  puts.sort(key=lambda x: x['strike'], reverse=True)
+
+  # Pick "Short" and "Long" (ATM or slightly OTM)
+  # Just picking the first two available for the test
+  short_leg = puts[0]
+  long_leg = puts[1]
+
+  print(f"Selected Legs: {short_leg['symbol']} / {long_leg['symbol']}")
+
+  # 4. Create DB Records
+  entry_credit = 0.50
+  qty = 1
+
+  trade_row = app_tables.trades.add_row(
+    cycle=cycle._row,
+    role=config.ROLE_INCOME,
+    status=config.STATUS_OPEN,
+    quantity=qty,
+    entry_price=entry_credit,
+    entry_time=dt.datetime.now(),
+    pnl=0.0,
+    order_id_external="SEED_SPREAD_TEST",
+
+    # Targets
+    target_harvest_price=entry_credit * 0.50, # 0.25
+    roll_trigger_price=entry_credit * 3.0,    # 1.50
+
+    capital_required=qty * 100 * abs(short_leg['strike'] - long_leg['strike'])
+  )
+
+  txn = app_tables.transactions.add_row(
+    trade=trade_row,
+    action="OPEN_SPREAD",
+    price=entry_credit,
+    quantity=qty,
+    timestamp=dt.datetime.now(),
+    order_id_external="SEED_SPREAD_TEST"
+  )
+
+  # Helper date parser
+  def parse_d(val):
+    if isinstance(val, str): return dt.datetime.strptime(val, "%Y-%m-%d").date()
+    return val
+
+    # Short Leg
+  app_tables.legs.add_row(
+    trade=trade_row,
+    opening_transaction=txn,
+    side=config.LEG_SIDE_SHORT,
+    quantity=qty,
+    strike=short_leg['strike'],
+    option_type='put',
+    expiry=parse_d(short_leg.get('expiration_date')),
+    occ_symbol=short_leg['symbol'],
+    active=True
+  )
+
+  # Long Leg
+  app_tables.legs.add_row(
+    trade=trade_row,
+    opening_transaction=txn,
+    side=config.LEG_SIDE_LONG,
+    quantity=qty,
+    strike=long_leg['strike'],
+    option_type='put',
+    expiry=parse_d(long_leg.get('expiration_date')),
+    occ_symbol=long_leg['symbol'],
+    active=True
+  )
+
+  print("Seed Complete. Active Spread created.")
+  print(f"Roll Trigger: {trade_row['roll_trigger_price']}")
+  print(f"Harvest Target: {trade_row['target_harvest_price']}")

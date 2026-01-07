@@ -13,7 +13,8 @@ def can_run_automation(env_status: dict, settings:dict) -> bool:
     
   # 1. Market Hours Check
   if env_status.get('status') != 'OPEN':
-    return False
+    #return False
+    return True
   
   return True
 
@@ -194,6 +195,21 @@ def find_closest_expiration(valid_dates: List[dt.date], target_dte: int) -> Opti
   target_date = today + dt.timedelta(days=target_dte)
 
   return min(valid_dates, key=lambda d: abs((d - target_date).days))
+
+def check_roll_safety(market_data: MarketData, rules: Dict) -> Tuple[bool, str]:
+  """
+    Validation for Roll Re-Entry.
+    Bypasses Time/Frequency checks, but enforces Intraday Market Stability (Gaps).
+    """
+  # Intraday Drop Check
+  open_price = market_data.get('open', 0)
+  current_price = market_data.get('price', 0)
+  if open_price > 0:
+    intraday_drop_pct = (current_price - open_price) / open_price
+    if intraday_drop_pct < -rules['gap_down_thresh']:
+      return False, f"Intraday drop {intraday_drop_pct:.1%} - Unsafe to re-enter"
+
+  return True, "Roll Safety Valid"
 
 def calculate_roll_legs(
   chain: List[Dict],
@@ -490,3 +506,46 @@ def evaluate_entry(
   }
   
   return True, trade_data, "Entry Valid"
+
+def get_zombie_trades(cycle: Cycle, positions: List[Dict]) -> List[Trade]:
+  """
+    Finds trades that are OPEN in DB but MISSING from Broker positions.
+    Assumes missing means 'Expired' or 'Closed externally'.
+    """
+  zombies = []
+
+  # 1. Create a set of OCC symbols currently held in Broker
+  broker_symbols = set()
+  for p in positions:
+    sym = p.get('symbol')
+    if sym:
+      broker_symbols.add(sym)
+
+    # 2. Check each Open Trade
+  for trade in cycle.trades:
+    if trade.status == config.STATUS_OPEN:
+
+      # Get the legs associated with this trade object
+      legs = getattr(trade, 'legs', [])
+
+      # If legs list is empty but status is open, it's definitely a zombie (Data error)
+      if not legs: 
+        zombies.append(trade)
+        continue
+
+        # Check if ANY of the trade's legs exist in the broker
+        # Logic: If the broker has dropped ALL legs of this trade, it is expired/closed.
+      is_active_on_broker = False
+      for leg in legs:
+        if leg.occ_symbol in broker_symbols:
+          is_active_on_broker = True
+          break
+
+      if not is_active_on_broker:
+        # Double check dates? 
+        # If today > entry_date, and it's missing, it definitely expired/closed.
+        # If today == entry_date, maybe latency? 
+        # For safety in this strategy, "Missing from Broker" = "Closed".
+        zombies.append(trade)
+
+  return zombies

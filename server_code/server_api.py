@@ -85,17 +85,40 @@ def get_environment_status() -> dict:
 # --- DATA FETCHING ---
 
 def get_current_positions() -> List[Dict]:
-  """Fetches raw position list"""
+  """
+    Fetches raw position list and normalizes to standard Dictionaries.
+    Handles Pydantic objects returned by the library.
+    """
   t = _get_client()
   try:
-    # Use library helper if it works, or fallback to raw
-    # The library .get_positions() is usually fine
-    positions = t.get_positions() 
-    if not positions:
+    raw_positions = t.get_positions()
+    if not raw_positions:
       return []
 
-      # Normalize to list (Tradier returns dict if single item)
-    return positions if isinstance(positions, list) else [positions]
+      # 1. Normalize to List
+      # Broker returns a single object if only 1 position exists
+    pos_list = raw_positions if isinstance(raw_positions, list) else [raw_positions]
+
+    # 2. Normalize Objects to Dicts
+    clean_list = []
+    for p in pos_list:
+      if isinstance(p, dict):
+        clean_list.append(p)
+      elif hasattr(p, 'dict'):
+        # Pydantic V1 support
+        clean_list.append(p.dict())
+      elif hasattr(p, 'model_dump'):
+        # Pydantic V2 support
+        clean_list.append(p.model_dump())
+      else:
+        # Fallback: Extract known attributes manually
+        clean_list.append({
+          'symbol': getattr(p, 'symbol', None),
+          'quantity': getattr(p, 'quantity', 0),
+          'id': getattr(p, 'id', None)
+        })
+
+    return clean_list
 
   except Exception as e:
     print(f"API Error fetching positions: {e}")

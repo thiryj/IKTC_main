@@ -56,7 +56,7 @@ def run_automation_routine():
     cycle = server_db.get_active_cycle()
     print(f"Cycle {cycle.id} created and hydrated. Proceeding immediately.")
   cycle_row = cycle._row
-  print("In main loop:  cycle: \n" + "\n".join(f"{k} : {v}" for k, v in vars(cycle).items()))
+  #print("In main loop:  cycle: \n" + "\n".join(f"{k} : {v}" for k, v in vars(cycle).items()))
     
   expected_symbol = env_status['target_underlying']
   if cycle and cycle.underlying != expected_symbol:
@@ -66,6 +66,19 @@ def run_automation_routine():
   # 3. SYNC REALITY (Dirty)
   # Ensure DB matches Tradier before making decisions
   positions = server_api.get_current_positions()
+
+  # check for positions open in db that are not in broker
+  zombies = server_libs.get_zombie_trades(cycle, positions)
+  if zombies:
+    print(f"LOG: Found {len(zombies)} Zombie Trades (Open in DB, Missing in Broker). Marking as worst case loss. Must edit db to broker reality")
+    for z_trade in zombies:
+      try:
+        server_db.settle_zombie_trade(z_trade._row)
+        msg = f"Zombie Trade {z_trade.id} detected and settled at MAX LOSS. Manual Check Required."
+        print(f"CRITICAL: {msg}")
+        server_libs.alert_human(msg, level=config.ALERT_CRITICAL)
+      except Exception as e:
+        print(f"CRITICAL: Failed to settle Zombie Trade {z_trade.id}: {e}")
 
   if not server_libs.is_db_consistent(cycle, positions):
     # Stop everything if the map doesn't match the territory
@@ -158,100 +171,113 @@ def run_automation_routine():
   elif decision_state == config.STATE_ROLL_REQUIRED:
     print("LOG: Roll Triggered! Hunting for escape route...")
 
-    # FIX: Pass market_data (from Step 4) instead of fetching it again
     spread_trade = server_libs.get_threatened_spread(cycle, market_data)
-
     if not spread_trade:
       print("LOG: Error - State is ROLL but no threatened trade found.")
       return
-  
-    # Calculate Cost to Close (using marks from earlier snapshot or re-fetch)
-    # We re-fetch snapshot to be safe/fresh
-    marks = server_api.get_market_data_snapshot(cycle).get('spread_marks', {})
-    cost_to_close = marks.get(spread_trade.id, 0.0)
-  
-    # TEST HACK: Force cost negative to guarantee the math works
-    print(f"DEBUG: Real Cost {cost_to_close}. Forcing to -0.50 for Logic Verification.")
-    cost_to_close = -0.50
 
-    print(f"LOG: Cost to close current spread: ${cost_to_close:.2f}")
+    # --- STEP 1: CLOSE LIABILITY (Market Order) ---
+    print(f"LOG: Step 1 - Emergency Closing Trade {spread_trade.id}...")
 
-    # 2. Fetch T+1 Chain (Tomorrow)
-    # Logic: Look for 1 day out. If weekend, finding Monday.
-    # Simple logic: Today + 1 day
-    chain = []
-    target_date = None
-    # Retry offsets: 1 day (standard), 3 days (weekend skip), 7 days (liquidity search)
-    retry_offsets = [1, 3, 7]
-    target_date = env_status['today'] + dt.timedelta(days=1)
-    for days in retry_offsets:
-      candidate_date = env_status['today'] + dt.timedelta(days=days)
-      chain = server_api.get_option_chain(date=candidate_date)
+    # Force Market Order for immediate exit
+    close_res = server_api.close_position(spread_trade, order_type='market')
+    close_order_id = close_res.get('id')
 
-      if chain:
-        target_date = candidate_date
-        print(f"LOG: Found valid chain for Roll at {target_date} (T+{days})")
-        break
-
-    if not chain:
-      print("LOG: CRITICAL - Cannot find ANY chain to roll into (T+1/3/7 failed). Manual intervention required.")
+    if not close_order_id:
+      print("CRITICAL: Roll Aborted - API rejected Close Order.")
       return
 
-    # 3. Calculate Roll Legs
-    # Extract current short strike
+    # Poll for Fill (Aggressive Wait)
+    is_closed = server_api.wait_for_order_fill(close_order_id, timeout_seconds=10)
+
+    if not is_closed:
+      print("CRITICAL: Roll Aborted - Close Order timed out/failed.")
+      # Note: Position is likely stuck in 'pending' state. Bot will retry next loop.
+      return
+
+    # DB Update (Close Old)
+    # We use the estimated price from response if specific fill price isn't available yet
+    # Ideally, we'd fetch the exact fill price here, but let's use the snapshot/response for speed
+    realized_debit = close_res['price'] 
+
+    server_db.close_trade(
+      trade_row=spread_trade._row,
+      fill_price=realized_debit, 
+      fill_time=dt.datetime.now(),
+      order_id=close_order_id
+    )
+    print(f"LOG: Liability Closed. Realized Debit: ${realized_debit:.2f}")
+
+    # --- STEP 2: RE-ENTRY LOGIC ---
+
+    # A. Check Safety (Don't re-enter if market is crashing)
+    is_safe, safety_msg = server_libs.check_roll_safety(market_data, cycle.rules)
+    if not is_safe:
+      print(f"LOG: Roll Re-Entry Aborted: {safety_msg}. Staying Flat.")
+      return
+
+    # B. Find Target Date (1-2 DTE)
+    valid_dates = server_api.get_expirations()
+    # Target 1 day out (Tomorrow)
+    target_date = server_libs.find_closest_expiration(valid_dates, target_dte=1)
+    if not target_date:
+      print("LOG: Roll Re-Entry Failed: No valid expiration found.")
+      return
+
+    print(f"LOG: Targeting Re-Entry for {target_date}...")
+    chain = server_api.get_option_chain(date=target_date)
+    if not chain:
+      print("LOG: Roll Re-Entry Failed: Chain empty.")
+      return
+
+    # C. Calculate New Legs
+    # We need to cover the 'realized_debit' we just paid
     current_short = next(l for l in spread_trade.legs if l.side == config.LEG_SIDE_SHORT)
 
     roll_result = server_libs.calculate_roll_legs(
       chain=chain,
       current_short_strike=current_short.strike,
-      width=cycle.rules['spread_width'], # Scaled width
-      cost_to_close=cost_to_close
+      width=cycle.rules['spread_width'],
+      cost_to_close=realized_debit
     )
+    if not roll_result:
+      print("LOG: Roll Re-Entry Failed: No valid strikes found to cover cost (Scratch impossible). Staying Flat.")
+      return
 
-    if roll_result:
-      print(f"LOG: Roll Candidate Found! New Short: {roll_result['short_leg']['strike']} Net: {roll_result['net_price']:.2f}")
+    # --- STEP 3: OPEN ASSET (Limit Order) ---
+    print(f"LOG: Step 2 - Opening New Spread (Limit ${roll_result['new_credit']:.2f})...")
 
-      # 4. Execute Roll
-      order_res = server_api.execute_roll(
-        old_trade=spread_trade,
-        new_short=roll_result['short_leg'],
-        new_long=roll_result['long_leg'],
-        net_price=roll_result['net_price']
-      )
+    # Construct Trade Data for API
+    # Note: calculate_roll_legs returns 'new_credit' which is the GROSS credit of new spread
+    trade_data = {
+      'quantity': spread_trade.quantity, # Maintain same size
+      'short_strike': roll_result['short_leg']['strike'],
+      'long_strike': roll_result['long_leg']['strike'],
+      'short_leg_data': roll_result['short_leg'],
+      'long_leg_data': roll_result['long_leg'],
+      'net_credit': roll_result['new_credit']
+    }
 
-      # 5. DB Updates (Atomic Two-Step)
-      # Step A: Close Old
-      server_db.close_trade(
-        trade_row=spread_trade._row,
-        fill_price=cost_to_close, # Estimated close price
-        fill_time=order_res['time'],
-        order_id=order_res['id'] + "_CLOSE"
-      )
-
-      # Step B: Open New
-      # Construct trade_dict for the recorder
-      new_trade_data = {
-        'quantity': spread_trade.quantity,
-        'short_strike': roll_result['short_leg']['strike'],
-        'long_strike': roll_result['long_leg']['strike'],
-        'short_leg_data': roll_result['short_leg'],
-        'long_leg_data': roll_result['long_leg'],
-        'net_credit': roll_result['new_credit']
-      }
-
-      server_db.record_new_trade(
-        cycle_row=cycle_row,
-        role=config.ROLE_INCOME,
-        trade_dict=new_trade_data,
-        order_id=order_res['id'] + "_OPEN",
-        fill_price=roll_result['new_credit'],
-        fill_time=order_res['time']
-      )
-    
-      print("LOG: Roll executed and DB updated.")
-
-    else:
-      print("LOG: No valid roll found (Cannot pay for close with lower strike).")
+    open_res = server_api.open_spread_position(trade_data)
+    open_order_id = open_res.get('id')
+    if open_order_id:
+      # Wait for Fill (IOC Simulation)
+      
+      is_opened = server_api.wait_for_order_fill(open_order_id, config.ORDER_TIMEOUT_SECONDS)
+      if is_opened:
+        server_db.record_new_trade(
+          cycle_row=cycle_row,
+          role=config.ROLE_INCOME,
+          trade_dict=trade_data,
+          order_id=open_order_id,
+          fill_price=roll_result['new_credit'],
+          fill_time=dt.datetime.now()
+        )
+        print("LOG: Roll Re-Entry Successful.")
+      else:
+        print("LOG: Re-Entry timed out. Canceling...")
+        server_api.cancel_order(open_order_id)
+        print("LOG: Order canceled. System Flat (Stop Loss Taken).")
 
   elif decision_state == config.STATE_HARVEST_TARGET_HIT:
     # Strategy: Close spread at 50% profit
