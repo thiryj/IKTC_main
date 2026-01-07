@@ -278,6 +278,8 @@ def run_automation_routine():
         print("LOG: Re-Entry timed out. Canceling...")
         server_api.cancel_order(open_order_id)
         print("LOG: Order canceled. System Flat (Stop Loss Taken).")
+    else:
+      print("CRITICAL: API rejected Re-Entry Order.")
 
   elif decision_state == config.STATE_HARVEST_TARGET_HIT:
     # Strategy: Close spread at 50% profit
@@ -313,34 +315,14 @@ def run_automation_routine():
     
     # 3. Fetch Chain & Select Strike (Standard logic follows...)
     chain = server_api.get_option_chain(date=best_date)
-    leg_to_buy = server_libs.select_hedge_strike(chain, target_delta=cycle.rule_set._row['hedge_target_delta'])
+    leg_to_buy = server_libs.select_hedge_strike(chain, 
+                                                 target_delta=cycle.rules['hedge_target_delta'])
+    
     if leg_to_buy:
-      print(f"LOG: Selected Hedge: {leg_to_buy['symbol']} Delta: {leg_to_buy['greeks']['delta']}")
-
-      # 4. Prepare Trade Data (Simulate a 'Trade Dict' for the recorder)
-      # We construct this manually since we don't have an evaluate_hedge function yet
-      trade_data = {
-        'quantity': 1, # Always 1 unit per decision loop for now, or based on account size
-        'short_strike': 0, # N/A
-        'long_strike': leg_to_buy['strike'],
-        'short_leg_data': {}, 
-        'long_leg_data': leg_to_buy
-      }
-      order_res = server_api.buy_option(leg_to_buy)
-      
-      # 6. Record (DB)
-      new_trade_obj = server_db.record_new_trade(
-        cycle_row=cycle_row,
-        role=config.ROLE_HEDGE,
-        trade_dict=trade_data,
-        order_id=order_res['id'],
-        fill_price=order_res['price'], # Debit is positive price in this context? Or negative?
-        fill_time=order_res['time']
-      )
-      cycle_row['hedge_trade'] = new_trade_obj._row
-      print("LOG: Hedge executed, recorded, and linked to Cycle.")
+      print(f"LOG: Selected Hedge: {leg_to_buy['symbol']}")
+      _execute_hedge_entry(cycle, leg_to_buy)
     else:
-      print("LOG: Could not find suitable hedge strike.")
+      print("LOG: Chain found, but no suitable strike (Delta match) found.")
       
   elif decision_state == config.STATE_SPREAD_MISSING:
     print("LOG: Attempting to enter new spread...")
@@ -370,22 +352,41 @@ def run_automation_routine():
         
       # 3. Execute Order (API)
       order_res = server_api.open_spread_position(trade_data)
+      order_id = order_res.get('id')
+      if not order_id:
+        print("CRITICAL: Entry order rejected by broker.")
+      else:
+        # 2. SYNCHRONOUS WAIT (The IOC Simulation)
+        print(f"LOG: Waiting {config.ORDER_TIMEOUT_SECONDS}s for fill...")
+        is_filled = server_api.wait_for_order_fill(order_id, config.ORDER_TIMEOUT_SECONDS)
 
-      # 4. Record to DB (Persistence)
-      # Note: We import server_db at the top of main
-      server_db.record_new_trade(
-        cycle_row=cycle_row, # The raw row
-        role=config.ROLE_INCOME,
-        trade_dict=trade_data,
-        order_id=order_res['id'],
-        fill_price=order_res['price'],
-        fill_time=order_res['time']
-      )
-      print("LOG: Trade recorded successfully.")
+        if is_filled:
+          # 3A. SUCCESS: Record to DB
 
-    else:
-      print(f"LOG: Entry Logic Rejected: {reason}")
+          # Capture Hedge Ref NOW since we are officially in the trade
+          # We use the snapshot value from earlier, or could re-fetch if strict
+          current_hedge = market_data.get('hedge_last', 0.0)
+          if current_hedge > 0:
+            cycle.daily_hedge_ref = current_hedge
+            cycle._row['daily_hedge_ref'] = current_hedge
+            print(f"LOG: Hedge Reference set to ${current_hedge:.2f}")
 
+          server_db.record_new_trade(
+            cycle_row=cycle_row, 
+            role=config.ROLE_INCOME,
+            trade_dict=trade_data,
+            order_id=order_id,
+            fill_price=order_res['price'],
+            fill_time=dt.datetime.now() # Use actual time
+          )
+          print("LOG: Trade filled and recorded.")
+
+        else:
+          # 3B. TIMEOUT: Cancel and Abort
+          print("LOG: Entry timed out. Canceling order...")
+          server_api.cancel_order(order_id)
+          print("LOG: Order canceled. System remains IDLE.")
+      
   elif decision_state == config.STATE_HEDGE_ADJUSTMENT_NEEDED:
     print("LOG: Hedge Adjustment Required. Rolling position...")
 
@@ -394,14 +395,24 @@ def run_automation_routine():
     # 1. Close Old Hedge
     print(f"LOG: Closing old hedge {old_hedge.id}...")
     close_res = server_api.close_position(old_hedge)
-
-    # Record Close
-    server_db.close_trade(
-      trade_row=old_hedge._row,
-      fill_price=close_res['price'],
-      fill_time=close_res['time'],
-      order_id=close_res['id']
-    )
+    close_order_id = close_res.get('id')
+    if close_order_id:
+      is_closed = server_api.wait_for_order_fill(close_order_id, timeout_seconds=10)
+      if is_closed:
+        server_db.close_trade(
+          trade_row=old_hedge._row,
+          fill_price=close_res['price'],
+          fill_time=dt.datetime.now(), # Use actual time, or close_res['time'] if available/parsed
+          order_id=close_order_id
+        )
+        print("LOG: Old Hedge Closed successfully.")
+      else:
+        print("CRITICAL: Hedge Close timed out. Aborting Roll to prevent double-hedging or nakedness.")
+        # We abort here because if we can't close the old one, we shouldn't buy a new one 
+        return
+    else:
+      print("CRITICAL: API rejected Hedge Close order. Aborting Roll.")
+      return
 
     # 2. Buy New Hedge
     # 1. Get Valid Expirations
@@ -426,38 +437,67 @@ def run_automation_routine():
       chain, 
       target_delta=cycle.rules['hedge_target_delta']
     )
-
     if leg_to_buy:
-      print(f"LOG: Buying new hedge: {leg_to_buy['symbol']}")
-      buy_res = server_api.buy_option(leg_to_buy)
-
-      # Record Open
-      trade_data = {
-        'quantity': 1, # Reset to 1 unit
-        'short_strike': 0,
-        'long_strike': leg_to_buy['strike'],
-        'short_leg_data': {}, 
-        'long_leg_data': leg_to_buy
-      }
-
-      new_trade_obj = server_db.record_new_trade(
-        cycle_row=cycle_row,
-        role=config.ROLE_HEDGE,
-        trade_dict=trade_data,
-        order_id=buy_res['id'],
-        fill_price=buy_res['price'],
-        fill_time=buy_res['time']
-      )
-
-      # Link new hedge to cycle
-      cycle_row['hedge_trade'] = new_trade_obj._row
-      print("LOG: Hedge Roll Complete.")
-
+      success = _execute_hedge_entry(cycle, leg_to_buy)
+      if success:
+        print("LOG: Hedge Roll Complete.")
+      else:
+        print("LOG: Hedge Roll Failed (Entry canceled). Cycle is currently Unhedged.")
     else:
-      print("CRITICAL: Chain found, but no suitable strike selected!")
-
+      print("CRITICAL: Closed old hedge but could not find new one!")
+      
   elif decision_state == config.STATE_IDLE:
     print("LOG: No action required.")
 
   else:
     print(f"LOG: Unhandled State: {decision_state}")
+
+def _execute_hedge_entry(cycle, leg_to_buy) -> bool:
+  """
+    Helper to execute, verify, and record a Hedge Entry.
+    Returns True if successful, False if failed/canceled.
+    """
+  print(f"LOG: Buying new hedge: {leg_to_buy['symbol']}")
+
+  # 1. Execute
+  buy_res = server_api.buy_option(leg_to_buy)
+  order_id = buy_res.get('id')
+
+  if not order_id:
+    print("CRITICAL: Hedge Order rejected by API.")
+    return False
+
+    # 2. Verify Fill
+  print("LOG: Waiting for Hedge Fill confirmation...")
+  is_filled = server_api.wait_for_order_fill(order_id, timeout_seconds=10)
+
+  if is_filled:
+    # 3. Record
+    trade_data = {
+      'quantity': 1,
+      'short_strike': 0,
+      'long_strike': leg_to_buy['strike'],
+      'short_leg_data': {}, 
+      'long_leg_data': leg_to_buy
+    }
+
+    new_trade_obj = server_db.record_new_trade(
+      cycle_row=cycle._row, # Access internal Anvil Row
+      role=config.ROLE_HEDGE,
+      trade_dict=trade_data,
+      order_id=order_id,
+      fill_price=buy_res['price'],
+      fill_time=dt.datetime.now()
+    )
+
+    # 4. Link
+    cycle._row['hedge_trade'] = new_trade_obj._row
+    print("LOG: Hedge executed, verified, and linked.")
+    return True
+
+  else:
+    # 5. Fail/Cancel
+    print("CRITICAL: Hedge Market Order timed out/stuck. Canceling...")
+    server_api.cancel_order(order_id)
+    print("LOG: Hedge Order Canceled.")
+    return False

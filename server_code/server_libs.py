@@ -13,8 +13,8 @@ def can_run_automation(env_status: dict, settings:dict) -> bool:
     
   # 1. Market Hours Check
   if env_status.get('status') != 'OPEN':
-    #return False
-    return True
+    return False
+    #return True
   
   return True
 

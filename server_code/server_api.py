@@ -515,11 +515,13 @@ def wait_for_order_fill(order_id: str, timeout_seconds: int = 10) -> bool:
   # --- SANDBOX BYPASS ---
   # On weekends or in unstable Sandbox modes, orders never fill.
   # We simulate a fill so we can test the Orchestrator's sequential logic.
+  '''
   if 'sandbox' in t.endpoint:
     print(f"API (Sandbox): Simulating instant fill for {order_id} to unblock logic.")
     time.sleep(1.0) # Simulate network latency
     return True
   # ----------------------
+  '''
   url = f"{t.endpoint}/accounts/{t.default_account_id}/orders/{order_id}"
 
   start_time = time.time()
@@ -550,6 +552,31 @@ def wait_for_order_fill(order_id: str, timeout_seconds: int = 10) -> bool:
 
   print(f"API: Order {order_id} timed out (not filled within {timeout_seconds}s).")
   return False
+
+def cancel_order(order_id: str) -> bool:
+  """
+    Cancels a specific order.
+    Returns True if successful (or already gone), False if failed.
+    """
+  t = _get_client()
+  url = f"{t.endpoint}/accounts/{t.default_account_id}/orders/{order_id}"
+
+  try:
+    print(f"API: Canceling Order {order_id}...")
+    resp = t.session.delete(url, headers={'Accept': 'application/json'})
+
+    # 200 OK means successfully cancelled
+    if resp.status_code == 200:
+      print("API: Cancel successful.")
+      return True
+
+    print(f"API: Cancel failed code {resp.status_code}: {resp.text}")
+    return False
+
+  except Exception as e:
+    print(f"API Error canceling order: {e}")
+    return False
+    
 # --- PRIVATE HELPERS ---
 
 def _submit_order(t: TradierAPI, payload: Dict) -> Dict:
