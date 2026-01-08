@@ -153,7 +153,17 @@ def _check_profit_target(cycle: Cycle, market_data: MarketData) -> bool:
   return False
 
 def _check_hedge_missing(cycle: Cycle) -> bool:
-  return cycle.hedge_trade_link is None
+  """Rule: Cycle is OPEN but has no *ACTIVE* Hedge Trade linked"""
+  # 1. No link at all? Missing.
+  if not cycle.hedge_trade_link:
+    return True
+
+  # 2. Link exists, but status is CLOSED? Missing. (THE CRITICAL FIX)
+  if cycle.hedge_trade_link.status != config.STATUS_OPEN:
+    return True
+
+  # 3. Link exists and is OPEN? Not missing.
+  return False
 
 def _check_spread_missing(cycle: Cycle) -> bool:
   open_spreads = [
@@ -468,8 +478,10 @@ def evaluate_entry(
       return False, {}, env_reason
 
   # 2. Prerequisites
-  if not cycle.hedge_trade_link:
-      return False, {}, "No active hedge linked to cycle"
+  hedge = cycle.hedge_trade_link
+  # Check Status explicitly
+  if not hedge or hedge.status != config.STATUS_OPEN:
+    return False, {}, "No active (OPEN) hedge linked to cycle"
 
   # 3. Strike Selection
   strikes = calculate_spread_strikes(
