@@ -15,8 +15,8 @@ from . import server_db
 @anvil.server.callable
 @anvil.server.background_task
 def run_automation_routine():
-  print("LOG: Starting Automation Run...")
   current_env_account = config.ACTIVE_ENV # e.g., 'PROD' or 'SANDBOX'
+  print(f"LOG: Starting Automation Run on environment: {current_env_account}")
   
   # 1. GLOBAL PRECONDITIONS
   # Check environment status (Market Open/Closed) and kill switch false BEFORE touching DB
@@ -69,7 +69,7 @@ def run_automation_routine():
 
   # check for positions open in db that are not in broker
   zombies = server_libs.get_zombie_trades(cycle, positions)
-  if zombies:
+  if config.ENFORCE_ZOMBIE_CHECKS and zombies:
     print(f"LOG: Found {len(zombies)} Zombie Trades (Open in DB, Missing in Broker). Marking as worst case loss. Must edit db to broker reality")
     for z_trade in zombies:
       try:
@@ -79,6 +79,14 @@ def run_automation_routine():
         server_libs.alert_human(msg, level=config.ALERT_CRITICAL)
       except Exception as e:
         print(f"CRITICAL: Failed to settle Zombie Trade {z_trade.id}: {e}")
+
+      # The in-memory 'cycle' object still thinks those trades are OPEN.
+      # We must re-fetch from DB to get the clean state before running logic.
+      print("LOG: Re-loading Cycle Context after Zombie Settlement...")
+      cycle = server_db.get_active_cycle(config.ACTIVE_ENV)
+      if not cycle:
+        print("LOG: Cycle closed during settlement? Stopping run.")
+        return
 
   if not server_libs.is_db_consistent(cycle, positions):
     # Stop everything if the map doesn't match the territory
@@ -392,6 +400,8 @@ def run_automation_routine():
           print("LOG: Entry timed out. Canceling order...")
           server_api.cancel_order(order_id)
           print("LOG: Order canceled. System remains IDLE.")
+    else:
+      print(reason)
       
   elif decision_state == config.STATE_HEDGE_ADJUSTMENT_NEEDED:
     print("LOG: Hedge Adjustment Required. Rolling position...")

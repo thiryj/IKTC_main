@@ -210,7 +210,7 @@ def get_option_chain(date: dt.date, symbol: str = None) -> List[Dict]:
   """
   t = _get_client()
   if symbol is None:
-    symbol = config.TARGET_UNDERLYING[CURRENT_ENV]
+    symbol = config.TARGET_UNDERLYING[config.ACTIVE_ENV]
   exp_str = date.strftime('%Y-%m-%d')
   params = {'symbol': symbol, 'expiration': exp_str, 'greeks': 'true'}
 
@@ -266,7 +266,7 @@ def get_option_chain(date: dt.date, symbol: str = None) -> List[Dict]:
 def get_expirations(symbol: str = None) -> List[dt.date]:
   """Fetches ALL valid expiration dates for a symbol"""
   t = _get_client()
-  if symbol is None: symbol = config.TARGET_UNDERLYING[CURRENT_ENV]
+  if symbol is None: symbol = config.TARGET_UNDERLYING[config.ACTIVE_ENV]
 
   try:
     # Endpoint: /v1/markets/options/expirations
@@ -305,7 +305,7 @@ def open_spread_position(trade_data: Dict, preview: bool=False) -> Dict:
     """
   t = _get_client()
   #short_occ = trade_data['short_leg_data']['symbol']
-  underlying = config.TARGET_UNDERLYING[CURRENT_ENV]
+  underlying = config.TARGET_UNDERLYING[config.ACTIVE_ENV]
   
   # 1. Construct Payload
   legs_list = []
@@ -346,7 +346,7 @@ def open_spread_position(trade_data: Dict, preview: bool=False) -> Dict:
 def buy_option(leg_data: Dict) -> Dict:
   """Submits a single leg buy order (Long Put Hedge)"""
   t = _get_client()
-  underlying = config.TARGET_UNDERLYING[CURRENT_ENV]
+  underlying = config.TARGET_UNDERLYING[config.ACTIVE_ENV]
   payload = {
     'class': 'option',
     'symbol': underlying,
@@ -401,7 +401,7 @@ def execute_roll(old_trade, new_short, new_long, net_price: float) -> dict:
   })
 
   # 2. Build Payload
-  root = config.TARGET_UNDERLYING[CURRENT_ENV]
+  root = config.TARGET_UNDERLYING[config.ACTIVE_ENV]
 
   payload = {
     'class': 'multileg',
@@ -453,7 +453,7 @@ def close_position(trade, order_type: str = 'limit') -> Dict:
     })
 
     # 2. Dynamic Symbol Resolution
-  root = config.TARGET_UNDERLYING[CURRENT_ENV]
+  root = config.TARGET_UNDERLYING[config.ACTIVE_ENV]
   check_leg = short_leg or long_leg
   if check_leg:
     if 'SPX' in check_leg.occ_symbol: root = 'SPX'

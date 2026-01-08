@@ -54,9 +54,7 @@ def determine_cycle_state(cycle: Cycle, market_data: MarketData) -> str:
 # --- STATE CHECK FUNCTIONS ---
 
 def _check_panic_harvest(cycle: Cycle, market_data: MarketData) -> bool:
-  """
-  Rule: Net Unit PnL (Hedge Gain + Spread PnL) > Panic Threshold.
-  """
+  """Rule: Net Unit PnL (Hedge Gain + Spread PnL) > Panic Threshold"""
   if not cycle.hedge_trade_link:
     return False
 
@@ -88,8 +86,14 @@ def _check_panic_harvest(cycle: Cycle, market_data: MarketData) -> bool:
 
   # Note: panic_threshold_dpu is already scaled for SPY in cycle.rules
   threshold = cycle.rules['panic_threshold_dpu'] * cycle.hedge_trade_link.quantity
+  if net_unit_pnl > threshold:
+    print("DEBUG PANIC: Triggered!")
+    print(f"   Hedge: ${hedge_current:.2f} (Ref: ${hedge_ref:.2f}) -> PnL: ${hedge_pnl:.2f}")
+    print(f"   Spread PnL: ${spread_pnl:.2f}")
+    print(f"   Total: ${net_unit_pnl:.2f} > Limit: ${threshold:.2f}")
+    return True
 
-  return net_unit_pnl > threshold
+  return False
 
 def _check_roll_needed(cycle: Cycle, market_data: MarketData) -> bool:
   """
@@ -306,7 +310,9 @@ def check_entry_conditions(
 
   cutoff_dt = dt.datetime.combine(current_time.date(), cutoff_time)
   print(f"DEBUG CHECKS: Comparing {current_time} > {cutoff_dt} ?")
-  if current_time > cutoff_dt:
+  
+  if config.ENFORCE_LATE_OPEN_GUARDRAIL and current_time > cutoff_dt:
+    print(f"Time {current_time.strftime('%H:%M')} past cutoff {cutoff_time.strftime('%H:%M')}")
     return False, f"Time {current_time.strftime('%H:%M')} past cutoff {cutoff_time.strftime('%H:%M')}"
 
   # --- 2. MARKET GAP CHECKS (Fast Math) ---
@@ -351,7 +357,7 @@ def check_entry_conditions(
     if t.role == config.ROLE_INCOME 
     and t.entry_time.date() == today_date
   ]
-  if len(trades_today) > 0:
+  if config.ENFORCE_FREQUENCY_CHECKS and  len(trades_today) > 0:
     return False, "Daily limit reached (1 spread per day)"
 
   return True, "Entry valid"
