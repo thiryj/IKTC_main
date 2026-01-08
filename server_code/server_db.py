@@ -5,6 +5,7 @@ import datetime as dt
 
 from shared.classes import Cycle, Trade, Leg, Transaction
 from shared import config
+from . import server_logging as logger
 
 def _fmt(val):
   """Rounds price to 2 decimal places for clean DB storage."""

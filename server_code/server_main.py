@@ -10,13 +10,19 @@ from shared import config
 from shared.classes import Cycle
 from . import server_libs  # The Brains (Clean Stubs)
 from . import server_api  # The Hands (Dirty Stubs)
-from . import server_db
+from . import server_db, server_logging as logger
 
 @anvil.server.callable
 @anvil.server.background_task
 def run_automation_routine():
   current_env_account = config.ACTIVE_ENV # e.g., 'PROD' or 'SANDBOX'
   print(f"LOG: Starting Automation Run on environment: {current_env_account}")
+  logger.log(
+    "LOG: Starting Automation Run on environment",
+    level=config.LOG_CRITICAL,
+    source="Orchestrator",
+    context={'environment': current_env_account}
+  )
   
   # 1. GLOBAL PRECONDITIONS
   # Check environment status (Market Open/Closed) and kill switch false BEFORE touching DB

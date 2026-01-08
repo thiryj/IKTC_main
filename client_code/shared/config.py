@@ -61,3 +61,30 @@ MARKET_OPEN_TIME = dt.time(9, 30)
 DEFAULT_MULTIPLIER = 100
 
 ACTIVE_RULESET = 'Standard_0DTE'
+
+# Levels (Standard Python integer mapping)
+LOG_DEBUG = 10
+LOG_INFO = 20
+LOG_WARNING = 30
+LOG_CRITICAL = 40
+
+# Level Names (for display)
+LOG_NAMES = {
+  10: "DEBUG",
+  20: "INFO",
+  30: "WARNING",
+  40: "CRITICAL"
+}
+
+LOG_SOURCE_ORCHESTRATOR = 'server_main'
+LOG_SOURCE_API = 'server_api'
+LOG_SOURCE_DB = 'server_database'
+LOG_SOURCE_LIBS = 'server_libs'
+LOG_SOURCE_CLIENT = 'server_client'
+LOG_SOURCE_LOGGER = 'server_logging'
+
+# Thresholds (The "Waterline" for each channel)
+# Change these to tune the noise level without touching code
+LEVEL_CONSOLE = LOG_DEBUG    # Print everything
+LEVEL_DB = LOG_INFO          # Record events, warnings, errors (Skip debug noise)
+LEVEL_ALERT = LOG_CRITICAL   # Only wake human for disasters
