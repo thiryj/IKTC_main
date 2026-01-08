@@ -13,13 +13,16 @@ def _fmt(val):
 
 # --- READS (fetching and hydrating) ---
 
-def get_active_cycle()-> Cycle | None:
+def get_active_cycle(env_account: str)-> Cycle | None:
   """
-  Fetches the single 'OPEN' cycle and fully hydrates its graph.
+  Fetches the single 'OPEN' cycle for the active ENV and fully hydrates its graph.
   Returns None if no open cycle exists.
   """
-  # Schema: 'status' (snake_case)
-  cycle_row = app_tables.cycles.get(status=config.STATUS_OPEN)
+  
+  cycle_row = app_tables.cycles.get(
+    status=config.STATUS_OPEN,
+    account=env_account
+  )
   if not cycle_row:
     return None
 

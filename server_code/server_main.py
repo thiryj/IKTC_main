@@ -16,6 +16,7 @@ from . import server_db
 @anvil.server.background_task
 def run_automation_routine():
   print("LOG: Starting Automation Run...")
+  current_env_account = config.ACTIVE_ENV # e.g., 'PROD' or 'SANDBOX'
   
   # 1. GLOBAL PRECONDITIONS
   # Check environment status (Market Open/Closed) and kill switch false BEFORE touching DB
@@ -26,14 +27,13 @@ def run_automation_routine():
   settings_row = app_tables.settings.get() 
   system_settings = dict(settings_row) if settings_row else {}
   
-  # Pass cycle=None because we haven't loaded it yet. 
   # This check is now purely for "Is the Market Open?" / "Is Bot Enabled globally?"
   if not server_libs.can_run_automation(env_status, system_settings):
     print(f"LOG: Automation skipped. Market: {env_status.get('status')} | Enabled: {system_settings['automation_enabled']}")
     return
     
   # 2. LOAD CONTEXT (or auto seed)
-  cycle = server_db.get_active_cycle()
+  cycle = server_db.get_active_cycle(current_env_account)
   if not cycle:
     print("LOG: System Idle - No Active Cycle found. Seeding empty cycle for autmoation to populate.")
     rules = app_tables.rule_sets.get(name=config.ACTIVE_RULESET)
@@ -43,7 +43,7 @@ def run_automation_routine():
     symbol = config.TARGET_UNDERLYING[server_api.CURRENT_ENV]
 
     app_tables.cycles.add_row(
-      account="AUTO_BOT",
+      account=current_env_account,
       underlying=symbol,
       status=config.STATUS_OPEN,
       start_date=dt.date.today(),
@@ -53,7 +53,7 @@ def run_automation_routine():
       notes="Seeded Empty Cycle"
     )
 
-    cycle = server_db.get_active_cycle()
+    cycle = server_db.get_active_cycle(current_env_account)
     print(f"Cycle {cycle.id} created and hydrated. Proceeding immediately.")
   cycle_row = cycle._row
   #print("In main loop:  cycle: \n" + "\n".join(f"{k} : {v}" for k, v in vars(cycle).items()))
@@ -265,6 +265,12 @@ def run_automation_routine():
       
       is_opened = server_api.wait_for_order_fill(open_order_id, config.ORDER_TIMEOUT_SECONDS)
       if is_opened:
+        # Reset daily_hedge_ref
+        current_hedge = market_data.get('hedge_last', 0.0)
+        if current_hedge > 0:
+          cycle.daily_hedge_ref = current_hedge
+          cycle._row['daily_hedge_ref'] = current_hedge
+          print(f"LOG: Roll Complete. Hedge Reference reset to ${current_hedge:.2f}")
         server_db.record_new_trade(
           cycle_row=cycle_row,
           role=config.ROLE_INCOME,

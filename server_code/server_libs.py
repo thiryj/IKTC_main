@@ -12,10 +12,9 @@ def can_run_automation(env_status: dict, settings:dict) -> bool:
     return False
     
   # 1. Market Hours Check
-  if env_status.get('status') != 'OPEN':
-    return False
-    #return True
-  
+  if config.ENFORCE_TRADING_HOURS and env_status.get('status') != 'OPEN':
+      return False
+
   return True
 
 def is_db_consistent(cycle: Optional[Cycle], positions: List[dict]) -> bool:
@@ -287,6 +286,7 @@ def check_entry_conditions(
   # A. Start Delay (e.g. 9:45 AM)
   market_open_dt = dt.datetime.combine(current_time.date(), config.MARKET_OPEN_TIME)
   minutes_since_open = (current_time - market_open_dt).total_seconds() / 60.0
+  print(f"mins since open: {minutes_since_open}")
   
   if minutes_since_open < rules.get('trade_start_delay', 15):
     return False, "Wait time active"

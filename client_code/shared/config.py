@@ -1,5 +1,19 @@
 import datetime as dt
 
+# Environment section: PROD or SANDBOX
+ENV_SANDBOX = 'SANDBOX'
+ENV_PROD = 'PROD'
+IS_PROD = False  # Master - bot level environment selector.  True = PROD, False = SANDBOX
+
+ACTIVE_ENV = ENV_PROD if IS_PROD else ENV_SANDBOX
+TARGET_UNDERLYING = {
+  ENV_PROD: 'SPX',
+  ENV_SANDBOX: 'SPY'
+}
+
+# Debuggin Flags
+ENFORCE_TRADING_HOURS = True   #disable to allow after hours automation for testing
+
 # Risk Management
 # Hard cap on leverage. Even if spreads are $0.05, we limit the ratio.
 # Example: 1 Hedge -> Max 6 Spreads. 5 Hedges -> Max 30 Spreads.
@@ -42,10 +56,5 @@ TRADIER_OPTION_TYPE_CALL = 'call'
 # Misc statics
 MARKET_OPEN_TIME = dt.time(9, 30)
 DEFAULT_MULTIPLIER = 100
-ENV_SANDBOX = 'SANDBOX'
-ENV_PROD = 'PROD'
-TARGET_UNDERLYING = {
-  ENV_PROD: 'SPX',
-  ENV_SANDBOX: 'SPY'
-}
+
 ACTIVE_RULESET = 'Standard_0DTE'

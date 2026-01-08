@@ -10,9 +10,7 @@ import pytz
 
 from tradier_python import TradierAPI
 from shared import config
-
-IS_PROD = False   # TODO: get this from settings or UI or console arg
-CURRENT_ENV = config.ENV_PROD if IS_PROD else config.ENV_SANDBOX
+from shared.types import EnvStatus
 
 # Global cache variable (starts empty)
 _CACHED_CLIENT = None
@@ -24,7 +22,7 @@ def _get_client() -> TradierAPI:
   if _CACHED_CLIENT is not None:
     return _CACHED_CLIENT
   
-  env_prefix = CURRENT_ENV
+  env_prefix = config.ACTIVE_ENV
 
   api_key = anvil.secrets.get_secret(f'{env_prefix}_TRADIER_API_KEY')
   account_id = anvil.secrets.get_secret(f'{env_prefix}_TRADIER_ACCOUNT')
@@ -37,7 +35,7 @@ def _get_client() -> TradierAPI:
 
 # --- ENVIRONMENT & MARKET STATUS ---
 
-def get_environment_status() -> dict:
+def get_environment_status() -> EnvStatus:
   """Checks market clock and returns operational status"""
   t = _get_client()
   
@@ -59,8 +57,8 @@ def get_environment_status() -> dict:
     'now': wall_clock_now,
     'is_holiday': False,
     'next_state_change': '00:00',
-    'current_env': CURRENT_ENV,
-    'target_underlying': config.TARGET_UNDERLYING[CURRENT_ENV]
+    'current_env': config.ACTIVE_ENV,
+    'target_underlying': config.TARGET_UNDERLYING[config.ACTIVE_ENV]
   }
 
   try:

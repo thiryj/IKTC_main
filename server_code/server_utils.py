@@ -63,7 +63,7 @@ def setup_test_scenario():
     # 2. Create Cycle
   print("Creating Cycle...")
   cycle_row = app_tables.cycles.add_row(
-    account="TEST_ACC",
+    account=server_api.CURRENT_ENV,
     underlying="SPX",
     status=config.STATUS_OPEN,
     start_date=dt.date.today(),
@@ -185,7 +185,7 @@ def seed_panic_scenario():
   rules = app_tables.rule_sets.get(name="Standard_0DTE")
 
   cycle_row = app_tables.cycles.add_row(
-    account="TEST_ACC",
+    account=server_api.CURRENT_ENV,
     underlying="SPY",
     status=config.STATUS_OPEN,
     start_date=dt.date.today(),
@@ -305,7 +305,7 @@ def seed_fresh_cycle():
   current_hedge_price = float(hedge_leg.get('ask', 1.0) or 1.0)
 
   cycle_row = app_tables.cycles.add_row(
-    account="TEST_ACC",
+    account=server_api.CURRENT_ENV,
     underlying="SPY", 
     status=config.STATUS_OPEN,
     start_date=dt.date.today(),
@@ -463,3 +463,108 @@ def seed_active_spread():
   print("Seed Complete. Active Spread created.")
   print(f"Roll Trigger: {trade_row['roll_trigger_price']}")
   print(f"Harvest Target: {trade_row['target_harvest_price']}")
+
+@anvil.server.callable
+def seed_sandbox_state_1_8_26():
+  print("--- SEEDING SPECIFIC SANDBOX STATE ---")
+
+  # 1. Rules & Cycle
+  rules = app_tables.rule_sets.get(name="Standard_0DTE")
+  if not rules:
+    print("Error: RuleSet 'Standard_0DTE' not found.")
+    return
+
+    # Create Cycle
+  print("Creating Cycle...")
+  cycle_row = app_tables.cycles.add_row(
+    account="SANDBOX", # config.ACTIVE_ENV
+    underlying="SPY",
+    status=config.STATUS_OPEN,
+    start_date=dt.date(2026, 1, 8), # Today in simulation
+    total_pnl=0.0,
+    daily_hedge_ref=9.45, # Estimate from screenshot (Hedge Mark)
+    rule_set=rules,
+    notes="Manual Sync to Sandbox"
+  )
+
+  # ---------------------------------------------------------
+  # 2. THE HEDGE (Mar 31 2026, 661 Put)
+  # ---------------------------------------------------------
+  hedge_expiry = dt.date(2026, 3, 31)
+  hedge_sym = "SPY260331P00661000"
+  hedge_price = 9.36 # Cost basis from screenshot
+
+  print(f"Creating Hedge: {hedge_sym}")
+
+  hedge_trade = app_tables.trades.add_row(
+    cycle=cycle_row,
+    role=config.ROLE_HEDGE,
+    status=config.STATUS_OPEN,
+    quantity=1,
+    entry_price=hedge_price,
+    entry_time=dt.datetime.now(),
+    pnl=0.0,
+    order_id_external="MANUAL_SYNC_HEDGE"
+  )
+  cycle_row['hedge_trade'] = hedge_trade
+
+  txn_h = app_tables.transactions.add_row(
+    trade=hedge_trade, action="OPEN_HEDGE", price=hedge_price, 
+    quantity=1, timestamp=dt.datetime.now()
+  )
+
+  app_tables.legs.add_row(
+    trade=hedge_trade, opening_transaction=txn_h, side=config.LEG_SIDE_LONG,
+    quantity=1, strike=661.0, option_type='put', expiry=hedge_expiry,
+    occ_symbol=hedge_sym, active=True
+  )
+
+  # ---------------------------------------------------------
+  # 3. THE SPREAD (Jan 08 2026, 687/685 Put)
+  # ---------------------------------------------------------
+  spread_expiry = dt.date(2026, 1, 8) # 0DTE!
+  short_sym = "SPY260108P00687000" # 687 Put
+  long_sym = "SPY260108P00685000"  # 685 Put
+
+  # Economics (Estimated from screenshot)
+  entry_credit = 0.25 
+  qty = 1 # Screenshot shows 1 contract each
+
+  print(f"Creating Spread: {short_sym} / {long_sym}")
+
+  spread_trade = app_tables.trades.add_row(
+    cycle=cycle_row,
+    role=config.ROLE_INCOME,
+    status=config.STATUS_OPEN,
+    quantity=qty,
+    entry_price=entry_credit,
+    entry_time=dt.datetime.now(),
+    pnl=0.0,
+    order_id_external="MANUAL_SYNC_SPREAD",
+
+    # Targets
+    target_harvest_price=entry_credit * 0.50, 
+    roll_trigger_price=entry_credit * 3.0,
+    capital_required=qty * 100 * 2.0
+  )
+
+  txn_s = app_tables.transactions.add_row(
+    trade=spread_trade, action="OPEN_SPREAD", price=entry_credit, 
+    quantity=qty, timestamp=dt.datetime.now()
+  )
+
+  # Short Leg (687)
+  app_tables.legs.add_row(
+    trade=spread_trade, opening_transaction=txn_s, side=config.LEG_SIDE_SHORT,
+    quantity=qty, strike=687.0, option_type='put', expiry=spread_expiry,
+    occ_symbol=short_sym, active=True
+  )
+
+  # Long Leg (685)
+  app_tables.legs.add_row(
+    trade=spread_trade, opening_transaction=txn_s, side=config.LEG_SIDE_LONG,
+    quantity=qty, strike=685.0, option_type='put', expiry=spread_expiry,
+    occ_symbol=long_sym, active=True
+  )
+
+  print("Sync Complete. DB now matches Sandbox Reality (excluding the 701/699 spread).")
