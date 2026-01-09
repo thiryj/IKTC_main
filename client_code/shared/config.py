@@ -12,10 +12,10 @@ TARGET_UNDERLYING = {
 }
 
 # Debuggin Flags
-ENFORCE_TRADING_HOURS = False   #disable to allow after hours automation for testing
+ENFORCE_TRADING_HOURS = True   #disable to allow after hours automation for testing
 ENFORCE_LATE_OPEN_GUARDRAIL = True
 ENFORCE_ZOMBIE_CHECKS = True
-ENFORCE_FREQUENCY_CHECKS = False
+ENFORCE_FREQUENCY_CHECKS = True
 
 # Risk Management
 # Hard cap on leverage. Even if spreads are $0.05, we limit the ratio.

@@ -76,7 +76,7 @@ def get_environment_status() -> EnvStatus:
         status_data['status_message'] = f"Market is {state}"
 
   except Exception as e:
-    logger.log(f"API Error checking clock: {e}", level=config.LOG_DEBUG, source=config.LOG_SOURCE_API, context={config.ACTIVE_ENV})
+    logger.log(f"API Error checking clock: {e}", level=config.LOG_WARNING, source=config.LOG_SOURCE_API)
     status_data['status_message'] = f"API Error: {e}"
 
   return status_data
@@ -120,7 +120,7 @@ def get_current_positions() -> List[Dict]:
     return clean_list
 
   except Exception as e:
-    logger.log(f"API Error fetching positions: {e}", level=config.LOG_DEBUG, source=config.LOG_SOURCE_API, context={config.ACTIVE_ENV})
+    logger.log(f"API Error fetching positions: {e}", level=config.LOG_WARNING, source=config.LOG_SOURCE_API)
     return []
 
 def get_market_data_snapshot(cycle) -> Dict:
@@ -152,7 +152,8 @@ def get_market_data_snapshot(cycle) -> Dict:
       snapshot['open'] = open_px
       snapshot['previous_close'] = prev_close
   except Exception as e:
-    print(f"Error fetching underlying: {e}")
+    logger.log(f"Error fetching underlying: {e}", level=config.LOG_WARNING, source=config.LOG_SOURCE_API)
+    
 
     # 2. Fetch Hedge Quote & Greeks
   hedge = getattr(cycle, 'hedge_trade_link', None)
@@ -179,7 +180,7 @@ def get_market_data_snapshot(cycle) -> Dict:
           snapshot['hedge_dte'] = (exp_date - dt.date.today()).days
 
     except Exception as e:
-      print(f"Error fetching hedge data: {e}")
+      logger.log(f"Error fetching hedge data: {e}", level=config.LOG_WARNING, source=config.LOG_SOURCE_API)
 
     # 3. Fetch Spread Marks
     # ... (Keep existing Spread Logic) ...
@@ -221,7 +222,6 @@ def get_option_chain(date: dt.date, symbol: str = None) -> List[Dict]:
     # Raw GET request
     resp = t.session.get(f"{t.endpoint}/markets/options/chains", params=params, headers={'Accept': 'application/json'})
     data = resp.json()
-    #print(f"in get_option_chain.  response data: {data}")
     if data is None:
       return []
     options_container = data.get('options')
@@ -260,7 +260,7 @@ def get_option_chain(date: dt.date, symbol: str = None) -> List[Dict]:
         continue
 
   except Exception as e:
-    print(f"API Error fetching chain for {date}: {e}")
+    logger.log(f"API Error fetching chain for {date}: {e}", level=config.LOG_WARNING, source=config.LOG_SOURCE_API)
 
   return clean_chain
 
@@ -294,7 +294,7 @@ def get_expirations(symbol: str = None) -> List[dt.date]:
     return sorted(valid_dates)
 
   except Exception as e:
-    print(f"API Error fetching expirations: {e}")
+    logger.log(f"API Error fetching expirations: {e}", level=config.LOG_WARNING, source=config.LOG_SOURCE_API)
     return []
 
 # --- EXECUTION ---
@@ -516,7 +516,7 @@ def wait_for_order_fill(order_id: str, timeout_seconds: int = 10) -> bool:
   # We simulate a fill so we can test the Orchestrator's sequential logic.
   '''
   if 'sandbox' in t.endpoint:
-    print(f"API (Sandbox): Simulating instant fill for {order_id} to unblock logic.")
+    logger.log(f"API (Sandbox): Simulating instant fill for {order_id} to unblock logic.", level=config.LOG_WARNING, source=config.LOG_SOURCE_API, context={config.ACTIVE_ENV})
     time.sleep(1.0) # Simulate network latency
     return True
   # ----------------------
@@ -535,21 +535,20 @@ def wait_for_order_fill(order_id: str, timeout_seconds: int = 10) -> bool:
         status = order_data.get('status')
 
         if status == 'filled':
-          print(f"API: Order {order_id} confirmed FILLED.")
+          logger.log(f"order: {order_id} filled", level=config.LOG_INFO, source=config.LOG_SOURCE_API)
           return True
 
         if status in ['canceled', 'rejected', 'expired']:
-          print(f"API: Order {order_id} failed with status: {status}")
+          logger.log(f"order: {order_id} timed out (not filled)", level=config.LOG_WARNING, source=config.LOG_SOURCE_API)
           return False
 
           # If 'open' or 'pending', wait and retry
       time.sleep(1.0)
 
     except Exception as e:
-      print(f"API Polling Error: {e}")
+      logger.log(f"API Polling Error: {e}", level=config.LOG_WARNING, source=config.LOG_SOURCE_API)
       time.sleep(1.0)
 
-  print(f"API: Order {order_id} timed out (not filled within {timeout_seconds}s).")
   return False
 
 def cancel_order(order_id: str) -> bool:
@@ -561,7 +560,7 @@ def cancel_order(order_id: str) -> bool:
   url = f"{t.endpoint}/accounts/{t.default_account_id}/orders/{order_id}"
 
   try:
-    print(f"API: Canceling Order {order_id}...")
+    logger.log(f"\1", level=config.LOG_INFO, source=config.LOG_SOURCE_API)
     resp = t.session.delete(url, headers={'Accept': 'application/json'})
 
     # 200 OK means successfully cancelled
@@ -569,11 +568,11 @@ def cancel_order(order_id: str) -> bool:
       print("API: Cancel successful.")
       return True
 
-    print(f"API: Cancel failed code {resp.status_code}: {resp.text}")
+    logger.log(f"\1", level=config.LOG_INFO, source=config.LOG_SOURCE_API)
     return False
 
   except Exception as e:
-    print(f"API Error canceling order: {e}")
+    logger.log(f"API Error canceling order: {e}", level=config.LOG_WARNING, source=config.LOG_SOURCE_API)
     return False
     
 # --- PRIVATE HELPERS ---
@@ -586,7 +585,7 @@ def _submit_order(t: TradierAPI, payload: Dict) -> Dict:
   url = f"{t.endpoint}/accounts/{t.default_account_id}/orders"
 
   try:
-    print(f"API: Submitting Order -> {payload} to {url}")
+    logger.log(f"\1", level=config.LOG_INFO, source=config.LOG_SOURCE_API)
     resp = t.session.post(url, data=payload, headers={'accept': 'application/json'})
     if resp.status_code == 500 and "sandbox" in t.endpoint:
       print("WARNING: Tradier Sandbox 500 Error (Known Glitch).")
@@ -599,7 +598,7 @@ def _submit_order(t: TradierAPI, payload: Dict) -> Dict:
       }
       # --- SANDBOX BYPASS END ---
     if resp.status_code >= 400:
-      print(f"API FAILED ({resp.status_code}): {resp.text}")
+      logger.log(f"\1", level=config.LOG_INFO, source=config.LOG_SOURCE_API)
 
     resp.raise_for_status()
 
@@ -614,10 +613,10 @@ def _submit_order(t: TradierAPI, payload: Dict) -> Dict:
     }
 
   except requests.exceptions.HTTPError as e:
-    print(f"API HTTP Error: {e.response.text}")
+    logger.log(f"API HTTP Error: {e.response.text}", level=config.LOG_WARNING, source=config.LOG_SOURCE_API)
     raise e
   except Exception as e:
-    print(f"API Execution Error: {e}")
+    logger.log(f"API Execution Error: {e}", level=config.LOG_WARNING, source=config.LOG_SOURCE_API)
     raise e
 
 def _get_quote_direct(t: TradierAPI, symbol: str) -> Optional[Dict]:
