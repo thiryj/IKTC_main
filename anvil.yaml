@@ -274,7 +274,7 @@ scheduled_tasks:
   time_spec:
     at: {}
     every: minute
-    n: 5
+    n: 10
 secrets:
   IRA_TRADIER_ACCOUNT:
     type: secret

@@ -11,6 +11,7 @@ import pytz
 from tradier_python import TradierAPI
 from shared import config
 from shared.types import EnvStatus
+from . import server_logging as logger
 
 # Global cache variable (starts empty)
 _CACHED_CLIENT = None
@@ -75,7 +76,7 @@ def get_environment_status() -> EnvStatus:
         status_data['status_message'] = f"Market is {state}"
 
   except Exception as e:
-    print(f"API Error checking clock: {e}")
+    logger.log(f"API Error checking clock: {e}", level=config.LOG_DEBUG, source=config.LOG_SOURCE_API, context={config.ACTIVE_ENV})
     status_data['status_message'] = f"API Error: {e}"
 
   return status_data
@@ -119,7 +120,7 @@ def get_current_positions() -> List[Dict]:
     return clean_list
 
   except Exception as e:
-    print(f"API Error fetching positions: {e}")
+    logger.log(f"API Error fetching positions: {e}", level=config.LOG_DEBUG, source=config.LOG_SOURCE_API, context={config.ACTIVE_ENV})
     return []
 
 def get_market_data_snapshot(cycle) -> Dict:

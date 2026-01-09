@@ -12,8 +12,8 @@ TARGET_UNDERLYING = {
 }
 
 # Debuggin Flags
-ENFORCE_TRADING_HOURS = True   #disable to allow after hours automation for testing
-ENFORCE_LATE_OPEN_GUARDRAIL = False
+ENFORCE_TRADING_HOURS = False   #disable to allow after hours automation for testing
+ENFORCE_LATE_OPEN_GUARDRAIL = True
 ENFORCE_ZOMBIE_CHECKS = True
 ENFORCE_FREQUENCY_CHECKS = False
 
@@ -76,15 +76,19 @@ LOG_NAMES = {
   40: "CRITICAL"
 }
 
-LOG_SOURCE_ORCHESTRATOR = 'server_main'
-LOG_SOURCE_API = 'server_api'
-LOG_SOURCE_DB = 'server_database'
-LOG_SOURCE_LIBS = 'server_libs'
-LOG_SOURCE_CLIENT = 'server_client'
-LOG_SOURCE_LOGGER = 'server_logging'
+LOG_SOURCE_ORCHESTRATOR = 'main'
+LOG_SOURCE_API = 'api'
+LOG_SOURCE_DB = 'db'
+LOG_SOURCE_LIBS = 'libs'
+LOG_SOURCE_SERVER_CLIENT = 'server_client'
+LOG_SOURCE_CLIENT = 'client'
+LOG_SOURCE_LOGGER = 'logging'
 
 # Thresholds (The "Waterline" for each channel)
 # Change these to tune the noise level without touching code
 LEVEL_CONSOLE = LOG_DEBUG    # Print everything
 LEVEL_DB = LOG_INFO          # Record events, warnings, errors (Skip debug noise)
 LEVEL_ALERT = LOG_CRITICAL   # Only wake human for disasters
+
+# log sample
+# logger.log(f"", level=, source=, context={})

@@ -258,7 +258,12 @@ def settle_zombie_trade(trade_row):
     - Hedge: Assumes Expired Worthless (Exit Price = 0).
     User must manually reconcile with the actual overnight outcome.
     """
-  print(f"DB: Settling Zombie Trade {trade_row.get_id()} as MAX LOSS.")
+  
+  logger.log(f"DB: Settling Zombie Trade {trade_row.get_id()} as MAX LOSS.", 
+             level=config.LOG_WARNING, 
+             source=config.LOG_SOURCE_DB, 
+             context={trade_row.get_id()}
+            )
 
   # 1. Determine Worst Case Exit Price
   exit_price = 0.0

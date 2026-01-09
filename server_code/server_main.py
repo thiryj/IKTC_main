@@ -18,9 +18,9 @@ def run_automation_routine():
   current_env_account = config.ACTIVE_ENV # e.g., 'PROD' or 'SANDBOX'
   print(f"LOG: Starting Automation Run on environment: {current_env_account}")
   logger.log(
-    "LOG: Starting Automation Run on environment",
-    level=config.LOG_CRITICAL,
-    source="Orchestrator",
+    f"LOG: Starting Automation Run on {current_env_account}",
+    level=config.LOG_INFO,
+    source=config.LOG_SOURCE_ORCHESTRATOR,
     context={'environment': current_env_account}
   )
   
