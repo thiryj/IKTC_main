@@ -1,3 +1,4 @@
+import anvil.email
 import anvil.server
 from anvil.tables import app_tables
 

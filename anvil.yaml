@@ -276,6 +276,9 @@ scheduled_tasks:
     every: minute
     n: 5
 secrets:
+  ALERT_SMS_EMAIL:
+    type: secret
+    value: {PDYMR4AFRW36CCAU: zWe6sZucYtSIkOqjfwdiEkIrx7tFNyW0DFl0t5WN432dbiFEAhqSZgvpSGHljNmcX4yDXHxE2stxjIfr2J95/s13L0kfQOjL6t64xkf+NBwyU8BdHE4KFjyyG8FJIAOhYFrLapeE1Ur3kVepK9Q7fHu6iZjI}
   IRA_TRADIER_ACCOUNT:
     type: secret
     value: {PDYMR4AFRW36CCAU: RzMaK5Et7J0uAQIBy5CB3UXzxsu6QTbk1N0TFPWApLXPgVLbdUyP1ZeDs8UsNwQPHjke3NRYvKI5o24MIg5VMamyIQ+jTZ8YQy5zzSSYOwvMg/cOH6txqD5YMPGg63hkM+bTDY8njA==}
@@ -304,5 +307,8 @@ services:
 - client_config: {}
   server_config: {}
   source: /runtime/services/anvil/secrets.yml
+- client_config: {}
+  server_config: {}
+  source: /runtime/services/anvil/email.yml
 startup: {module: form_main, type: form}
 startup_form: null

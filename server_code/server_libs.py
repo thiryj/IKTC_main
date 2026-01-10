@@ -1,3 +1,4 @@
+import anvil.email
 from shared import config
 from shared.classes import Cycle, Trade
 from shared.types import MarketData, EnvStatus, RuleSetDict
