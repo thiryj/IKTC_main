@@ -151,6 +151,7 @@ def get_market_data_snapshot(cycle) -> Dict:
       snapshot['price'] = last
       snapshot['open'] = open_px
       snapshot['previous_close'] = prev_close
+      logger.log(f"Market Data: Last={last} Open={open_px} Prev={prev_close}", level=config.LOG_INFO, source=config.LOG_SOURCE_API)
   except Exception as e:
     logger.log(f"Error fetching underlying: {e}", level=config.LOG_WARNING, source=config.LOG_SOURCE_API)
     
@@ -539,7 +540,7 @@ def wait_for_order_fill(order_id: str, timeout_seconds: int = 10) -> bool:
           return True
 
         if status in ['canceled', 'rejected', 'expired']:
-          logger.log(f"order: {order_id} timed out (not filled)", level=config.LOG_WARNING, source=config.LOG_SOURCE_API)
+          logger.log(f"order: {order_id} failed with status: {status}", level=config.LOG_WARNING, source=config.LOG_SOURCE_API)
           return False
 
           # If 'open' or 'pending', wait and retry
@@ -548,7 +549,8 @@ def wait_for_order_fill(order_id: str, timeout_seconds: int = 10) -> bool:
     except Exception as e:
       logger.log(f"API Polling Error: {e}", level=config.LOG_WARNING, source=config.LOG_SOURCE_API)
       time.sleep(1.0)
-
+      
+  logger.log(f"Order {order_id} timed out (not filled)", level=config.LOG_WARNING, source=config.LOG_SOURCE_API)
   return False
 
 def cancel_order(order_id: str) -> bool:
@@ -560,7 +562,7 @@ def cancel_order(order_id: str) -> bool:
   url = f"{t.endpoint}/accounts/{t.default_account_id}/orders/{order_id}"
 
   try:
-    logger.log(f"\1", level=config.LOG_INFO, source=config.LOG_SOURCE_API)
+    logger.log(f"Canceling Order {order_id}...", level=config.LOG_INFO, source=config.LOG_SOURCE_API)
     resp = t.session.delete(url, headers={'Accept': 'application/json'})
 
     # 200 OK means successfully cancelled
@@ -568,7 +570,7 @@ def cancel_order(order_id: str) -> bool:
       print("API: Cancel successful.")
       return True
 
-    logger.log(f"\1", level=config.LOG_INFO, source=config.LOG_SOURCE_API)
+    logger.log(f"Cancel failed code {resp.status_code}: {resp.text}", level=config.LOG_WARNING, source=config.LOG_SOURCE_API)
     return False
 
   except Exception as e:
@@ -585,11 +587,10 @@ def _submit_order(t: TradierAPI, payload: Dict) -> Dict:
   url = f"{t.endpoint}/accounts/{t.default_account_id}/orders"
 
   try:
-    logger.log(f"\1", level=config.LOG_INFO, source=config.LOG_SOURCE_API)
+    logger.log(f"Submitting Order -> {payload}", level=config.LOG_INFO, source=config.LOG_SOURCE_API)
     resp = t.session.post(url, data=payload, headers={'accept': 'application/json'})
     if resp.status_code == 500 and "sandbox" in t.endpoint:
-      print("WARNING: Tradier Sandbox 500 Error (Known Glitch).")
-      print("Bypassing execution to verify DB Logic...")
+      logger.log("WARNING: Tradier Sandbox 500 Error (Known Glitch). Bypassing...", level=config.LOG_WARNING, source=config.LOG_SOURCE_API)
       return {
         'id': f"FAKE_{dt.datetime.now().strftime('%H%M%S')}",
         'status': 'filled', # Pretend it filled
@@ -598,7 +599,7 @@ def _submit_order(t: TradierAPI, payload: Dict) -> Dict:
       }
       # --- SANDBOX BYPASS END ---
     if resp.status_code >= 400:
-      logger.log(f"\1", level=config.LOG_INFO, source=config.LOG_SOURCE_API)
+      logger.log(f"API FAILED ({resp.status_code}): {resp.text}", level=config.LOG_WARNING, source=config.LOG_SOURCE_API)
 
     resp.raise_for_status()
 
@@ -611,10 +612,11 @@ def _submit_order(t: TradierAPI, payload: Dict) -> Dict:
       'price': float(payload.get('price', 0) or 0), # Estimated fill price
       'time': dt.datetime.now()
     }
-
+  
   except requests.exceptions.HTTPError as e:
     logger.log(f"API HTTP Error: {e.response.text}", level=config.LOG_WARNING, source=config.LOG_SOURCE_API)
     raise e
+  
   except Exception as e:
     logger.log(f"API Execution Error: {e}", level=config.LOG_WARNING, source=config.LOG_SOURCE_API)
     raise e

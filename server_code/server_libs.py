@@ -3,6 +3,9 @@ from shared.classes import Cycle, Trade
 from shared.types import MarketData, EnvStatus, RuleSetDict
 from typing import Optional, Tuple, Dict, List
 import datetime as dt
+import pytz
+
+from . import server_logging as logger
 
 # --- ORCHESTRATION HELPERS ---
 
@@ -11,7 +14,6 @@ def can_run_automation(env_status: dict, settings:dict) -> bool:
   if not settings or not settings.get('automation_enabled'): 
     return False
     
-  # 1. Market Hours Check
   if config.ENFORCE_TRADING_HOURS and env_status.get('status') != 'OPEN':
       return False
 
@@ -23,26 +25,20 @@ def is_db_consistent(cycle: Optional[Cycle], positions: List[dict]) -> bool:
   return True
 
 def determine_cycle_state(cycle: Cycle, market_data: MarketData) -> str:
-  """
-  The "Policy Manager". Checks conditions in priority order.
-  """
-  # 1. CRITICAL: Panic Harvest (Protect Capital)
+  """The "Policy Manager". Checks conditions in priority order"""
+  
   if _check_panic_harvest(cycle, market_data):
     return config.STATE_PANIC_HARVEST
 
-  # 2. DEFENSIVE: Roll Logic (Protect the Spread)
   if _check_roll_needed(cycle, market_data):
     return config.STATE_ROLL_REQUIRED
 
-  # 3. MAINTENANCE: Hedge Health
   if _check_hedge_maintenance(cycle, market_data):
     return config.STATE_HEDGE_ADJUSTMENT_NEEDED
 
-  # 4. OFFENSIVE: Profit Taking
   if _check_profit_target(cycle, market_data):
     return config.STATE_HARVEST_TARGET_HIT
 
-  # 5. SETUP: Structure Checks
   if _check_hedge_missing(cycle):
     return config.STATE_HEDGE_MISSING
 
@@ -62,9 +58,7 @@ def _check_panic_harvest(cycle: Cycle, market_data: MarketData) -> bool:
   # Logic: (Current Price - Daily Reference) * Multiplier * Qty
   hedge_current = market_data.get('hedge_last', 0.0)
   hedge_ref = cycle.daily_hedge_ref or 0.0
-
   if hedge_ref == 0: 
-    # TODO: Handle case where daily_hedge_ref is missing (maybe fetch yesterday's close?)
     return False 
 
   hedge_pnl = (hedge_current - hedge_ref) * config.DEFAULT_MULTIPLIER * cycle.hedge_trade_link.quantity
@@ -83,30 +77,26 @@ def _check_panic_harvest(cycle: Cycle, market_data: MarketData) -> bool:
 
   # 3. Check Threshold (Scaled by Rules)
   net_unit_pnl = hedge_pnl + spread_pnl
-
-  # Note: panic_threshold_dpu is already scaled for SPY in cycle.rules
   threshold = cycle.rules['panic_threshold_dpu'] * cycle.hedge_trade_link.quantity
   if net_unit_pnl > threshold:
-    print("DEBUG PANIC: Triggered!")
-    print(f"   Hedge: ${hedge_current:.2f} (Ref: ${hedge_ref:.2f}) -> PnL: ${hedge_pnl:.2f}")
-    print(f"   Spread PnL: ${spread_pnl:.2f}")
-    print(f"   Total: ${net_unit_pnl:.2f} > Limit: ${threshold:.2f}")
+    logger.log(f"Panic Threshold Breached: ${net_unit_pnl:.2f} > ${threshold:.2f} (Hedge: {hedge_pnl:.2f}, Spread: {spread_pnl:.2f})", 
+               level=config.LOG_INFO, 
+               source=config.LOG_SOURCE_LIBS)
     return True
 
   return False
 
 def _check_roll_needed(cycle: Cycle, market_data: MarketData) -> bool:
-  """
-  Rule: Spread Ask Price > Roll Trigger Price (3x Credit).
-  """
+  """Rule: Spread Ask Price > Roll Trigger Price (3x Credit)"""
   marks = market_data.get('spread_marks', {})
 
   for trade in cycle.trades:
     if trade.role == config.ROLE_INCOME and trade.status == config.STATUS_OPEN:
       current_cost = marks.get(trade.id)
       trigger = trade.roll_trigger_price
-
       if current_cost and trigger and current_cost >= trigger:
+        logger.log(f"Roll Triggered for Trade {trade.id}: Cost {current_cost} >= Trigger {trigger}", 
+                   level=config.LOG_INFO, source=config.LOG_SOURCE_LIBS)
         return True
   return False
 
@@ -119,7 +109,9 @@ def _check_hedge_maintenance(cycle: Cycle, market_data: MarketData) -> bool:
   current_dte = market_data.get('hedge_dte', 999)
   min_dte = cycle.rules.get('hedge_min_dte', 60)
   if current_dte < min_dte:
-    print(f"DEBUG: Hedge DTE {current_dte} < Limit {min_dte}")
+    logger.log(f"Hedge Maintenance: DTE {current_dte} < Limit {min_dte}", 
+               level=config.LOG_INFO, 
+               source=config.LOG_SOURCE_LIBS)
     return True
 
   # 2. Check Delta
@@ -128,13 +120,14 @@ def _check_hedge_maintenance(cycle: Cycle, market_data: MarketData) -> bool:
   raw_delta = market_data.get('hedge_delta')
   # FIX: If delta is 0 or None, assume data is stale and DO NOT roll.
   if not raw_delta: 
-    # print("DEBUG: Hedge delta 0 or missing. Skipping check.")
     return False
   current_delta = abs(raw_delta)
   min_delta = cycle.rules.get('hedge_min_delta', 0.15)
   max_delta = cycle.rules.get('hedge_max_delta', 0.40)
   if current_delta < min_delta or current_delta > max_delta:
-    print(f"DEBUG: Hedge Delta {current_delta} out of bounds ({min_delta}-{max_delta})")
+    logger.log(f"Hedge Maintenance: Delta {current_delta} out of bounds ({min_delta}-{max_delta})",
+               level=config.LOG_INFO, 
+               source=config.LOG_SOURCE_LIBS)
     return True
 
   return False
@@ -147,7 +140,6 @@ def _check_profit_target(cycle: Cycle, market_data: MarketData) -> bool:
     if trade.role == config.ROLE_INCOME and trade.status == config.STATUS_OPEN:
       current_cost = marks.get(trade.id)
       target = trade.target_harvest_price
-      print(f"current_cost: {current_cost}, target: {target}")
       if current_cost is not None and target and current_cost <= target:
         return True
   return False
@@ -155,14 +147,11 @@ def _check_profit_target(cycle: Cycle, market_data: MarketData) -> bool:
 def _check_hedge_missing(cycle: Cycle) -> bool:
   """Rule: Cycle is OPEN but has no *ACTIVE* Hedge Trade linked"""
   # 1. No link at all? Missing.
-  if not cycle.hedge_trade_link:
-    return True
+  if not cycle.hedge_trade_link: return True
 
   # 2. Link exists, but status is CLOSED? Missing. (THE CRITICAL FIX)
-  if cycle.hedge_trade_link.status != config.STATUS_OPEN:
-    return True
+  if cycle.hedge_trade_link.status != config.STATUS_OPEN:  return True
 
-  # 3. Link exists and is OPEN? Not missing.
   return False
 
 def _check_spread_missing(cycle: Cycle) -> bool:
@@ -172,9 +161,11 @@ def _check_spread_missing(cycle: Cycle) -> bool:
   ]
   return len(open_spreads) == 0
 
+'''
 def alert_human(message: str, level: str = config.ALERT_INFO):
   # TODO: Connect this to email/SMS notification service
   print(f"ALERT [{level}]: {message}")
+''' 
 
 # --- OBJECT RETRIEVAL HELPERS ---
 
@@ -201,12 +192,9 @@ def get_winning_spread(cycle: Cycle, market_data: MarketData) -> Optional[Trade]
 # --- CALCULATION LOGIC (ROLLS & ENTRY) ---
 def find_closest_expiration(valid_dates: List[dt.date], target_dte: int) -> Optional[dt.date]:
   """Given a list of valid dates, finds the one closest to Today + Target DTE"""
-  if not valid_dates: 
-    return None
-
+  if not valid_dates: return None
   today = dt.date.today()
   target_date = today + dt.timedelta(days=target_dte)
-
   return min(valid_dates, key=lambda d: abs((d - target_date).days))
 
 def check_roll_safety(market_data: MarketData, rules: Dict) -> Tuple[bool, str]:
@@ -251,21 +239,13 @@ def calculate_roll_legs(
     # 2. Scan
   for short_candidate in puts:
     short_strike = short_candidate['strike']
-
-    # Constraint: Lower than current (Down)
     if short_strike >= current_short_strike: continue
 
-      # Find matching Long Leg
     target_long = short_strike - width
-
-    # Fuzzy match to handle floating point issues
     long_candidate = next((p for p in puts if abs(p['strike'] - target_long) < 0.05), None)
-
     if not long_candidate: continue
 
-      # Economics
     credit_new = get_price(short_candidate, 'bid') - get_price(long_candidate, 'ask')
-
     if credit_new >= cost_to_close:
       # Valid candidate found. Store it.
       # We continue the loop to see if a LOWER strike (safer) also pays enough.
@@ -293,23 +273,17 @@ def check_entry_conditions(
   Order: Time -> Gaps -> Short Day -> Frequency.
   '''
   current_time = env_status['now']
-  # --- DEBUG START ---
-  print(f"DEBUG CHECKS: Now={current_time.strftime('%H:%M:%S')}")
 
   # --- 1. TIME WINDOW CHECKS (Fastest fail) ---
   # A. Start Delay (e.g. 9:45 AM)
   market_open_dt = dt.datetime.combine(current_time.date(), config.MARKET_OPEN_TIME)
-  minutes_since_open = (current_time - market_open_dt).total_seconds() / 60.0
-  print(f"mins since open: {minutes_since_open}")
-  
+  minutes_since_open = (current_time - market_open_dt).total_seconds() / 60.0  
   if minutes_since_open < rules.get('trade_start_delay', 15):
     return False, "Wait time active"
 
   # B. Late Cutoff (e.g. 11:00 AM)
   cutoff_val = rules.get('max_entry_time') 
-  print(f"DEBUG CHECKS: DB cutoff_val='{cutoff_val}' (Type: {type(cutoff_val)})")
-  # Default to 11:30 if missing
-  cutoff_time = dt.time(11, 30)
+  cutoff_time = dt.time(11, 30) # Default
   if isinstance(cutoff_val, dt.time):
     cutoff_time = cutoff_val
   elif isinstance(cutoff_val, str):
@@ -319,10 +293,7 @@ def check_entry_conditions(
     except: pass
 
   cutoff_dt = dt.datetime.combine(current_time.date(), cutoff_time)
-  print(f"DEBUG CHECKS: Comparing {current_time} > {cutoff_dt} ?")
-  
   if config.ENFORCE_LATE_OPEN_GUARDRAIL and current_time > cutoff_dt:
-    print(f"Time {current_time.strftime('%H:%M')} past cutoff {cutoff_time.strftime('%H:%M')}")
     return False, f"Time {current_time.strftime('%H:%M')} past cutoff {cutoff_time.strftime('%H:%M')}"
 
   # --- 2. MARKET GAP CHECKS (Fast Math) ---
@@ -347,7 +318,6 @@ def check_entry_conditions(
   # Tradier 'next_state_change' is usually "HH:MM" (24h)
   # Standard close is 16:00. Early close is usually 13:00.
   next_change_str = env_status.get('next_state_change', '16:00')
-
   try:
     # Parse hour from string "13:00"
     close_hour = int(next_change_str.split(':')[0])
@@ -361,12 +331,20 @@ def check_entry_conditions(
 
   # --- 4. FREQUENCY CHECK (only one spread open per day) ---
   today_date = env_status['today']
+  eastern = pytz.timezone('US/Eastern')
+  trades_today = []
+  for t in cycle.trades:
+    if t.role == config.ROLE_INCOME and t.entry_time:
+      # Convert stored UTC time to Eastern
+      t_time = t.entry_time
+      if t_time.tzinfo is None:
+        t_time = pytz.utc.localize(t_time)
 
-  trades_today = [
-    t for t in cycle.trades 
-    if t.role == config.ROLE_INCOME 
-    and t.entry_time.date() == today_date
-  ]
+      t_date_et = t_time.astimezone(eastern).date()
+
+      if t_date_et == today_date:
+        trades_today.append(t)
+  
   if config.ENFORCE_FREQUENCY_CHECKS and  len(trades_today) > 0:
     return False, "Daily limit reached (1 spread per day)"
 
@@ -479,7 +457,6 @@ def evaluate_entry(
 
   # 2. Prerequisites
   hedge = cycle.hedge_trade_link
-  # Check Status explicitly
   if not hedge or hedge.status != config.STATUS_OPEN:
     return False, {}, "No active (OPEN) hedge linked to cycle"
 
@@ -489,7 +466,6 @@ def evaluate_entry(
       target_delta=rules['spread_target_delta'],
       spread_width=rules['spread_width']
   )
-  
   if not strikes:
       return False, {}, "Could not find valid strikes (Check Delta/Width)"
 
@@ -503,7 +479,6 @@ def evaluate_entry(
   is_valid_prem, credit, prem_msg = validate_premium_and_size(
       short_leg, long_leg, rules
   )
-
   if not is_valid_prem:
       return False, {}, f"Strikes {short_strike}/{long_strike} rejected: {prem_msg}"
 
@@ -531,8 +506,6 @@ def get_zombie_trades(cycle: Cycle, positions: List[Dict]) -> List[Trade]:
     Assumes missing means 'Expired' or 'Closed externally'.
     """
   zombies = []
-
-  # 1. Create a set of OCC symbols currently held in Broker
   broker_symbols = set()
   for p in positions:
     sym = p.get('symbol')
@@ -542,11 +515,7 @@ def get_zombie_trades(cycle: Cycle, positions: List[Dict]) -> List[Trade]:
     # 2. Check each Open Trade
   for trade in cycle.trades:
     if trade.status == config.STATUS_OPEN:
-
-      # Get the legs associated with this trade object
       legs = getattr(trade, 'legs', [])
-
-      # If legs list is empty but status is open, it's definitely a zombie (Data error)
       if not legs: 
         zombies.append(trade)
         continue
