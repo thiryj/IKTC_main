@@ -2,11 +2,12 @@ import anvil.server
 import anvil.tables as tables
 from anvil.tables import app_tables
 import datetime as dt
-import json
+import json, pytz
 
 from shared import config
 
 # Universal Logger Function
+@anvil.server.callable
 def log(message: str, level: int = config.LOG_INFO, source: str = "System", context: dict = None):
   """
     Centralized Logging Handler.
@@ -18,6 +19,15 @@ def log(message: str, level: int = config.LOG_INFO, source: str = "System", cont
         source: Where did this come from? (e.g. "EntryLogic", "BrokerAPI")
         context: Optional dict of IDs or data (e.g. {'trade_id': '123'})
     """
+  # Only apply time limits to low-priority logs (INFO/DEBUG).
+  # Always let WARNING/CRITICAL through.
+  if level < config.LOG_WARNING:
+    # Get Current Eastern Time
+    utc_now = dt.datetime.now(pytz.utc)
+    eastern = pytz.timezone('US/Eastern')
+    now_et = utc_now.astimezone(eastern).time()
+    if now_et < config.LOG_START_TIME or now_et > config.LOG_STOP_TIME:
+      return # Silent exit
 
   # 1. CONSOLE (Immediate Print)
   if level >= config.LEVEL_CONSOLE:

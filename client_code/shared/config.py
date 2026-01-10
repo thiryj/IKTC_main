@@ -89,6 +89,8 @@ LOG_SOURCE_LOGGER = 'logging'
 LEVEL_CONSOLE = LOG_DEBUG    # Print everything
 LEVEL_DB = LOG_INFO          # Record events, warnings, errors (Skip debug noise)
 LEVEL_ALERT = LOG_CRITICAL   # Only wake human for disasters
+LOG_START_TIME = dt.time(9, 0)  # 9:00 AM ET
+LOG_STOP_TIME = dt.time(17, 0)  # 5:00 PM ET
 
 # log sample
 # logger.log(f"", level=, source=, context={})
