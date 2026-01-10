@@ -91,6 +91,24 @@ LEVEL_DB = LOG_INFO          # Record events, warnings, errors (Skip debug noise
 LEVEL_ALERT = LOG_CRITICAL   # Only wake human for disasters
 LOG_START_TIME = dt.time(9, 0)  # 9:00 AM ET
 LOG_STOP_TIME = dt.time(17, 0)  # 5:00 PM ET
+LOG_EMAIL = 'REDACTED_EMAIL'
+#LOG_SMS = 'REDACTED_PHONE'
+# Twilio code: ER9Y6V3KSV94JSXCZ9EEHRSD
+# Twilio acct id: REDACTED
+# 
+
+MARKET_HOLIDAYS = [
+  dt.date(2026, 1, 1),   # New Year's
+  dt.date(2026, 1, 19),  # MLK Day
+  dt.date(2026, 2, 16),  # Presidents' Day
+  dt.date(2026, 4, 3),   # Good Friday
+  dt.date(2026, 5, 25),  # Memorial Day
+  dt.date(2026, 6, 19),  # Juneteenth
+  dt.date(2026, 7, 3),   # Independence Day (Observed)
+  dt.date(2026, 9, 7),   # Labor Day
+  dt.date(2026, 11, 26), # Thanksgiving
+  dt.date(2026, 12, 25), # Christmas
+]
 
 # log sample
 # logger.log(f"", level=, source=, context={})

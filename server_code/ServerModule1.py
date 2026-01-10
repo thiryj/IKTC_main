@@ -1,3 +1,4 @@
+import anvil.email
 # anvil section
 import anvil.server
 import anvil.secrets
