@@ -92,10 +92,7 @@ LEVEL_ALERT = LOG_CRITICAL   # Only wake human for disasters
 LOG_START_TIME = dt.time(9, 0)  # 9:00 AM ET
 LOG_STOP_TIME = dt.time(17, 0)  # 5:00 PM ET
 LOG_EMAIL = 'REDACTED_EMAIL'
-#LOG_SMS = 'REDACTED_PHONE'
-# Twilio code: ER9Y6V3KSV94JSXCZ9EEHRSD
-# Twilio acct id: REDACTED
-# 
+
 
 MARKET_HOLIDAYS = [
   dt.date(2026, 1, 1),   # New Year's

@@ -276,9 +276,9 @@ scheduled_tasks:
     every: minute
     n: 5
 secrets:
-  ALERT_SMS_EMAIL:
+  ALERT_PHONE:
     type: secret
-    value: {PDYMR4AFRW36CCAU: zWe6sZucYtSIkOqjfwdiEkIrx7tFNyW0DFl0t5WN432dbiFEAhqSZgvpSGHljNmcX4yDXHxE2stxjIfr2J95/s13L0kfQOjL6t64xkf+NBwyU8BdHE4KFjyyG8FJIAOhYFrLapeE1Ur3kVepK9Q7fHu6iZjI}
+    value: {PDYMR4AFRW36CCAU: 0E25U7gqiOCZg35f3++anOfknTCfLLWzRtryUxN+W4UUMUbfksJIW/dfUqaAqnJv/TBGs4DNGnxcGJfC/DHdMuIhj1/50Y+thxOOGgrkWo7tmyGnGyNSwt2L6xHw1MN2ipa/BJTtTaXkK0g=}
   IRA_TRADIER_ACCOUNT:
     type: secret
     value: {PDYMR4AFRW36CCAU: RzMaK5Et7J0uAQIBy5CB3UXzxsu6QTbk1N0TFPWApLXPgVLbdUyP1ZeDs8UsNwQPHjke3NRYvKI5o24MIg5VMamyIQ+jTZ8YQy5zzSSYOwvMg/cOH6txqD5YMPGg63hkM+bTDY8njA==}
@@ -300,6 +300,15 @@ secrets:
   SANDBOX_TRADIER_API_KEY:
     type: secret
     value: {PDYMR4AFRW36CCAU: 7YfeV1bp9tzr5Phcl83BYzewHKiOLGB4fWodqtCzdaIQIoCHboM5srYLRjq0YqBOO1/FUBut+UC663Zpn4hBsUOSTb49nGbfjhmJ8vviaCwvSrgKuMjEN23syNdQJWfB9gXjrtMVOmiEXpQaYa8QOvU4Yt8UIxa+FRlt}
+  TWILIO_FROM:
+    type: secret
+    value: {PDYMR4AFRW36CCAU: BTIRUtNdqZE6EADjLki/tDrUj7RM7zkmMsOpn0ertrXGqnZrGCbea4A39VsLJvBpdwWbz0V80608xrkLH0Enh1Vhbi+DRRlFAw9S5p8A+Wx7RLhmEonUrWx1ywq2jrY9RDLoUv5i6GmwBQo=}
+  TWILIO_SID:
+    type: secret
+    value: {PDYMR4AFRW36CCAU: 63aR9MxNvXz1CyWKg4u+xAZ+tPHNh0ZmyDlrjA1hLaIV430ls8w4DDCQOiV8enK4dbBOgzBUpDDZJu+Ok5wRtC6zA2wZtt/7Icvg8ptObgWi2LAUPbshMJNYwqo9RKcZ9vkpgVnG3ELJKzxdznd8MKFZ6FlUyRfMuNy9RkgHILWv}
+  TWILIO_TOKEN:
+    type: secret
+    value: {PDYMR4AFRW36CCAU: PE4CgjNjhGWgJTlX1nG7EZK6SIl365f3cTZO3J7pbHLOp6Dmplv6io2Q0TSzARpd/d2yXcWQ17QofKQSQ1/jLpgDnezJXCGRgHHwt4x2cdNY+VWinCpTG9sRxT1CyGuBE9ruWCAB8ykBV72+eq/eIPu/fRsZNAGABOjNpWqCMQ==}
 services:
 - client_config: {}
   server_config: {}

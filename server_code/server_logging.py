@@ -5,6 +5,7 @@ from anvil.tables import app_tables
 import anvil.tables.query as q
 import datetime as dt
 import json, pytz
+from twilio.rest import Client
 
 from shared import config
 
@@ -76,12 +77,15 @@ def send_alert_async(message, level, source):
     Handles slow notifications.
     Optimized for Email-to-SMS Gateways (Plain text, short).
     """
-  # 1. Get Target
-  target = anvil.secrets.get_secret('ALERT_SMS_EMAIL')
-  if not target:
-    print("LOGGING ERROR: No ALERT_SMS_EMAIL secret defined.")
+  # 1. Load Secrets
+  sid = anvil.secrets.get_secret('TWILIO_SID')
+  token = anvil.secrets.get_secret('TWILIO_TOKEN')
+  from_num = anvil.secrets.get_secret('TWILIO_FROM')
+  to_num = anvil.secrets.get_secret('ALERT_PHONE')
+  if not all([sid, token, from_num, to_num]):
+    print("LOGGING ERROR: Missing Twilio Secrets. Cannot send SMS.")
     return
-  print(f"SMS email is: {target}")
+  print(f"to_num: {to_num}")
 
   # 2. Format for SMS (Keep it tiny)
   # Most gateways put the Subject in parenthesis: "(CRITICAL) Message..."
@@ -90,24 +94,21 @@ def send_alert_async(message, level, source):
   lvl_name = config.LOG_NAMES.get(level, "CRITICAL")
 
   # Subject: [P] CRITICAL
-  subject_line = f"[{env_code}] {lvl_name}"
-
-  # Body: Source - Message
-  # Truncate message to ~100 chars to avoid splitting SMS
-  clean_msg = message[:100] + "..." if len(message) > 100 else message
-  body_text = f"{source}: {clean_msg}"
-
+  sms_body = f"[{env_code}] {lvl_name} {source}: {message}"
+  
   try:
-    anvil.email.send(
-      from_name="Iron Keep Trading Company",
-      to='john@thiry.com',   #target,
-      subject=subject_line,
-      text=body_text # <--- Pure Text argument ensures no HTML bloat
+    # 3. Send via Twilio
+    client = Client(sid, token)
+    
+    msg = client.messages.create(
+      body=sms_body,
+      from_=from_num,
+      to=to_num
     )
-    print(f">> ASYNC SMS SENT: {subject_line} {body_text}")
+    print(f">> TWILIO SMS SENT: {msg.sid} | {sms_body}")
 
   except Exception as e:
-    print(f"FAILED TO SEND SMS ALERT: {e}")
+    print(f"FAILED TO SEND TWILIO ALERT: {e}")
     
 @anvil.server.callable
 @anvil.server.background_task

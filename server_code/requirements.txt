@@ -2,3 +2,4 @@ tradier-python
 dotenv
 pydantic_core
 requests
+twilio
