@@ -291,6 +291,12 @@ secrets:
   PROD_TRADIER_API_KEY:
     type: secret
     value: {PDYMR4AFRW36CCAU: 8CjOA2NSwkpg5GX1a+VfuXTpEeCu52weGVtoCUinrL7hnnOhu+rEcT3dQ7cyMoeEOXDK75G3oWrATct4e38+t+Bf5NVyrRtRWXolwjt/vb6SoaO+sX8Ddz5Vn5rABFNJJsjMCXSpTn/UejqASdHvhMjueKSuO+x51G5X}
+  PUSHOVER_TOKEN:
+    type: secret
+    value: {PDYMR4AFRW36CCAU: xi8pkYoX8n4CgydWok/ECS9tADQy2/YQ/WMLK6zhUuD6DFL6s99T7plknsEO/22t58CPBiKplfyD1ll/KiLATafO/P6PiQ9fHKl4G/PJ6nWxk5FNuGiAdGKkr5ZNbZQ8AcgpZ1OISdTy9VxQ7htCuS0/RYJ+2v3SbjyzeTs=}
+  PUSHOVER_USER:
+    type: secret
+    value: {PDYMR4AFRW36CCAU: FhR3FxjdZzx4kSPfpY68fHAnBLmf4jCqYGzgz+S2gXFED+LP3YCL11xZEEEB6aOOUJpJZtirgnDhm6GMIEGQTt+wK/WB/LgQ+WRPtvb5syt0OnT0d5QEPF3eIlFufi6QP+UpiWypBFCqvMOxhseUehl1ZvX9F4p4QFMHpL0=}
   SANDBOX_ENDPOINT_URL:
     type: secret
     value: {PDYMR4AFRW36CCAU: Q6ZkRItWRfd8LsOq5AcFcTm0ibjTQa4iwSNvj9LItWy0rfUsQlRaJanJlDF/5pdnKrc32nMp/gOlMAGtzurAjMKVKwDDgNHEyaPpRIIgLT8cobc1AvnKRrl4/KaxjhPg9ulQ0KCbujbKH1eEZoJ8C+jAkESZo7yahIBSCM96q0Jeqw==}
@@ -300,15 +306,6 @@ secrets:
   SANDBOX_TRADIER_API_KEY:
     type: secret
     value: {PDYMR4AFRW36CCAU: 7YfeV1bp9tzr5Phcl83BYzewHKiOLGB4fWodqtCzdaIQIoCHboM5srYLRjq0YqBOO1/FUBut+UC663Zpn4hBsUOSTb49nGbfjhmJ8vviaCwvSrgKuMjEN23syNdQJWfB9gXjrtMVOmiEXpQaYa8QOvU4Yt8UIxa+FRlt}
-  TWILIO_FROM:
-    type: secret
-    value: {PDYMR4AFRW36CCAU: BTIRUtNdqZE6EADjLki/tDrUj7RM7zkmMsOpn0ertrXGqnZrGCbea4A39VsLJvBpdwWbz0V80608xrkLH0Enh1Vhbi+DRRlFAw9S5p8A+Wx7RLhmEonUrWx1ywq2jrY9RDLoUv5i6GmwBQo=}
-  TWILIO_SID:
-    type: secret
-    value: {PDYMR4AFRW36CCAU: 63aR9MxNvXz1CyWKg4u+xAZ+tPHNh0ZmyDlrjA1hLaIV430ls8w4DDCQOiV8enK4dbBOgzBUpDDZJu+Ok5wRtC6zA2wZtt/7Icvg8ptObgWi2LAUPbshMJNYwqo9RKcZ9vkpgVnG3ELJKzxdznd8MKFZ6FlUyRfMuNy9RkgHILWv}
-  TWILIO_TOKEN:
-    type: secret
-    value: {PDYMR4AFRW36CCAU: PE4CgjNjhGWgJTlX1nG7EZK6SIl365f3cTZO3J7pbHLOp6Dmplv6io2Q0TSzARpd/d2yXcWQ17QofKQSQ1/jLpgDnezJXCGRgHHwt4x2cdNY+VWinCpTG9sRxT1CyGuBE9ruWCAB8ykBV72+eq/eIPu/fRsZNAGABOjNpWqCMQ==}
 services:
 - client_config: {}
   server_config: {}

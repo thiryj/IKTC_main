@@ -5,7 +5,7 @@ from anvil.tables import app_tables
 import anvil.tables.query as q
 import datetime as dt
 import json, pytz
-from twilio.rest import Client
+import requests
 
 from shared import config
 
@@ -77,38 +77,42 @@ def send_alert_async(message, level, source):
     Handles slow notifications.
     Optimized for Email-to-SMS Gateways (Plain text, short).
     """
-  # 1. Load Secrets
-  sid = anvil.secrets.get_secret('TWILIO_SID')
-  token = anvil.secrets.get_secret('TWILIO_TOKEN')
-  from_num = anvil.secrets.get_secret('TWILIO_FROM')
-  to_num = anvil.secrets.get_secret('ALERT_PHONE')
-  if not all([sid, token, from_num, to_num]):
-    print("LOGGING ERROR: Missing Twilio Secrets. Cannot send SMS.")
+  user_key = anvil.secrets.get_secret('PUSHOVER_USER')
+  api_token = anvil.secrets.get_secret('PUSHOVER_TOKEN')
+
+  if not user_key or not api_token:
+    print("LOGGING ERROR: Missing Pushover Secrets.")
     return
-  print(f"to_num: {to_num}")
-
-  # 2. Format for SMS (Keep it tiny)
-  # Most gateways put the Subject in parenthesis: "(CRITICAL) Message..."
-  # We strip the environment down to 1 char (P/S) to save space.
-  env_code = "P" if config.ACTIVE_ENV == config.ENV_PROD else "S"
-  lvl_name = config.LOG_NAMES.get(level, "CRITICAL")
-
-  # Subject: [P] CRITICAL
-  sms_body = f"[{env_code}] {lvl_name} {source}: {message}"
+  
+    # Map Config Level to Pushover Priority
+    # 0 = Normal, 1 = High, 2 = Emergency (Nag until acknowledge)
+    priority = 0
+  if level >= config.LOG_CRITICAL:
+    priority = 1 # High Priority (Red color, bypass silent mode often)
+  
+    env_code = "P" if config.ACTIVE_ENV == config.ENV_PROD else "S"
+  title = f"[{env_code}] {config.LOG_NAMES.get(level, 'ALERT')}: {source}"
   
   try:
-    # 3. Send via Twilio
-    client = Client(sid, token)
-    
-    msg = client.messages.create(
-      body=sms_body,
-      from_=from_num,
-      to=to_num
+    resp = requests.post(
+      "https://api.pushover.net/1/messages.json",
+      data={
+        "token": api_token,
+        "user": user_key,
+        "message": message,
+        "title": title,
+        "priority": priority,
+        # "sound": "siren", # Optional: Customize sound for criticals
+      }
     )
-    print(f">> TWILIO SMS SENT: {msg.sid} | {sms_body}")
-
+  
+    if resp.status_code == 200:
+      print(f">> PUSHOVER SENT: {title}")
+    else:
+      print(f"PUSHOVER FAILED: {resp.text}")
+  
   except Exception as e:
-    print(f"FAILED TO SEND TWILIO ALERT: {e}")
+    print(f"FAILED TO SEND ALERT: {e}")
     
 @anvil.server.callable
 @anvil.server.background_task
