@@ -1,0 +1,7 @@
+components:
+- layout_properties: {column: VASWQP}
+  name: label_timestamp
+  properties: {}
+  type: Label
+container: {type: DataRowPanel}
+is_package: true

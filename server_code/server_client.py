@@ -30,8 +30,8 @@ def get_dashboard_state():
     'cycle_active': False,
     'net_daily_pnl': 0.0,
     # Components
-    'hedge': {'active': False, 'status_color': 'gray', 'text': 'No Hedge'},
-    'spread': {'active': False, 'status_color': 'gray', 'text': 'No Spread'},
+    'hedge': {'active': False, 'status_color': 'gray', 'symbol': 'No Hedge', 'details': '-'},
+    'spread': {'active': False, 'status_color': 'gray', 'symbol': 'No Spread', 'details': '-'},
     'log_summary': [] # Can populate later
   }
 
