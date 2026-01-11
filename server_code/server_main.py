@@ -351,6 +351,7 @@ def run_automation_routine():
         logger.log("Re-Entry timed out. Canceling...", 
                    level=config.LOG_WARNING, 
                    source=config.LOG_SOURCE_ORCHESTRATOR)
+        
         if server_api.cancel_order(open_order_id):
           logger.log("Order canceled. System Flat (Stop Loss Taken).", 
                     level=config.LOG_INFO, 
