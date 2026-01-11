@@ -114,6 +114,7 @@ def run_automation_routine():
              context={'cycle_id': cycle.id})
 
   # 5. EXECUTE
+#---------------------------------------------------#  
   if decision_state == config.STATE_PANIC_HARVEST:
     logger.log("PANIC HARVEST TRIGGERED! Executing Sequential Close...", 
                level=config.LOG_CRITICAL, 
@@ -143,7 +144,7 @@ def run_automation_routine():
           continue # Best effort: Try closing other liabilities
 
         # Poll for fill
-        is_filled = server_api.wait_for_order_fill(order_id, timeout_seconds=5)
+        is_filled, fill_px = server_api.wait_for_order_fill(order_id, timeout_seconds=5)
         if not is_filled:
           logger.log(f"Close Order {order_id} did not fill. Aborting Sequence.", 
                      level=config.LOG_CRITICAL, 
@@ -151,9 +152,11 @@ def run_automation_routine():
           liabilities_cleared = False
           continue # Note: We do NOT cancel market orders in panic; we hope they fill eventually.
 
+        final_price = fill_px if fill_px > 0 else float(order_res['price'])
+        
         server_db.close_trade(
           trade_row=trade._row,
-          fill_price=order_res['price'], # TODO: Ideally we fetch the *actual* fill price from the polling result
+          fill_price=final_price, 
           fill_time=dt.datetime.now(),
           order_id=order_id
         )
@@ -178,11 +181,12 @@ def run_automation_routine():
           order_res = server_api.close_position(trade, order_type='market')
           order_id = order_res.get('id')
           if order_id:
-            is_filled = server_api.wait_for_order_fill(order_id, timeout_seconds=5)
+            is_filled, fill_px = server_api.wait_for_order_fill(order_id, timeout_seconds=5)
             if is_filled:
+              final_price = fill_px if fill_px > 0 else float(order_res['price'])
               server_db.close_trade(
                 trade_row=trade._row,
-                fill_price=order_res['price'],
+                fill_price=final_price,
                 fill_time=order_res['time'],
                 order_id=order_res['id']
               )
@@ -211,7 +215,7 @@ def run_automation_routine():
       logger.log("Liabilities NOT cleared. ABORTING Hedge Close. System holding Hedge.", 
                  level=config.LOG_CRITICAL, 
                  source=config.LOG_SOURCE_ORCHESTRATOR)
-
+#---------------------------------------------------#
   elif decision_state == config.STATE_ROLL_REQUIRED:
     logger.log("Roll Triggered! Initiating Split Roll Sequence...", 
                level=config.LOG_INFO, 
@@ -235,7 +239,7 @@ def run_automation_routine():
       return
 
     # Poll for Fill (Aggressive Wait)
-    is_closed = server_api.wait_for_order_fill(close_order_id, timeout_seconds=10)
+    is_closed, close_px = server_api.wait_for_order_fill(close_order_id, timeout_seconds=10)
     if not is_closed:
       logger.log("Roll Aborted - Close Order timed out/failed.", 
                  level=config.LOG_CRITICAL, 
@@ -243,9 +247,7 @@ def run_automation_routine():
       # Note: Position is likely stuck in 'pending' state. Bot will retry next loop.
       return
 
-    # We use the estimated price from response if specific fill price isn't available yet
-    # TODO: fetch the exact fill price here, but let's use the snapshot/response for speed
-    realized_debit = close_res['price'] 
+    realized_debit = close_px if close_px > 0 else float(close_res['price'])
 
     server_db.close_trade(
       trade_row=spread_trade._row,
@@ -325,8 +327,9 @@ def run_automation_routine():
       logger.log(f"Waiting for Re-Entry fill ({config.ORDER_TIMEOUT_SECONDS}s)...", 
                  level=config.LOG_INFO, 
                  source=config.LOG_SOURCE_ORCHESTRATOR)
-      is_opened = server_api.wait_for_order_fill(open_order_id, config.ORDER_TIMEOUT_SECONDS)
+      is_opened, open_px = server_api.wait_for_order_fill(open_order_id, config.ORDER_TIMEOUT_SECONDS)
       if is_opened:
+        final_credit = open_px if open_px > 0 else roll_result['new_credit']
         # Reset daily_hedge_ref
         current_hedge = market_data.get('hedge_last', 0.0)
         if current_hedge > 0:
@@ -338,7 +341,7 @@ def run_automation_routine():
           role=config.ROLE_INCOME,
           trade_dict=trade_data,
           order_id=open_order_id,
-          fill_price=roll_result['new_credit'],
+          fill_price=final_credit,
           fill_time=dt.datetime.now()
         )
         logger.log("Roll Re-Entry Successful.", 
@@ -360,7 +363,7 @@ def run_automation_routine():
       logger.log("API rejected Re-Entry Order.", 
                  level=config.LOG_CRITICAL, 
                  source=config.LOG_SOURCE_ORCHESTRATOR)
-
+#---------------------------------------------------#
   elif decision_state == config.STATE_HARVEST_TARGET_HIT:
     # Strategy: Close spread at 50% profit
     spread_trade = server_libs.get_winning_spread(cycle, market_data)
@@ -371,11 +374,12 @@ def run_automation_routine():
       order_res = server_api.close_position(spread_trade)    
       order_id = order_res.get('id')
       if order_id:
-        is_filled = server_api.wait_for_order_fill(order_id, config.ORDER_TIMEOUT_SECONDS)
+        is_filled, fill_px = server_api.wait_for_order_fill(order_id, config.ORDER_TIMEOUT_SECONDS)
         if is_filled:
+          final_price = fill_px if fill_px > 0 else float(order_res['price'])
           server_db.close_trade(
             trade_row=spread_trade._row,
-            fill_price=order_res['price'],
+            fill_price=final_price,
             fill_time=order_res['time'],
             order_id=order_res['id']
           )
@@ -394,7 +398,7 @@ def run_automation_routine():
             logger.log(f"CRITICAL: Failed to cancel stuck Harvest Order {order_id}!", 
                        level=config.LOG_CRITICAL, 
                        source=config.LOG_SOURCE_ORCHESTRATOR)
-
+#---------------------------------------------------#
   elif decision_state == config.STATE_HEDGE_MISSING:
     logger.log("Hedge missing. Attempting to buy protection...", 
                level=config.LOG_INFO, 
@@ -424,7 +428,7 @@ def run_automation_routine():
       logger.log("Chain found, but no suitable strike (Delta match) found.", 
                  level=config.LOG_WARNING, 
                  source=config.LOG_SOURCE_ORCHESTRATOR)
-      
+#---------------------------------------------------#      
   elif decision_state == config.STATE_SPREAD_MISSING:
     logger.log("Attempting to enter new spread...", 
                level=config.LOG_INFO, 
@@ -454,10 +458,9 @@ def run_automation_routine():
                    source=config.LOG_SOURCE_ORCHESTRATOR)
       else:
         # 2. SYNCHRONOUS WAIT (The IOC Simulation)
-        is_filled = server_api.wait_for_order_fill(order_id, config.ORDER_TIMEOUT_SECONDS)
+        is_filled, fill_px = server_api.wait_for_order_fill(order_id, config.ORDER_TIMEOUT_SECONDS)
         if is_filled:
-          # 3A. SUCCESS: Record to DB
-
+          final_price = fill_px if fill_px > 0 else float(order_res['price'])
           current_hedge = market_data.get('hedge_last', 0.0)
           if current_hedge > 0:
             cycle.daily_hedge_ref = current_hedge
@@ -468,7 +471,7 @@ def run_automation_routine():
             role=config.ROLE_INCOME,
             trade_dict=trade_data,
             order_id=order_id,
-            fill_price=order_res['price'],
+            fill_price=final_price,
             fill_time=dt.datetime.now() # Use actual time
           )
           logger.log("Open spread trade filled and recorded.", 
@@ -492,7 +495,7 @@ def run_automation_routine():
       logger.log(f"Entry Logic Rejected: {reason}", 
                  level=config.LOG_DEBUG, 
                  source=config.LOG_SOURCE_ORCHESTRATOR)
-      
+#---------------------------------------------------#      
   elif decision_state == config.STATE_HEDGE_ADJUSTMENT_NEEDED:
     logger.log("Hedge Adjustment Required. Rolling position...", 
                level=config.LOG_INFO, 
@@ -505,11 +508,12 @@ def run_automation_routine():
     close_res = server_api.close_position(old_hedge)
     close_order_id = close_res.get('id')
     if close_order_id:
-      is_closed = server_api.wait_for_order_fill(close_order_id, timeout_seconds=10)
+      is_closed, close_px = server_api.wait_for_order_fill(close_order_id, timeout_seconds=10)
       if is_closed:
+        realized_debit = close_px if close_px > 0 else float(close_res['price'])
         server_db.close_trade(
           trade_row=old_hedge._row,
-          fill_price=close_res['price'],
+          fill_price=realized_debit,
           fill_time=dt.datetime.now(), # Use actual time, or close_res['time'] if available/parsed
           order_id=close_order_id
         )
@@ -550,7 +554,7 @@ def run_automation_routine():
       logger.log("Closed old hedge but could not find new one!", 
                  level=config.LOG_CRITICAL, 
                  source=config.LOG_SOURCE_ORCHESTRATOR)
-      
+#---------------------------------------------------#      
   elif decision_state == config.STATE_IDLE:
      logger.log("No action required.", 
                 level=config.LOG_DEBUG, 
@@ -580,9 +584,10 @@ def _execute_hedge_entry(cycle, leg_to_buy) -> bool:
     return False
 
     # 2. Verify Fill
-  is_filled = server_api.wait_for_order_fill(order_id, timeout_seconds=10)
+  is_filled, fill_px = server_api.wait_for_order_fill(order_id, timeout_seconds=10)
 
   if is_filled:
+    final_price = fill_px if fill_px > 0 else float(buy_res['price'])
     # 3. Record
     trade_data = {
       'quantity': 1,
@@ -597,7 +602,7 @@ def _execute_hedge_entry(cycle, leg_to_buy) -> bool:
       role=config.ROLE_HEDGE,
       trade_dict=trade_data,
       order_id=order_id,
-      fill_price=buy_res['price'],
+      fill_price=final_price,
       fill_time=dt.datetime.now()
     )
 

@@ -5,7 +5,7 @@ import anvil.server
 import datetime as dt
 import requests
 from urllib.parse import urljoin
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Tuple
 import time 
 import pytz
 
@@ -507,10 +507,10 @@ def close_position(trade, order_type: str = 'limit') -> Dict:
   result = _submit_order(t, payload)
   return result
 
-def wait_for_order_fill(order_id: str, timeout_seconds: int = 10) -> bool:
+def wait_for_order_fill(order_id: str, timeout_seconds: int = 10) -> Tuple[bool, float]:
   """
     Polls Tradier for specific order ID until it is 'filled' or timeout occurs.
-    Returns True if filled, False if pending/rejected/canceled/timeout.
+    Returns [True if filled, False if pending/rejected/canceled/timeout, ave fill price.
     """
   t = _get_client()
   # --- SANDBOX BYPASS ---
@@ -518,13 +518,13 @@ def wait_for_order_fill(order_id: str, timeout_seconds: int = 10) -> bool:
   # We simulate a fill so we can test the Orchestrator's sequential logic.
   '''
   if 'sandbox' in t.endpoint:
-    logger.log(f"API (Sandbox): Simulating instant fill for {order_id} to unblock logic.", level=config.LOG_WARNING, source=config.LOG_SOURCE_API, context={config.ACTIVE_ENV})
+    logger.log(f"API (Sandbox): Simulating instant fill for {order_id} to unblock logic.", 
+               level=config.LOG_WARNING, 
+               source=config.LOG_SOURCE_API)
     time.sleep(1.0) # Simulate network latency
-    return True
-  # ----------------------
+    return True, 0.0
   '''
   url = f"{t.endpoint}/accounts/{t.default_account_id}/orders/{order_id}"
-
   start_time = time.time()
 
   while (time.time() - start_time) < timeout_seconds:
@@ -537,12 +537,17 @@ def wait_for_order_fill(order_id: str, timeout_seconds: int = 10) -> bool:
         status = order_data.get('status')
 
         if status == 'filled':
-          logger.log(f"order: {order_id} filled", level=config.LOG_INFO, source=config.LOG_SOURCE_API)
-          return True
+          fill_price = float(order_data.get('avg_fill_price') or 0.0)
+          logger.log(f"Order {order_id} FILLED at ${fill_price}", 
+                     level=config.LOG_INFO, 
+                     source=config.LOG_SOURCE_API)
+          return True, fill_price
 
         if status in ['canceled', 'rejected', 'expired']:
-          logger.log(f"order: {order_id} failed with status: {status}", level=config.LOG_WARNING, source=config.LOG_SOURCE_API)
-          return False
+          logger.log(f"Order {order_id} failed with status: {status}", 
+                     level=config.LOG_WARNING, 
+                     source=config.LOG_SOURCE_API)
+          return False, 0.0
 
           # If 'open' or 'pending', wait and retry
       time.sleep(1.0)
@@ -552,7 +557,7 @@ def wait_for_order_fill(order_id: str, timeout_seconds: int = 10) -> bool:
       time.sleep(1.0)
       
   logger.log(f"Order {order_id} timed out (not filled)", level=config.LOG_WARNING, source=config.LOG_SOURCE_API)
-  return False
+  return False, 0.0
 
 def cancel_order(order_id: str) -> bool:
   """
