@@ -26,14 +26,26 @@ class form_main(form_mainTemplate):
 
       # --- Global Status ---
       self.label_active_env.text = f"Env: {state['active_env']}"
+      self.label_active_env.border = "1px solid green"
+      
       self.check_box_automation.checked = state['automation_enabled']
-      self.label_market_status.text = f"Market: {state['market_status']}"
-
-      # Color code market status
+      
+      self.label_market_status.text = f"Market: {state.get('market_status', 'UNKNOWN')}"
       if state['market_status'] == 'OPEN':
-        self.label_market_status.foreground = "green"
+        #self.label_market_status.foreground = "green"
+        self.label_market_status.border = "1px solid green"
       else:
-        self.label_market_status.foreground = "gray"
+        #self.label_market_status.foreground = "gray"
+        self.label_market_status.border = "1px solid grey"
+        
+      current_state = state.get('decision_state', 'UNKNOWN')
+      self.label_decision_state.text = f"Status: {current_state}"
+      if current_state == 'IDLE':
+        #self.label_decision_state.foreground = "green"
+        self.label_decision_state.border = "1px solid black"
+      else:
+        self.label_decision_state.border = "1px solid orange"
+        #self.label_decision_state.foreground = "orange" # or orange/red based on severity
 
       # PnL
       pnl = state['net_daily_pnl']
@@ -52,9 +64,18 @@ class form_main(form_mainTemplate):
       self.label_spread_status.foreground = s['status_color']
       self.label_spread_details.text = s['details']
 
+      # --- Closed Spread Card ---
+      closed = state['closed_session']
+      self.card_closed_spread.visible = closed['visible']
+      if closed['visible']:
+        # Populate Data
+        self.label_closed_desc.text = closed['text']
+        self.label_closed_pnl.text = f"${closed['pnl']:,.2f}"
+        self.label_closed_pnl.foreground = closed['color']
+
     except Exception as e:
       print(f"UI Refresh Error: {e}")
-      Notification("Lost connection to server", style="warning").show()
+      #Notification("Lost connection to server", style="warning").show()
 
   def refresh_logs(self):
     """Refreshes the log grid."""

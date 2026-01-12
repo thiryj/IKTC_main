@@ -104,15 +104,15 @@ def run_automation_routine():
                source=config.LOG_SOURCE_ORCHESTRATOR)
     return
 
-    # 4. DETERMINE STATE
-    # The brain analyzes the cycle + market data and returns ONE state constant
+  # 4. DETERMINE STATE
+  # The brain analyzes the cycle + market data and returns ONE state constant
   market_data = server_api.get_market_data_snapshot(cycle)
   decision_state = server_libs.determine_cycle_state(cycle, market_data)
-
-  logger.log(f"Decision State -> {decision_state}", 
-             level=config.LOG_INFO, 
-             source=config.LOG_SOURCE_ORCHESTRATOR, 
-             context={'cycle_id': cycle.id})
+  if decision_state != config.STATE_IDLE:
+    logger.log(f"Decision State -> {decision_state}", 
+              level=config.LOG_INFO, 
+              source=config.LOG_SOURCE_ORCHESTRATOR, 
+              context={'cycle_id': cycle.id})
 
   # 5. EXECUTE
 #---------------------------------------------------#  
