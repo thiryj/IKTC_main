@@ -58,7 +58,7 @@ def get_dashboard_state():
   # Fetch Live Data (Price & Greeks)
   # We use the existing snapshot logic to avoid code duplication
   market_data = server_api.get_market_data_snapshot(cycle)
-  current_state = server_libs.determine_cycle_state(cycle, market_data)
+  current_state = server_libs.determine_cycle_state(cycle, market_data, env_status)
   data['decision_state'] = current_state
 
   # --- HEDGE COMPONENT ---

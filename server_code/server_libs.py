@@ -25,7 +25,7 @@ def is_db_consistent(cycle: Optional[Cycle], positions: List[dict]) -> bool:
   # Compare cycle.trades vs Tradier positions. Return False if mismatch found.
   return True
 
-def determine_cycle_state(cycle: Cycle, market_data: MarketData) -> str:
+def determine_cycle_state(cycle: Cycle, market_data: MarketData, env_status: EnvStatus) -> str:
   """The "Policy Manager". Checks conditions in priority order"""
   
   if _check_panic_harvest(cycle, market_data):
@@ -43,7 +43,7 @@ def determine_cycle_state(cycle: Cycle, market_data: MarketData) -> str:
   if _check_hedge_missing(cycle):
     return config.STATE_HEDGE_MISSING
 
-  if _check_spread_missing(cycle):
+  if _check_spread_missing(cycle, env_status):
     return config.STATE_SPREAD_MISSING
 
   return config.STATE_IDLE
@@ -155,18 +155,35 @@ def _check_hedge_missing(cycle: Cycle) -> bool:
 
   return False
 
-def _check_spread_missing(cycle: Cycle) -> bool:
+def _check_spread_missing(cycle: Cycle, env_status: EnvStatus) -> bool:
+  if _has_traded_today(cycle, env_status):  #only one spread per day
+    return False
+    
   open_spreads = [
     t for t in cycle.trades 
     if t.role == config.ROLE_INCOME and t.status == config.STATUS_OPEN
   ]
-  return len(open_spreads) == 0
+  if len(open_spreads) > 0:
+    return False
 
-'''
-def alert_human(message: str, level: str = config.ALERT_INFO):
-  # TODO: Connect this to email/SMS notification service
-  print(f"ALERT [{level}]: {message}")
-''' 
+  return True
+
+def _has_traded_today(cycle: Cycle, env_status: EnvStatus) -> bool:
+  """Checks if an INCOME trade has already occurred today."""
+  today_date = env_status['today']
+  eastern = pytz.timezone('US/Eastern')
+
+  for t in cycle.trades:
+    if t.role == config.ROLE_INCOME and t.entry_time:
+      t_time = t.entry_time
+      if t_time.tzinfo is None:
+        t_time = pytz.utc.localize(t_time)
+
+      t_date_et = t_time.astimezone(eastern).date()
+
+      if t_date_et == today_date:
+        return True
+  return False
 
 # --- OBJECT RETRIEVAL HELPERS ---
 
@@ -331,22 +348,7 @@ def check_entry_conditions(
     pass
 
   # --- 4. FREQUENCY CHECK (only one spread open per day) ---
-  today_date = env_status['today']
-  eastern = pytz.timezone('US/Eastern')
-  trades_today = []
-  for t in cycle.trades:
-    if t.role == config.ROLE_INCOME and t.entry_time:
-      # Convert stored UTC time to Eastern
-      t_time = t.entry_time
-      if t_time.tzinfo is None:
-        t_time = pytz.utc.localize(t_time)
-
-      t_date_et = t_time.astimezone(eastern).date()
-
-      if t_date_et == today_date:
-        trades_today.append(t)
-  
-  if config.ENFORCE_FREQUENCY_CHECKS and  len(trades_today) > 0:
+  if config.ENFORCE_FREQUENCY_CHECKS and _has_traded_today(cycle, env_status):
     return False, "Daily limit reached (1 spread per day)"
 
   return True, "Entry valid"
