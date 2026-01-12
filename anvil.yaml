@@ -84,13 +84,13 @@ db_schema:
     - admin_ui: {width: 200}
       name: timestamp
       type: datetime
-    - admin_ui: {width: 200}
+    - admin_ui: {order: 1, width: 69}
       name: level
       type: string
-    - admin_ui: {width: 200}
+    - admin_ui: {order: 2, width: 63}
       name: source
       type: string
-    - admin_ui: {width: 200}
+    - admin_ui: {order: 3, width: 498}
       name: message
       type: string
     - admin_ui: {width: 200}
