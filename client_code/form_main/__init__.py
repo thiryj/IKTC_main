@@ -25,6 +25,7 @@ class form_main(form_mainTemplate):
       state = anvil.server.call('get_dashboard_state')
 
       # --- Global Status ---
+      self.label_active_env.text = f"Env: {state['active_env']}"
       self.check_box_automation.checked = state['automation_enabled']
       self.label_market_status.text = f"Market: {state['market_status']}"
 

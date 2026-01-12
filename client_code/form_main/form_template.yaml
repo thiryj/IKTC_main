@@ -7,6 +7,10 @@ components:
       properties: {text: Automation Enabled}
       type: CheckBox
     - layout_properties: {}
+      name: label_active_env
+      properties: {text: 'Env: --'}
+      type: Label
+    - layout_properties: {}
       name: label_market_status
       properties: {text: 'Market: ---'}
       type: Label

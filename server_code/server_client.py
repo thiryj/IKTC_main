@@ -24,6 +24,7 @@ def get_dashboard_state():
 
   # Defaults
   data = {
+    'active_env': config.ACTIVE_ENV,
     'automation_enabled': settings['automation_enabled'] if settings else False,
     'market_status': env_status.get('status', 'CLOSED'),
     'market_time': env_status.get('now'),
