@@ -153,8 +153,8 @@ def record_new_trade(
     pnl=0.0,
 
     # Strategy Logic: Set targets based on role
-    target_harvest_price=fill_price * rules['profit_target_pct'] if role == config.ROLE_INCOME else None,
-    roll_trigger_price=fill_price * rules['roll_trigger_mult'] if role == config.ROLE_INCOME else None,
+    target_harvest_price=_fmt(fill_price * rules['profit_target_pct']) if role == config.ROLE_INCOME else None,
+    roll_trigger_price=_fmt(fill_price * rules['roll_trigger_mult']) if role == config.ROLE_INCOME else None,
 
     # Calculate capital required (Width * 100 * Qty)
     capital_required=(

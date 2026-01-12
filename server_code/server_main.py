@@ -14,10 +14,11 @@ from . import server_db, server_logging as logger
 @anvil.server.callable
 @anvil.server.background_task
 def run_automation_routine():    
+  '''
   logger.log("Starting Automation Run ...",
     level=config.LOG_INFO,
     source=config.LOG_SOURCE_ORCHESTRATOR)
-  
+  '''
   current_env_account = config.ACTIVE_ENV # e.g., 'PROD' or 'SANDBOX'
   # 1. GLOBAL PRECONDITIONS
   # Check environment status (Market Open/Closed) and kill switch false BEFORE touching DB

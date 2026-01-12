@@ -152,7 +152,7 @@ def get_market_data_snapshot(cycle) -> Dict:
       snapshot['price'] = last
       snapshot['open'] = open_px
       snapshot['previous_close'] = prev_close
-      logger.log(f"Market Data: Last={last} Open={open_px} Prev={prev_close}", level=config.LOG_INFO, source=config.LOG_SOURCE_API)
+      #logger.log(f"Market Data: Last={last} Open={open_px} Prev={prev_close}", level=config.LOG_INFO, source=config.LOG_SOURCE_API)
   except Exception as e:
     logger.log(f"Error fetching underlying: {e}", level=config.LOG_WARNING, source=config.LOG_SOURCE_API)
     
@@ -167,7 +167,14 @@ def get_market_data_snapshot(cycle) -> Dict:
       h_quote = _get_quote_direct(t, symbol)
 
       if h_quote:
-        snapshot['hedge_last'] = float(h_quote.get('last') or 0)
+        # SMART PRICING: Use Midpoint for illiquid LEAPS, fallback to Last
+        bid = float(h_quote.get('bid') or 0)
+        ask = float(h_quote.get('ask') or 0)
+        last = float(h_quote.get('last') or 0)
+        if bid > 0 and ask > 0:
+          snapshot['hedge_last'] = (bid + ask) / 2.0
+        else:
+          snapshot['hedge_last'] = last
 
         # Extract Delta
         greeks = h_quote.get('greeks', {})
