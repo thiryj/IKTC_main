@@ -38,14 +38,9 @@ class form_main(form_mainTemplate):
         #self.label_market_status.foreground = "gray"
         self.label_market_status.border = "1px solid grey"
         
-      current_state = state.get('decision_state', 'UNKNOWN')
-      self.label_decision_state.text = f"Status: {current_state}"
-      if current_state == 'IDLE':
-        #self.label_decision_state.foreground = "green"
-        self.label_decision_state.border = "1px solid black"
-      else:
-        self.label_decision_state.border = "1px solid orange"
-        #self.label_decision_state.foreground = "orange" # or orange/red based on severity
+      self.label_decision_state.border = "1px solid black"
+      self.label_decision_state.text = state['bot_status_text']
+      self.label_decision_state.foreground = state['bot_status_color']
 
       # PnL
       pnl = state['net_daily_pnl']
@@ -75,7 +70,9 @@ class form_main(form_mainTemplate):
 
     except Exception as e:
       print(f"UI Refresh Error: {e}")
-      #Notification("Lost connection to server", style="warning").show()
+      self.label_decision_state.text = "CONNECTION LOST"
+      self.label_decision_state.foreground = "red"
+      #Notification("Lost connection to server", style="warning", timeout=2).show()
 
   def refresh_logs(self):
     """Refreshes the log grid."""

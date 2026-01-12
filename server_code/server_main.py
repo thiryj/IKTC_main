@@ -32,7 +32,7 @@ def run_automation_routine():
   # This check is now purely for "Is the Market Open?" / "Is Bot Enabled globally?"
   if not server_libs.can_run_automation(env_status, system_settings):
     logger.log(f"Automation skipped. Market: {env_status.get('status_message')}", 
-               level=config.LOG_INFO, 
+               level=config.LOG_DEBUG, 
                source=config.LOG_SOURCE_ORCHESTRATOR)
     return
     

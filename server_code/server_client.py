@@ -24,11 +24,14 @@ def _is_today(dt_val, today_date):
 def get_dashboard_state():
   """Fetches all data required to render the Dashboard UI"""
   # 1. Global Settings & Env
-  settings = app_tables.settings.get()
+  settings_row = app_tables.settings.get()
+  settings = dict(settings_row) if settings_row else {}
   env_status = server_api.get_environment_status()
 
   # 2. Active Cycle
   cycle = server_db.get_active_cycle(config.ACTIVE_ENV)
+  market_data = server_api.get_market_data_snapshot(cycle)
+  status_meta = _get_bot_status_metadata(settings, env_status, cycle, market_data)
 
   # Defaults
   data = {
@@ -38,6 +41,9 @@ def get_dashboard_state():
     'market_time': env_status.get('now'),
     'cycle_active': False,
     'net_daily_pnl': 0.0,
+    # Status
+    'bot_status_text': status_meta['text'],
+    'bot_status_color': status_meta['color'],
     # Components
     'hedge': {'active': False, 'status_color': 'gray', 'symbol': 'No Hedge', 'details': '-'},
     'spread': {'active': False, 'status_color': 'gray', 'symbol': 'No Spread', 'details': '-'},
@@ -54,12 +60,9 @@ def get_dashboard_state():
   # 3. Hydrate Cycle Data
   data['cycle_active'] = True
   data['cycle_id'] = cycle.id
-
-  # Fetch Live Data (Price & Greeks)
-  # We use the existing snapshot logic to avoid code duplication
-  market_data = server_api.get_market_data_snapshot(cycle)
-  current_state = server_libs.determine_cycle_state(cycle, market_data, env_status)
-  data['decision_state'] = current_state
+  
+  #current_state = server_libs.determine_cycle_state(cycle, market_data, env_status)
+  #data['decision_state'] = current_state
 
   # --- HEDGE COMPONENT ---
   hedge = cycle.hedge_trade_link
@@ -68,13 +71,10 @@ def get_dashboard_state():
     # PnL Calc
     current_price = market_data.get('hedge_last', 0.0)
     ref_price = cycle.daily_hedge_ref or 0.0
-    # If ref is 0, use entry price as fallback
     if ref_price == 0: ref_price = hedge.entry_price or 0.0
 
     hedge_pnl_day = (current_price - ref_price) * config.DEFAULT_MULTIPLIER * hedge.quantity
 
-    # Health Check (Logic from server_libs)
-    # Check maintenance flags (Delta/DTE)
     needs_maint = server_libs._check_hedge_maintenance(cycle, market_data)
 
     status_color = "green"
@@ -152,7 +152,6 @@ def get_dashboard_state():
     }
 
   # --- CLOSED SPREAD ---
-  today_date = env_status['today']
   closed_today = [
     t for t in cycle.trades 
     if t.role == config.ROLE_INCOME 
@@ -165,12 +164,9 @@ def get_dashboard_state():
     trade_count = len(closed_today)
   
     for t in closed_today:
-      # PnL per share * Qty * Multiplier
       realized_pnl += (t.pnl or 0.0) * config.DEFAULT_MULTIPLIER * t.quantity
   
-      # Formatting
     color = "green" if realized_pnl >= 0 else "red"
-    # e.g., "2x Spreads Closed"
     summary = f"{trade_count}x Spread{'s' if trade_count > 1 else ''} Closed"
   
     data['closed_session'] = {
@@ -208,3 +204,38 @@ def get_log_stream(level_filter=None, limit=50):
     tables.order_by("timestamp", ascending=False),
     environment=config.ACTIVE_ENV
   )
+
+# ---Private helpers ---
+def _get_bot_status_metadata(settings, env_status, cycle, market_data):
+  """Determines the text and color for the main status indicator"""
+  # 1. Check Global Switch
+  if not settings.get('automation_enabled'):
+    return {'text': "DISABLED", 'color': "#FF0000"}
+
+    # 2. Check Market Hours
+  if env_status.get('status') != 'OPEN':
+    return {'text': "SLEEPING (MARKET CLOSED)", 'color': "gray"}
+
+    # 3. Check Cycle Existence
+  if not cycle:
+    return {'text': "NO CYCLE", 'color': "#FFC107"} # Amber
+
+    # 4. Check Logic State
+  current_state = server_libs.determine_cycle_state(cycle, market_data, env_status)
+
+  if current_state == config.STATE_IDLE:
+    if server_libs._has_traded_today(cycle, env_status):
+      return {'text': "DONE FOR DAY", 'color': "#00CC00"} # Bright Green
+    else:
+      return {'text': "WATCHING (IDLE)", 'color': "green"}
+  else:
+    # Active State Coloring
+    text = current_state
+    color = "blue"
+
+    if "PANIC" in current_state or "ROLL" in current_state:
+      color = "#FF0000" # Red (Action)
+    elif "HARVEST" in current_state:
+      color = "#00CC00" # Green (Profit)
+
+    return {'text': text, 'color': color}
