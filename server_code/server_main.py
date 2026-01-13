@@ -272,38 +272,50 @@ def run_automation_routine():
 
     # B. Find Target Date (1-2 DTE)
     valid_dates = server_api.get_expirations()
-    target_date = server_libs.find_closest_expiration(valid_dates, target_dte=1)
-    if not target_date:
-      logger.log("Roll Re-Entry Failed: No valid expiration found.", 
-                 level=config.LOG_WARNING, 
+    retry_offsets = [1, 2, 3] # Tomorrow -> Day After -> T+3 -> Next Week
+    roll_result = None
+    target_date = None
+    chain = []
+    # Identify current short strike for "Down" logic
+    legs = getattr(spread_trade, 'legs', [])
+    current_short = next((l for l in legs if l.side == config.LEG_SIDE_SHORT), None)
+    if not current_short:
+      logger.log("CRITICAL: Could not find short leg on closed trade. Cannot calculate roll.", 
+                 level=config.LOG_CRITICAL, 
                  source=config.LOG_SOURCE_ORCHESTRATOR)
       return
+      
+    for days in retry_offsets:
+      candidate_date = server_libs.find_closest_expiration(valid_dates, target_dte=days)
+      if not candidate_date: continue
+      if candidate_date == target_date: continue 
+      
+      candidate_chain = server_api.get_option_chain(date=candidate_date)
+      if not candidate_chain: continue
 
-    chain = server_api.get_option_chain(date=target_date)
-    if not chain:
-      logger.log("Roll Re-Entry Failed: Chain empty.", 
-                 level=config.LOG_WARNING, 
-                 source=config.LOG_SOURCE_ORCHESTRATOR)
-      return
-
-    # C. Calculate New Legs
-    # We need to cover the 'realized_debit' we just paid
-    current_short = next(l for l in spread_trade.legs if l.side == config.LEG_SIDE_SHORT)
-    if not current_short: 
-      logger.log("Roll Re-Entry Failed: Error retrieving closing short strike. Staying Flat.", 
-                 level=config.LOG_WARNING, 
-                 source=config.LOG_SOURCE_ORCHESTRATOR)
-      return
-    roll_result = server_libs.calculate_roll_legs(
-      chain=chain,
-      current_short_strike=current_short.strike,
-      width=cycle.rules['spread_width'],
-      cost_to_close=realized_debit
-    )
+      result = server_libs.calculate_roll_legs(
+        chain=candidate_chain,
+        current_short_strike=current_short.strike,
+        width=cycle.rules['spread_width'],
+        cost_to_close=realized_debit
+      )
+      if result:
+        # SUCCESS: We found a date and strikes that work!
+        roll_result = result
+        target_date = candidate_date
+        logger.log(f"Found valid Roll at {target_date} (T+{days})", 
+                    level=config.LOG_INFO, 
+                    source=config.LOG_SOURCE_ORCHESTRATOR)
+        break # Stop hunting
+      else:
+        logger.log(f"Date {candidate_date} (T+{days}) too expensive/invalid. Checking next expiry...", 
+                    level=config.LOG_DEBUG, 
+                    source=config.LOG_SOURCE_ORCHESTRATOR)
+        
     if not roll_result:
-      logger.log("Roll Re-Entry Failed: No valid strikes found to cover cost. Staying Flat.", 
-                 level=config.LOG_WARNING, 
-                 source=config.LOG_SOURCE_ORCHESTRATOR)
+      logger.log("Roll Re-Entry Failed: Checked T+1/2/3/7. No valid strikes cover cost. Staying Flat.", 
+                level=config.LOG_WARNING, 
+                source=config.LOG_SOURCE_ORCHESTRATOR)
       return
 
     # --- STEP 3: OPEN ASSET (Limit Order) ---
@@ -336,7 +348,9 @@ def run_automation_routine():
         if current_hedge > 0:
           cycle.daily_hedge_ref = current_hedge
           cycle._row['daily_hedge_ref'] = current_hedge
-          print(f"LOG: Roll Complete. Hedge Reference reset to ${current_hedge:.2f}")
+          logger.log(f"LOG: Roll Complete. Hedge Reference reset to ${current_hedge:.2f}",
+                     level=config.LOG_INFO, 
+                     source=config.LOG_SOURCE_ORCHESTRATOR)
         server_db.record_new_trade(
           cycle_row=cycle_row,
           role=config.ROLE_INCOME,
@@ -506,7 +520,9 @@ def run_automation_routine():
     old_hedge = cycle.hedge_trade_link
 
     # 1. Close Old Hedge
-    print(f"LOG: Closing old hedge {old_hedge.id}...")
+    logger.log(f"LOG: Closing old hedge {old_hedge.id}...",
+               level=config.LOG_INFO, 
+               source=config.LOG_SOURCE_ORCHESTRATOR)
     close_res = server_api.close_position(old_hedge)
     close_order_id = close_res.get('id')
     if close_order_id:
