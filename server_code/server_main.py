@@ -509,7 +509,7 @@ def run_automation_routine():
                        source=config.LOG_SOURCE_ORCHESTRATOR)
     else:
       logger.log(f"Entry Logic Rejected: {reason}", 
-                 level=config.LOG_DEBUG, 
+                 level=config.LOG_INFO, 
                  source=config.LOG_SOURCE_ORCHESTRATOR)
 #---------------------------------------------------#      
   elif decision_state == config.STATE_HEDGE_ADJUSTMENT_NEEDED:

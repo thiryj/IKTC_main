@@ -107,10 +107,13 @@ def _check_roll_needed(cycle: Cycle, market_data: MarketData) -> bool:
   return False
 
 def _check_hedge_maintenance(cycle: Cycle, market_data: MarketData) -> bool:
-  """Rule: If Hedge Delta < 15 or > 40, OR DTE < 60"""
+  """Rule: If Hedge Delta is outside of guardrails, OR DTE < 60"""
   if not cycle.hedge_trade_link:
     return False
-
+    
+  if cycle.hedge_trade_link.status != config.STATUS_OPEN:
+    return False
+    
   # 1. Check Time (DTE)
   current_dte = market_data.get('hedge_dte', 999)
   min_dte = cycle.rules.get('hedge_min_dte', 60)
@@ -387,6 +390,9 @@ def calculate_spread_strikes(
   def get_delta(opt):
     greeks = opt.get('greeks')
     return abs(greeks.get('delta', 0.0)) if greeks else 0.0
+  valid_options = [o for o in side_chain if get_delta(o) > 0.01]
+  if not valid_options:
+    return None # No valid data found in chain
 
   short_leg = min(side_chain, key=lambda x: abs(get_delta(x) - target_delta))
   short_strike = short_leg['strike']
