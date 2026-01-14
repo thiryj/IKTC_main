@@ -52,16 +52,21 @@ def determine_cycle_state(cycle: Cycle, market_data: MarketData, env_status: Env
 
 def _check_panic_harvest(cycle: Cycle, market_data: MarketData) -> bool:
   """Rule: Net Unit PnL (Hedge Gain + Spread PnL) > Panic Threshold"""
-  if not cycle.hedge_trade_link:
+  hedge = cycle.hedge_trade_link
+  
+  if not hedge:
     return False
 
+  if hedge.status != config.STATUS_OPEN:
+    return False
+    
   # 1. Calculate Hedge PnL (Daily Change)
   # Logic: (Current Price - Daily Reference) * Multiplier * Qty
-  hedge_current = market_data.get('hedge_last', 0.0)
   hedge_ref = cycle.daily_hedge_ref or 0.0
   if hedge_ref == 0: 
     return False 
 
+  hedge_current = market_data.get('hedge_last', 0.0)
   hedge_pnl = (hedge_current - hedge_ref) * config.DEFAULT_MULTIPLIER * cycle.hedge_trade_link.quantity
 
   # 2. Calculate Spread PnL (Total Open)
