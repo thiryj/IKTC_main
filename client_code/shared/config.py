@@ -11,7 +11,7 @@ TARGET_UNDERLYING = {
   ENV_SANDBOX: 'SPY'
 }
 
-# Debuggin Flags
+# Debugging Flags
 ENFORCE_TRADING_HOURS = True   #disable to allow after hours automation for testing
 ENFORCE_LATE_OPEN_GUARDRAIL = True
 ENFORCE_ZOMBIE_CHECKS = True
@@ -59,6 +59,7 @@ TRADIER_OPTION_TYPE_CALL = 'call'
 # Misc statics
 MARKET_OPEN_TIME = dt.time(9, 30)
 DEFAULT_MULTIPLIER = 100
+MAX_DELTA_ERROR = 0.05   # short strike of income spread must be target_detla +/- MAX_DELTA_ERROR
 
 ACTIVE_RULESET = 'Standard_0DTE'
 

@@ -390,13 +390,19 @@ def calculate_spread_strikes(
   def get_delta(opt):
     greeks = opt.get('greeks')
     return abs(greeks.get('delta', 0.0)) if greeks else 0.0
+    
   valid_options = [o for o in side_chain if get_delta(o) > 0.01]
-  if not valid_options:
-    return None # No valid data found in chain
+  if not valid_options: return None # No valid data found in chain
 
   short_leg = min(side_chain, key=lambda x: abs(get_delta(x) - target_delta))
+  found_delta = get_delta(short_leg)
+  if abs(found_delta - target_delta) > config.MAX_DELTA_ERROR:
+    logger.log(f"Best strike {short_leg['strike']} (Delta {found_delta}) is too far from target {target_delta}. Skipping.",
+              level=config.LOG_INFO,
+              source=config.LOG_SOURCE_ORCHESTRATOR
+              )    
+    return None
   short_strike = short_leg['strike']
-
   if option_type == config.TRADIER_OPTION_TYPE_PUT:
     long_strike = short_strike - spread_width
   else:

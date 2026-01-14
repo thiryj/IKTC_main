@@ -713,3 +713,57 @@ def seed_spread_for_harvest():
 
   print("Seed Complete.")
 
+
+
+def debug_live_greeks():
+  print(f"--- DIAGNOSTIC: LIVE GREEKS ({config.ACTIVE_ENV}) ---")
+
+  # 1. Get Context
+  # We want today's chain (0DTE)
+  # Note: Use server_api.get_environment_status()['today'] if strictly following bot logic,
+  # but dt.date.today() is fine for a quick console check.
+  target_date = dt.date.today()
+  print(f"Fetching Chain for: {target_date}...")
+
+  chain = server_api.get_option_chain(date=target_date)
+
+  if not chain:
+    print("ERROR: API returned no chain.")
+    return
+
+    # 2. Filter for Puts
+  puts = [o for o in chain if o.get('option_type') == 'put']
+  print(f"Received {len(puts)} Puts.")
+
+  # 3. Sort by Strike (High to Low) for readability
+  puts.sort(key=lambda x: x['strike'], reverse=True)
+
+  print("\n--- STRIKE | DELTA REPORT (0.05 to 0.35 Range) ---")
+
+  found_any = False
+  for p in puts:
+    strike = p.get('strike')
+
+    # Extract Delta safely
+    greeks = p.get('greeks')
+    raw_delta = greeks.get('delta') if greeks else None
+
+    # Only print if it's in the "Zone of Interest"
+    # We handle None/0.0 explicitly to see if data is missing
+    if raw_delta is None:
+      print(f"Strike: {strike} | Delta: NONE (Missing Data)")
+    elif raw_delta == 0:
+      # Uncomment if you want to see the zeros (might be spammy)
+      # print(f"Strike: {strike} | Delta: 0.0")
+      pass
+    else:
+      delta = float(raw_delta)
+      # Filter to relevant range for the strategy
+      if -0.35 <= delta <= -0.05:
+        print(f"Strike: {strike} | Delta: {delta}")
+        found_any = True
+
+  if not found_any:
+    print("No Puts found with Deltas between -0.05 and -0.35.")
+
+debug_live_greeks()
