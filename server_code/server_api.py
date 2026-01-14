@@ -485,24 +485,24 @@ def close_position(trade, order_type: str = 'limit') -> Dict:
 
   else:
     # --- MULTI LEG LOGIC (Spread) ---
-    # Determine pricing direction (Debit/Credit) NOT used for Market orders but good practice
-    order_type = 'debit' if trade.role == config.ROLE_INCOME else 'credit'
-    price_val = trade.target_harvest_price if trade.target_harvest_price is not None else 0.00
-
     payload = {
       'class': 'multileg',
       'symbol': root,
-      'duration': 'day',
-      'type': order_type,
-      'price': f"{price_val:.2f}" 
+      'duration': 'day'
     }
     if order_type == 'market':
       payload['type'] = 'market'
-      if 'price' in payload: del payload['price'] # Market orders have no price
+    else:
+    # Determine pricing direction (Debit/Credit) NOT used for Market orders but good practice
+      side = 'debit' if trade.role == config.ROLE_INCOME else 'credit'
+      payload['type'] = side
+      price_val = trade.target_harvest_price if trade.target_harvest_price is not None else 0.00
+      payload['price'] = f"{price_val:.2f}" 
         
     # Sandbox Stability
     if 'sandbox' in t.endpoint:
       payload['type'] = 'market'
+      if 'price' in payload: del payload['price']
 
     for i, leg in enumerate(legs_list):
       payload[f'option_symbol[{i}]'] = leg['symbol']
