@@ -766,4 +766,3 @@ def debug_live_greeks():
   if not found_any:
     print("No Puts found with Deltas between -0.05 and -0.35.")
 
-debug_live_greeks()

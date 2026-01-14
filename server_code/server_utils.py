@@ -121,10 +121,3 @@ def manual_db_close(trade_row_id_string, exit_price):
     fees=0.0
   )
   print("Success. Trade closed.")
-
-# 1. Get raw positions
-positions = server_api.get_current_positions()
-print(f"Total Positions reported: {len(positions)}")
-
-for p in positions:
-  print(f"Symbol: {p.get('symbol')} | Qty: {p.get('quantity')} | ID: {p.get('id')}")
