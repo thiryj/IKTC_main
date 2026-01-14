@@ -153,6 +153,22 @@ def get_dashboard_state():
       'pnl': spread_pnl_total
     }
 
+    gauge_data = None
+    if active_spreads:
+      trade = active_spreads[0]
+      # We want to visualize the DEBIT (Cost to Close)
+      # Entry (Max Risk) -> Trigger (Panic) -> Entry (Breakeven) -> Target (Win) -> 0 (Max Win)
+
+      gauge_data = {
+        'current': market_data.get('spread_marks', {}).get(trade.id, 0.0),
+        'entry': trade.entry_price or 0.0,
+        'target': trade.target_harvest_price or 0.0,
+        'trigger': trade.roll_trigger_price or (trade.entry_price * 3.0),
+        'max_loss': trade.roll_trigger_price * 1.5 # Just for scaling the chart axis
+      }
+
+    data['spread_gauge'] = gauge_data
+
   # --- CLOSED SPREAD ---
   closed_today = [
     t for t in cycle.trades 
