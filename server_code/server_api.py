@@ -164,8 +164,7 @@ def get_market_data_snapshot(cycle) -> Dict:
       symbol = hedge.legs[0].occ_symbol
       # Using get_option_chain logic for single symbol to ensure we get greeks? 
       # Or just _get_quote_direct? Quotes usually have greeks in Tradier.
-      h_quote = _get_quote_direct(t, symbol)
-
+      h_quote = _get_quote_direct(t, symbol, greeks=True)
       if h_quote:
         # SMART PRICING: Use Midpoint for illiquid LEAPS, fallback to Last
         bid = float(h_quote.get('bid') or 0)
@@ -634,12 +633,10 @@ def _submit_order(t: TradierAPI, payload: Dict) -> Dict:
     logger.log(f"API Execution Error: {e}", level=config.LOG_WARNING, source=config.LOG_SOURCE_API)
     raise e
 
-def _get_quote_direct(t: TradierAPI, symbol: str) -> Optional[Dict]:
-  """
-    Your robust quote fetcher.
-    """
+def _get_quote_direct(t: TradierAPI, symbol: str, greeks: bool=False) -> Optional[Dict]:
+  """Your robust quote fetcher"""
   try:
-    params = {'symbols': symbol, 'greeks': 'false'}
+    params = {'symbols': symbol, 'greeks': str(greeks).lower()}
     resp = t.session.get(f"{t.endpoint}/markets/quotes", params=params, headers={'Accept': 'application/json'})
     data = resp.json()
 

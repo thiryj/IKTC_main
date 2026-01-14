@@ -77,9 +77,11 @@ def get_dashboard_state():
 
     needs_maint = server_libs._check_hedge_maintenance(cycle, market_data)
 
+    current_delta = market_data.get('hedge_delta', 0.0)
+    current_dte = market_data.get('hedge_dte', 0)
     status_color = "green"
     status_text = f"{hedge.quantity}x {hedge.legs[0].occ_symbol if hedge.legs else 'Hedge'}"
-    sub_text = f"Day PnL: ${hedge_pnl_day:+.2f} (Ref: {ref_price:.2f})"
+    sub_text = f"PnL: ${hedge_pnl_day:+.0f} | Delta: {current_delta:.2f} | {current_dte} DTE"
     if needs_maint:
       status_color = "#FFC107" # Amber/Yellow
       status_text += " (Roll Needed)"
@@ -224,6 +226,11 @@ def _get_bot_status_metadata(settings, env_status, cycle, market_data):
   current_state = server_libs.determine_cycle_state(cycle, market_data, env_status)
 
   if current_state == config.STATE_IDLE:
+    open_spreads = [t for t in cycle.trades if t.role == config.ROLE_INCOME and t.status == config.STATUS_OPEN]
+    if open_spreads:
+      return {'text': "MONITORING", 'color': "blue"}
+      
+    # we are flat.  did we already trade (open then close)?
     if server_libs._has_traded_today(cycle, env_status):
       return {'text': "DONE FOR DAY", 'color': "#00CC00"} # Bright Green
     else:
