@@ -379,43 +379,73 @@ def select_hedge_strike(chain: List[Dict], target_delta: float = 0.25) -> Option
 
 def calculate_spread_strikes(
   chain: List[Dict],
-  target_delta: float,
-  spread_width: float,
+  rules: Dict,
   option_type: str = config.TRADIER_OPTION_TYPE_PUT
 ) -> Optional[Tuple[float, float]]:
-
+  """
+  Price-First Selection Algorithm.
+  1. Finds all spreads with valid Width.
+  2. Filters for Credit between Min/Max rules.
+  3. Selects the SAFEST (Lowest Strike) candidate that gets paid.
+  """
   side_chain = [opt for opt in chain if opt['option_type'] == option_type]
   if not side_chain: return None
 
-  def get_delta(opt):
-    greeks = opt.get('greeks')
-    return abs(greeks.get('delta', 0.0)) if greeks else 0.0
-    
-  valid_options = [o for o in side_chain if get_delta(o) > 0.01]
-  if not valid_options: return None # No valid data found in chain
+  # Helper to get price (Midpoint fallback to Last for Sandbox safety)
+  def get_mid(opt):
+    bid = opt.get('bid', 0)
+    ask = opt.get('ask', 0)
+    if bid == 0 and ask == 0:
+      return float(opt.get('last', 0))
+    return (bid + ask) / 2.0
 
-  short_leg = min(side_chain, key=lambda x: abs(get_delta(x) - target_delta))
-  found_delta = get_delta(short_leg)
-  if abs(found_delta - target_delta) > config.MAX_DELTA_ERROR:
-    logger.log(f"Best strike {short_leg['strike']} (Delta {found_delta}) is too far from target {target_delta}. Skipping.",
-              level=config.LOG_INFO,
-              source=config.LOG_SOURCE_ORCHESTRATOR
-              )    
+  spread_width = rules['spread_width']
+  min_credit = rules['spread_min_premium']
+  max_credit = rules['spread_max_premium']
+
+  valid_candidates = []
+  # 1. Scan all potential short legs
+  for short_leg in side_chain:
+    short_strike = short_leg['strike']
+
+    # Find matching Long Leg
+    if option_type == config.TRADIER_OPTION_TYPE_PUT:
+      long_strike = short_strike - spread_width
+    else:
+      long_strike = short_strike + spread_width
+
+      # Exact match check
+    long_leg = next((opt for opt in side_chain if abs(opt['strike'] - long_strike) < 0.01), None)
+
+    if not long_leg: continue
+
+    # 2. Check Price (The "Money Talks" Filter)
+    credit = get_mid(short_leg) - get_mid(long_leg)
+
+    # Does it pay the rent?
+    if min_credit <= credit <= max_credit:
+      valid_candidates.append({
+        'short_strike': short_strike,
+        'long_strike': long_strike,
+        'credit': credit
+      })
+
+  if not valid_candidates:
     return None
-  short_strike = short_leg['strike']
-  if option_type == config.TRADIER_OPTION_TYPE_PUT:
-    long_strike = short_strike - spread_width
-  else:
-    long_strike = short_strike + spread_width
 
-  # Verify exact match for long strike exists
-  long_leg = next((opt for opt in side_chain if opt['strike'] == long_strike), None)
+  # 3. Pick the Winner
+  # Strategy: "Maximize Distance". 
+  # Sort by Short Strike Ascending (Lowest first).
+  # The first item is the furthest OTM strike that meets our income requirement.
+  valid_candidates.sort(key=lambda x: x['short_strike'])
 
-  if long_leg:
-    return short_strike, long_strike
+  best = valid_candidates[0]
 
-  return None
+  # Optional: Log what we picked vs what was available
+  print(f"Selected {best['short_strike']} (${best['credit']:.2f}) from {len(valid_candidates)} candidates.")
 
+  return best['short_strike'], best['long_strike']
+  
 def validate_premium_and_size(
   short_leg: Dict,
   long_leg: Dict,
@@ -482,12 +512,11 @@ def evaluate_entry(
 
   # 3. Strike Selection
   strikes = calculate_spread_strikes(
-      chain,
-      target_delta=rules['spread_target_delta'],
-      spread_width=rules['spread_width']
+    chain,
+    rules=rules 
   )
   if not strikes:
-      return False, {}, "Could not find valid strikes (Check Delta/Width)"
+      return False, {}, "No spreads found that match Target Credit (Min/Max)"
 
   short_strike, long_strike = strikes
 
