@@ -7,6 +7,7 @@ import datetime
 class form_main(form_mainTemplate):
   def __init__(self, **properties):
     self.init_components(**properties)
+    self.REFRESH_RATE_UI = 60
 
     self.check_box_automation.set_event_handler('change', self.check_box_automation_change)
     self.button_refresh_logs.set_event_handler('click', self.button_refresh_logs_click)
@@ -84,10 +85,15 @@ class form_main(form_mainTemplate):
   # --- Event Handlers ---
 
   def check_box_automation_change(self, **event_args):
-    """Toggle the master switch."""
+    """Toggle the master switch and UI timer."""
     new_state = self.check_box_automation.checked
     anvil.server.call('toggle_automation_status', new_state)
-    Notification(f"Automation {'ENABLED' if new_state else 'DISABLED'}").show()
+    #Notification(f"Automation {'ENABLED' if new_state else 'DISABLED'}").show()
+    self.refresh_ui()
+    if new_state:
+      self.timer_refresh.interval = self.REFRESH_RATE_UI # Turn ON
+    else:
+      self.timer_refresh.interval = 0 # Turn OFF
 
   def button_panic_click(self, **event_args):
     """The Big Red Button."""
@@ -109,11 +115,11 @@ class form_main(form_mainTemplate):
         self.button_panic.text = "EMERGENCY CLOSE"
         self.refresh_ui()
 
+  @handle("timer_refresh", "tick")
   def timer_refresh_tick(self, **event_args):
-    """Auto-refresh every 30s"""
+    """Auto-refresh"""
     self.refresh_ui()
-    # Optional: Refresh logs less frequently or on same tick
-    # self.refresh_logs()
+    self.refresh_logs()
 
   def button_refresh_logs_click(self, **event_args):
     """This method is called when the button is clicked"""

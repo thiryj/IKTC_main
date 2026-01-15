@@ -52,19 +52,26 @@ def determine_cycle_state(cycle: Cycle, market_data: MarketData, env_status: Env
 
 def _check_panic_harvest(cycle: Cycle, market_data: MarketData) -> bool:
   """Rule: Net Unit PnL (Hedge Gain + Spread PnL) > Panic Threshold"""
-  hedge = cycle.hedge_trade_link
+  hedge = cycle.hedge_trade_link 
+  if not hedge or hedge.status != config.STATUS_OPEN: return False
   
-  if not hedge:
-    return False
-
-  if hedge.status != config.STATUS_OPEN:
-    return False
-    
   # 1. Calculate Hedge PnL (Daily Change)
   # Logic: (Current Price - Daily Reference) * Multiplier * Qty
   hedge_ref = cycle.daily_hedge_ref or 0.0
-  if hedge_ref == 0: 
-    return False 
+  if hedge_ref == 0: return False 
+
+  # Guardrail: Only trigger Panic Harvest if the market is actually under stress.
+  # If market is Green or Flat, we let the Standard Harvest logic handle profits.
+  current_price = market_data.get('price', 0.0)
+  open_price = market_data.get('open', 0.0)
+  if open_price > 0:
+    required_drop = cycle.rules.get('panic_min_drop_pct', 0.01) 
+    change_pct = (current_price - open_price) / open_price
+    # Note: We check if change is GREATER than negative drop (i.e., not negative enough)
+    # e.g., Change -0.1% vs Required -0.3%.  -0.001 > -0.003 -> True -> Return False
+    if change_pct > -required_drop:
+      # Market is not down enough to justify killing the hedge
+      return False
 
   hedge_current = market_data.get('hedge_last', 0.0)
   hedge_pnl = (hedge_current - hedge_ref) * config.DEFAULT_MULTIPLIER * cycle.hedge_trade_link.quantity

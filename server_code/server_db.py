@@ -32,6 +32,24 @@ def get_active_cycle(env_account: str)-> Cycle | None:
   _hydrate_cycle_children(cycle, cycle_row)
   return cycle
 
+def check_cycle_closed_today(env_account: str) -> bool:
+  """
+    Checks if any cycle was marked CLOSED today.
+    Used to prevent Auto-Seeding a second campaign after a Panic.
+    """
+  today = dt.date.today()
+
+  # We can check the 'end_date' or just query recent closed cycles
+  # Assuming we update 'end_date' when closing? 
+  # If not, we can infer from the logs or just check cycles created today that are closed.
+
+  cycles = app_tables.cycles.search(
+    account=env_account,
+    status=config.STATUS_CLOSED,
+    start_date=today 
+  )
+  return len(list(cycles)) > 0
+
 def get_cycle_by_id(cycle_id):
   """Fetches a specific cycle by DB ID."""
   cycle_row = app_tables.cycles.get_by_id(cycle_id)

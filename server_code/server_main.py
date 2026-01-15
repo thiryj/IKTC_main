@@ -39,15 +39,22 @@ def run_automation_routine():
   # 2. LOAD CONTEXT (or auto seed)
   cycle = server_db.get_active_cycle(current_env_account)
   if not cycle:
+    if server_db.check_cycle_closed_today(config.ACTIVE_ENV):
+      logger.log("System Idle - Cycle closed today (Panic/Manual). Waiting for tomorrow.", 
+                 level=config.LOG_DEBUG, 
+                 source=config.LOG_SOURCE_ORCHESTRATOR)
+      return
     logger.log("System Idle - No Active Cycle found. Seeding empty cycle...", 
-               level=config.LOG_WARNING, 
-               source=config.LOG_SOURCE_ORCHESTRATOR)
+                level=config.LOG_WARNING, 
+                source=config.LOG_SOURCE_ORCHESTRATOR)
+    
     rules = app_tables.rule_sets.get(name=config.ACTIVE_RULESET)
     if not rules:
       logger.log(f"CRITICAL ERROR: RuleSet '{config.ACTIVE_RULESET}' not found. Cannot auto-seed.", 
-                 level=config.LOG_CRITICAL, 
-                 source=config.LOG_SOURCE_ORCHESTRATOR)
+                level=config.LOG_CRITICAL, 
+                source=config.LOG_SOURCE_ORCHESTRATOR)
       return
+
     symbol = config.TARGET_UNDERLYING[current_env_account]
 
     app_tables.cycles.add_row(

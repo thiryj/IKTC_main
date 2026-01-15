@@ -27,6 +27,11 @@ components:
     name: flow_panel_1
     properties: {}
     type: FlowPanel
+  - event_bindings: {}
+    layout_properties: {grid_position: 'BPXJSH,CIENSR'}
+    name: timer_refresh
+    properties: {interval: 60}
+    type: Timer
   - components:
     - layout_properties: {}
       name: label_pnl_day

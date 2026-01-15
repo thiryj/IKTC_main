@@ -167,6 +167,9 @@ db_schema:
     - admin_ui: {order: 20, width: 200}
       name: max_entry_time
       type: string
+    - admin_ui: {order: 21, width: 200}
+      name: panic_min_drop_pct
+      type: number
     server: full
     title: rule_sets
   settings:
