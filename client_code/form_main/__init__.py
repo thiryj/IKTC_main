@@ -17,6 +17,9 @@ class form_main(form_mainTemplate):
     self.refresh_ui()
     self.refresh_logs()
 
+    # Initialize timer state
+    self.timer_refresh.interval = self.REFRESH_RATE_UI if self.check_box_automation.checked else 0
+
   def refresh_ui(self, **event_args):
     """
     Called by Timer Tick and Init. 
@@ -86,14 +89,16 @@ class form_main(form_mainTemplate):
 
   def check_box_automation_change(self, **event_args):
     """Toggle the master switch and UI timer."""
-    new_state = self.check_box_automation.checked
-    anvil.server.call('toggle_automation_status', new_state)
-    #Notification(f"Automation {'ENABLED' if new_state else 'DISABLED'}").show()
+    automation_enabled = self.check_box_automation.checked
+    anvil.server.call('toggle_automation_status', automation_enabled)
+    #Notification(f"Automation {'ENABLED' if automation_enabled else 'DISABLED'}").show()
     self.refresh_ui()
-    if new_state:
+    if automation_enabled:
       self.timer_refresh.interval = self.REFRESH_RATE_UI # Turn ON
+      self.button_refresh_ui.border = '1px solid green'
     else:
       self.timer_refresh.interval = 0 # Turn OFF
+      self.button_refresh_ui.border = None
 
   def button_panic_click(self, **event_args):
     """The Big Red Button."""
