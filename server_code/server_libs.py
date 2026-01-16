@@ -397,26 +397,35 @@ def calculate_spread_strikes(
   """
   side_chain = [opt for opt in chain if opt['option_type'] == option_type]
   if not side_chain: return None
-
+  
   # Helper to get price (Midpoint fallback to Last for Sandbox safety)
   def get_prices(opt):
     bid = float(opt.get('bid', 0) or 0)
     ask = float(opt.get('ask', 0) or 0)
-    last = float(opt.get('last', 0) or 0)
-    return bid, ask, last
+    return bid, ask
+
+  def to_nickel(val):
+    """Rounds to nearest 0.05"""
+    return round(val * 20) / 20.0
 
   spread_width = rules['spread_width']
   min_credit = rules['spread_min_premium']
   max_credit = rules['spread_max_premium']
 
   valid_candidates = []
+  # DEBUG COUNTERS
+  reject_liquidity = 0
+  reject_price_low = 0
+  reject_price_high = 0
   # 1. Scan all potential short legs
   for short_leg in side_chain:
-    s_bid, s_ask, s_last = get_prices(short_leg)
+    s_bid, s_ask = get_prices(short_leg)
     if s_bid == 0 or s_ask == 0: continue
 
     # SPX rule of thumb: If bid/ask spread > 1.50, it's not a real quote
-    if (s_ask - s_bid) > config.MAX_BID_ASK_SPREAD: continue
+    if (s_ask - s_bid) > config.MAX_BID_ASK_SPREAD: 
+      reject_liquidity += 1
+      continue
 
     short_strike = short_leg['strike']
 
@@ -431,26 +440,36 @@ def calculate_spread_strikes(
     if not long_leg: continue
 
     # 2. Check Price (The "Money Talks" Filter)
-    l_bid, l_ask, l_last = get_prices(long_leg)
+    l_bid, l_ask = get_prices(long_leg)
     if l_bid == 0 or l_ask == 0: continue
-    if (l_ask - l_bid) > config.MAX_BID_ASK_SPREAD: continue
+    if (l_ask - l_bid) > config.MAX_BID_ASK_SPREAD: 
+      reject_liquidity += 1
+      continue
     
     # 2. Midpoint Calc
     s_mid = (s_bid + s_ask) / 2.0
     l_mid = (l_bid + l_ask) / 2.0
-
-    mid_credit = s_mid - l_mid
+    raw_credit = s_mid - l_mid
+    credit = to_nickel(raw_credit)
 
     # Does it pay the rent?
-    if min_credit <= mid_credit <= max_credit:
+    if credit < min_credit:
+      reject_price_low += 1
+    elif credit > max_credit:
+      reject_price_high += 1
+    else:
       valid_candidates.append({
         'short_strike': short_strike,
         'long_strike': long_strike,
-        'credit': mid_credit,
-        'debug_data': f"Short({short_strike}):{s_bid}/{s_ask} Long({long_strike}):{l_bid}/{l_ask} Mid Price:{mid_credit:.2f}"
+        'credit': credit
       })
 
   if not valid_candidates:
+    # DEBUG PRINT
+    print(f"DEBUG REJECT: Scanned {len(side_chain)} legs.")
+    print(f"   Rejected Liquidity (>1.50 wide): {reject_liquidity}")
+    print(f"   Rejected Low Price (<{min_credit}): {reject_price_low}")
+    print(f"   Rejected High Price (>{max_credit}): {reject_price_high}")
     return None
 
   # 3. Pick the Winner
@@ -458,13 +477,9 @@ def calculate_spread_strikes(
   # Sort by Short Strike Ascending (Lowest first).
   # The first item is the furthest OTM strike that meets our income requirement.
   valid_candidates.sort(key=lambda x: x['short_strike'])
+  print(f'valid_candidates: {valid_candidates}')
 
   best = valid_candidates[0]
-
-  # Optional: Log what we picked vs what was available
-  print(f"DEBUG MATH: Selected {best['short_strike']}/{best['long_strike']}")
-  print(f"   Target Mid Credit: {best['credit']:.2f}")
-  print(f"   Underlying Data: {best['debug_data']}")
 
   return best['short_strike'], best['long_strike']
   
@@ -491,7 +506,8 @@ def validate_premium_and_size(
   #net_credit = s_mid - l_mid
   s_mid = (s_bid + s_ask) / 2.0
   l_mid = (l_bid + l_ask) / 2.0
-  mid_credit = s_mid - l_mid
+  raw_credit = s_mid - l_mid
+  mid_credit = round(raw_credit * 20) / 20
 
   if mid_credit < rules['spread_min_premium']:
     return False, mid_credit, f"Credit {mid_credit:.2f} below min {rules['spread_min_premium']}"
