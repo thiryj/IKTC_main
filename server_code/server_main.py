@@ -152,8 +152,10 @@ def run_automation_routine():
           continue # Best effort: Try closing other liabilities
 
         # Poll for fill
-        is_filled, fill_px = server_api.wait_for_order_fill(order_id, timeout_seconds=5)
-        if not is_filled:
+        status, fill_px = server_api.wait_for_order_fill(order_id, timeout_seconds=5)
+        if status == 'filled':
+          pass
+        else:
           logger.log(f"Close Order {order_id} did not fill. Aborting Sequence.", 
                      level=config.LOG_CRITICAL, 
                      source=config.LOG_SOURCE_ORCHESTRATOR)
@@ -189,8 +191,8 @@ def run_automation_routine():
           order_res = server_api.close_position(trade, order_type='market')
           order_id = order_res.get('id')
           if order_id:
-            is_filled, fill_px = server_api.wait_for_order_fill(order_id, timeout_seconds=5)
-            if is_filled:
+            status, fill_px = server_api.wait_for_order_fill(order_id, timeout_seconds=5)
+            if status == 'filled':
               final_price = fill_px if fill_px > 0 else float(order_res['price'])
               server_db.close_trade(
                 trade_row=trade._row,
@@ -198,8 +200,12 @@ def run_automation_routine():
                 fill_time=order_res['time'],
                 order_id=order_res['id']
               )
-            else:
+            elif status == 'timeout':
               logger.log(f"Hedge Close {order_id} timed out. Manual check required.", 
+                         level=config.LOG_CRITICAL, 
+                         source=config.LOG_SOURCE_ORCHESTRATOR)
+            else:
+              logger.log(f"Hedge Close {order_id} has status {status}. Manual check required.", 
                          level=config.LOG_CRITICAL, 
                          source=config.LOG_SOURCE_ORCHESTRATOR)
           else:
@@ -247,9 +253,9 @@ def run_automation_routine():
       return
 
     # Poll for Fill (Aggressive Wait)
-    is_closed, close_px = server_api.wait_for_order_fill(close_order_id, timeout_seconds=10)
-    if not is_closed:
-      logger.log("Roll Aborted - Close Order timed out/failed.", 
+    status, close_px = server_api.wait_for_order_fill(close_order_id, timeout_seconds=10)
+    if status != 'filled':
+      logger.log(f"Roll Aborted - Close Order {status}.", 
                  level=config.LOG_CRITICAL, 
                  source=config.LOG_SOURCE_ORCHESTRATOR)
       # Note: Position is likely stuck in 'pending' state. Bot will retry next loop.
@@ -347,8 +353,8 @@ def run_automation_routine():
       logger.log(f"Waiting for Re-Entry fill ({config.ORDER_TIMEOUT_SECONDS}s)...", 
                  level=config.LOG_INFO, 
                  source=config.LOG_SOURCE_ORCHESTRATOR)
-      is_opened, open_px = server_api.wait_for_order_fill(open_order_id, config.ORDER_TIMEOUT_SECONDS)
-      if is_opened:
+      status, open_px = server_api.wait_for_order_fill(open_order_id, config.ORDER_TIMEOUT_SECONDS)
+      if status == 'filled':
         final_credit = open_px if open_px > 0 else roll_result['new_credit']
         # Reset daily_hedge_ref
         current_hedge = market_data.get('hedge_last', 0.0)
@@ -369,8 +375,12 @@ def run_automation_routine():
         logger.log("Roll Re-Entry Successful.", 
                    level=config.LOG_INFO, 
                    source=config.LOG_SOURCE_ORCHESTRATOR)
-      else:
+      elif status == 'timeout':
         logger.log("Re-Entry timed out. Canceling...", 
+                   level=config.LOG_WARNING, 
+                   source=config.LOG_SOURCE_ORCHESTRATOR)
+      else:
+        logger.log(f"Roll Re-Entry failed ({status}). Staying Flat.", 
                    level=config.LOG_WARNING, 
                    source=config.LOG_SOURCE_ORCHESTRATOR)
         
@@ -397,8 +407,8 @@ def run_automation_routine():
       order_res = server_api.close_position(spread_trade)    
       order_id = order_res.get('id')
       if order_id:
-        is_filled, fill_px = server_api.wait_for_order_fill(order_id, config.ORDER_TIMEOUT_SECONDS)
-        if is_filled:
+        status, fill_px = server_api.wait_for_order_fill(order_id, config.ORDER_TIMEOUT_SECONDS)
+        if status == 'filled':
           final_price = fill_px if fill_px > 0 else float(order_res['price'])
           server_db.close_trade(
             trade_row=spread_trade._row,
@@ -409,7 +419,7 @@ def run_automation_routine():
           logger.log("Trade closed and DB updated.", 
                     level=config.LOG_INFO, 
                     source=config.LOG_SOURCE_ORCHESTRATOR)
-        else:
+      elif status == 'timeout':
           logger.log("Harvest timed out. Canceling...", 
                      level=config.LOG_WARNING, 
                      source=config.LOG_SOURCE_ORCHESTRATOR)
@@ -421,6 +431,10 @@ def run_automation_routine():
             logger.log(f"CRITICAL: Failed to cancel stuck Harvest Order {order_id}!", 
                        level=config.LOG_CRITICAL, 
                        source=config.LOG_SOURCE_ORCHESTRATOR)
+      else:
+        logger.log(f"Harvest order failed ({status}).", 
+                   level=config.LOG_WARNING, 
+                   source=config.LOG_SOURCE_ORCHESTRATOR)
 #---------------------------------------------------#
   elif decision_state == config.STATE_HEDGE_MISSING:
     logger.log("Hedge missing. Attempting to buy protection...", 
@@ -481,8 +495,8 @@ def run_automation_routine():
                    source=config.LOG_SOURCE_ORCHESTRATOR)
       else:
         # 2. SYNCHRONOUS WAIT (The IOC Simulation)
-        is_filled, fill_px = server_api.wait_for_order_fill(order_id, config.ORDER_TIMEOUT_SECONDS)
-        if is_filled:
+        status, fill_px = server_api.wait_for_order_fill(order_id, config.ORDER_TIMEOUT_SECONDS)
+        if status == 'filled':
           final_price = fill_px if fill_px > 0 else float(order_res['price'])
           current_hedge = market_data.get('hedge_last', 0.0)
           if current_hedge > 0:
@@ -501,7 +515,7 @@ def run_automation_routine():
                      level=config.LOG_INFO, 
                      source=config.LOG_SOURCE_ORCHESTRATOR)
 
-        else:
+        elif status == 'timeout':
           # 3B. TIMEOUT: Cancel and Abort
           logger.log("Open spread entry timed out. Canceling order...", 
                      level=config.LOG_WARNING, 
@@ -514,6 +528,11 @@ def run_automation_routine():
             logger.log(f"CRITICAL: Failed to cancel stuck Entry Order {order_id}!", 
                        level=config.LOG_CRITICAL, 
                        source=config.LOG_SOURCE_ORCHESTRATOR)
+        else:
+          # Canceled/Rejected by Broker
+          logger.log(f"Entry order failed ({status}). Logic aborting.", 
+                     level=config.LOG_WARNING, 
+                     source=config.LOG_SOURCE_ORCHESTRATOR)
     else:
       logger.log(f"Entry Logic Rejected: {reason}", 
                  level=config.LOG_INFO, 
@@ -533,8 +552,8 @@ def run_automation_routine():
     close_res = server_api.close_position(old_hedge)
     close_order_id = close_res.get('id')
     if close_order_id:
-      is_closed, close_px = server_api.wait_for_order_fill(close_order_id, timeout_seconds=10)
-      if is_closed:
+      status, close_px = server_api.wait_for_order_fill(close_order_id, timeout_seconds=10)
+      if status == 'filled':
         realized_debit = close_px if close_px > 0 else float(close_res['price'])
         server_db.close_trade(
           trade_row=old_hedge._row,
@@ -546,7 +565,7 @@ def run_automation_routine():
                    level=config.LOG_INFO, 
                    source=config.LOG_SOURCE_ORCHESTRATOR)
       else:
-        logger.log("Hedge Close timed out. Aborting Roll.", 
+        logger.log(f"Hedge Close failed with status {status}. Aborting Roll.", 
                    level=config.LOG_CRITICAL, 
                    source=config.LOG_SOURCE_ORCHESTRATOR)
         # We abort here because if we can't close the old one, we shouldn't buy a new one 
@@ -609,9 +628,9 @@ def _execute_hedge_entry(cycle, leg_to_buy) -> bool:
     return False
 
     # 2. Verify Fill
-  is_filled, fill_px = server_api.wait_for_order_fill(order_id, timeout_seconds=10)
+  status, fill_px = server_api.wait_for_order_fill(order_id, timeout_seconds=10)
 
-  if is_filled:
+  if status == 'filled':
     final_price = fill_px if fill_px > 0 else float(buy_res['price'])
     # 3. Record
     trade_data = {
@@ -640,7 +659,7 @@ def _execute_hedge_entry(cycle, leg_to_buy) -> bool:
 
   else:
     # 5. Fail/Cancel
-    logger.log("Hedge Market Order timed out/stuck. Canceling...", 
+    logger.log(f"Hedge Market Order timed out/stuck with status {status}. Canceling...", 
                level=config.LOG_CRITICAL, 
                source=config.LOG_SOURCE_ORCHESTRATOR)
     server_api.cancel_order(order_id)

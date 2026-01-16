@@ -23,7 +23,7 @@ ENFORCE_FREQUENCY_CHECKS = True
 MAX_SPREAD_TO_HEDGE_RATIO = 6
 
 # Order Execution Limits
-ORDER_TIMEOUT_SECONDS = 15
+ORDER_TIMEOUT_SECONDS = 30
 
 # Cycle Status
 STATUS_NEW = 'NEW'
@@ -60,6 +60,7 @@ TRADIER_OPTION_TYPE_CALL = 'call'
 MARKET_OPEN_TIME = dt.time(9, 30)
 DEFAULT_MULTIPLIER = 100
 MAX_DELTA_ERROR = 0.05   # short strike of income spread must be target_detla +/- MAX_DELTA_ERROR
+MAX_BID_ASK_SPREAD = 1.5
 
 ACTIVE_RULESET = 'Standard_0DTE'
 

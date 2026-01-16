@@ -247,6 +247,11 @@ def get_option_chain(date: dt.date, symbol: str = None) -> List[Dict]:
     for opt in options_list:
       try:
         # Basic validation (Price > 0, Strike Exists)
+
+        # only trade SPXW, not SPX
+        root = opt.get('root_symbol')
+        if symbol == 'SPX' and root != 'SPXW':
+          continue 
         if not opt.get('strike') or not opt.get('bid'): 
           continue
 
@@ -513,15 +518,13 @@ def close_position(trade, order_type: str = 'limit') -> Dict:
   result = _submit_order(t, payload)
   return result
 
-def wait_for_order_fill(order_id: str, timeout_seconds: int = 10) -> Tuple[bool, float]:
+def wait_for_order_fill(order_id: str, timeout_seconds: int = 10) -> Tuple[str, float]:
   """
     Polls Tradier for specific order ID until it is 'filled' or timeout occurs.
-    Returns [True if filled, False if pending/rejected/canceled/timeout, ave fill price.
+    Returns (status_string, avg_fill_price).
+    status_string values: 'filled', 'canceled', 'rejected', 'expired', 'timeout'
     """
   t = _get_client()
-  # --- SANDBOX BYPASS ---
-  # On weekends or in unstable Sandbox modes, orders never fill.
-  # We simulate a fill so we can test the Orchestrator's sequential logic.
   '''
   if 'sandbox' in t.endpoint:
     logger.log(f"API (Sandbox): Simulating instant fill for {order_id} to unblock logic.", 
@@ -540,20 +543,20 @@ def wait_for_order_fill(order_id: str, timeout_seconds: int = 10) -> Tuple[bool,
         data = resp.json()
         # Tradier structure: {'order': {'status': 'filled', ...}}
         order_data = data.get('order', {})
+        reason = order_data.get('reason_description', 'No reason provided')
         status = order_data.get('status')
-
         if status == 'filled':
           fill_price = float(order_data.get('avg_fill_price') or 0.0)
           logger.log(f"Order {order_id} FILLED at ${fill_price}", 
                      level=config.LOG_INFO, 
                      source=config.LOG_SOURCE_API)
-          return True, fill_price
+          return 'filled', fill_price
 
         if status in ['canceled', 'rejected', 'expired']:
-          logger.log(f"Order {order_id} failed with status: {status}", 
+          logger.log(f"Order {order_id} died: {status.upper()} - {reason}", 
                      level=config.LOG_WARNING, 
                      source=config.LOG_SOURCE_API)
-          return False, 0.0
+          return status, 0.0
 
           # If 'open' or 'pending', wait and retry
       time.sleep(1.0)

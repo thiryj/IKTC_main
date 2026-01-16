@@ -399,12 +399,11 @@ def calculate_spread_strikes(
   if not side_chain: return None
 
   # Helper to get price (Midpoint fallback to Last for Sandbox safety)
-  def get_mid(opt):
-    bid = opt.get('bid', 0)
-    ask = opt.get('ask', 0)
-    if bid == 0 and ask == 0:
-      return float(opt.get('last', 0))
-    return (bid + ask) / 2.0
+  def get_prices(opt):
+    bid = float(opt.get('bid', 0) or 0)
+    ask = float(opt.get('ask', 0) or 0)
+    last = float(opt.get('last', 0) or 0)
+    return bid, ask, last
 
   spread_width = rules['spread_width']
   min_credit = rules['spread_min_premium']
@@ -413,6 +412,12 @@ def calculate_spread_strikes(
   valid_candidates = []
   # 1. Scan all potential short legs
   for short_leg in side_chain:
+    s_bid, s_ask, s_last = get_prices(short_leg)
+    if s_bid == 0 or s_ask == 0: continue
+
+    # SPX rule of thumb: If bid/ask spread > 1.50, it's not a real quote
+    if (s_ask - s_bid) > config.MAX_BID_ASK_SPREAD: continue
+
     short_strike = short_leg['strike']
 
     # Find matching Long Leg
@@ -423,18 +428,26 @@ def calculate_spread_strikes(
 
       # Exact match check
     long_leg = next((opt for opt in side_chain if abs(opt['strike'] - long_strike) < 0.01), None)
-
     if not long_leg: continue
 
     # 2. Check Price (The "Money Talks" Filter)
-    credit = get_mid(short_leg) - get_mid(long_leg)
+    l_bid, l_ask, l_last = get_prices(long_leg)
+    if l_bid == 0 or l_ask == 0: continue
+    if (l_ask - l_bid) > config.MAX_BID_ASK_SPREAD: continue
+    
+    # 2. Midpoint Calc
+    s_mid = (s_bid + s_ask) / 2.0
+    l_mid = (l_bid + l_ask) / 2.0
+
+    mid_credit = s_mid - l_mid
 
     # Does it pay the rent?
-    if min_credit <= credit <= max_credit:
+    if min_credit <= mid_credit <= max_credit:
       valid_candidates.append({
         'short_strike': short_strike,
         'long_strike': long_strike,
-        'credit': credit
+        'credit': mid_credit,
+        'debug_data': f"Short({short_strike}):{s_bid}/{s_ask} Long({long_strike}):{l_bid}/{l_ask} Mid Price:{mid_credit:.2f}"
       })
 
   if not valid_candidates:
@@ -449,7 +462,9 @@ def calculate_spread_strikes(
   best = valid_candidates[0]
 
   # Optional: Log what we picked vs what was available
-  print(f"Selected {best['short_strike']} (${best['credit']:.2f}) from {len(valid_candidates)} candidates.")
+  print(f"DEBUG MATH: Selected {best['short_strike']}/{best['long_strike']}")
+  print(f"   Target Mid Credit: {best['credit']:.2f}")
+  print(f"   Underlying Data: {best['debug_data']}")
 
   return best['short_strike'], best['long_strike']
   
@@ -459,22 +474,32 @@ def validate_premium_and_size(
   rules: RuleSetDict
 ) -> Tuple[bool, float, str]:
 
-  # Logic: Calculate Credit using Mids (Fallback to Last if 0)
-  s_mid = (short_leg.get('bid',0) + short_leg.get('ask',0)) / 2.0
-  l_mid = (long_leg.get('bid',0) + long_leg.get('ask',0)) / 2.0
+  # FIX: Remove 'last' fallback. Use 0.0 if bid/ask missing.
+  s_bid = float(short_leg.get('bid', 0) or 0)
+  s_ask = float(short_leg.get('ask', 0) or 0)
 
-  if s_mid == 0: s_mid = float(short_leg.get('last', 0))
-  if l_mid == 0: l_mid = float(long_leg.get('last', 0))
+  l_bid = float(long_leg.get('bid', 0) or 0)
+  l_ask = float(long_leg.get('ask', 0) or 0)
 
-  net_credit = s_mid - l_mid
+  # Safety check
+  if s_bid == 0 or l_ask == 0:
+    return False, 0.0, "Illiquid strikes (Bid/Ask missing)"
 
-  if net_credit < rules['spread_min_premium']:
-    return False, net_credit, f"Credit {net_credit:.2f} below min {rules['spread_min_premium']}"
+  #s_mid = (s_bid + s_ask) / 2.0
+  #l_mid = (l_bid + l_ask) / 2.0
 
-  if net_credit > rules['spread_max_premium']:
-    return False, net_credit, f"Credit {net_credit:.2f} exceeds max {rules['spread_max_premium']}"
+  #net_credit = s_mid - l_mid
+  s_mid = (s_bid + s_ask) / 2.0
+  l_mid = (l_bid + l_ask) / 2.0
+  mid_credit = s_mid - l_mid
 
-  return True, net_credit, "Premium Valid"
+  if mid_credit < rules['spread_min_premium']:
+    return False, mid_credit, f"Credit {mid_credit:.2f} below min {rules['spread_min_premium']}"
+
+  if mid_credit > rules['spread_max_premium']:
+    return False, mid_credit, f"Credit {mid_credit:.2f} exceeds max {rules['spread_max_premium']}"
+
+  return True, mid_credit, "Premium Valid"
 
 def get_spread_quantity(
   hedge_quantity: int,
