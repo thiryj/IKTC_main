@@ -25,40 +25,30 @@ class Cycle:
     self.trades = []
     self.hedge_trade_link = None 
 
-  @property
-  def rules(self) -> dict:
-    """
-    Returns the Effective Rules as a dictionary.
-    Automatically handles scaling for SPY (1/10th) vs SPX.
-    """
-    if not self.rule_set:
-      return {}
-  
-    # Convert anvil Row to mutable dict
-    r = dict(self.rule_set._row)
-  
-    # Sandbox/SPY Scaling Logic
+    self._effective_rules = self._calculate_effective_rules(row['rule_set'])
+
+  def _calculate_effective_rules(self, rules_row):
+    if not rules_row: return {}
+
+    r = dict(rules_row) # Create the mutable dict once
+
+    # Only perform scaling if we are in the Sandbox/SPY environment
     if self.underlying == config.TARGET_UNDERLYING[config.ENV_SANDBOX]:
-  
-      # List of keys that need to be divided by 10 for SPY
-      scale_keys = [
-        'spread_width', 
-        'spread_min_premium', 
-        'spread_max_premium', 
-        'roll_max_debit', 
-        'panic_threshold_dpu',
-        'spread_size_factor'
-      ]
-  
+      scale_keys = ['spread_width', 'spread_min_premium', 'spread_max_premium', 
+                    'roll_max_debit', 'panic_threshold_dpu', 'spread_size_factor']
       for k in scale_keys:
         if r.get(k) is not None:
-          val = r[k] / 10.0
           if k == 'spread_width':
-            r[k] = round(val)
+            r[k] = round(r[k] / 10.0)
           else:
-            r[k] = val
-      r['spread_min_premium'] = 0.0
+            r[k] = r[k] / 10.0
+      r['spread_min_premium'] = 0.0 # Standard sandbox behavior
+
     return r
+
+  @property
+  def rules(self) -> dict:
+    return self._effective_rules
 
 class Trade:
   def __init__(self, row):

@@ -422,8 +422,9 @@ def calculate_spread_strikes(
     s_bid, s_ask = get_prices(short_leg)
     if s_bid == 0 or s_ask == 0: continue
 
-    # SPX rule of thumb: If bid/ask spread > 1.50, it's not a real quote
-    if (s_ask - s_bid) > config.MAX_BID_ASK_SPREAD: 
+    # SPX rule of thumb: If bid/ask spread > 0.75, it's not a real quote
+    liquidity_threshold = rules.get('max_bid_ask_spread', config.MAX_BID_ASK_SPREAD)
+    if (s_ask - s_bid) > liquidity_threshold: 
       reject_liquidity += 1
       continue
 
@@ -442,7 +443,7 @@ def calculate_spread_strikes(
     # 2. Check Price (The "Money Talks" Filter)
     l_bid, l_ask = get_prices(long_leg)
     if l_bid == 0 or l_ask == 0: continue
-    if (l_ask - l_bid) > config.MAX_BID_ASK_SPREAD: 
+    if (l_ask - l_bid) > liquidity_threshold: 
       reject_liquidity += 1
       continue
     
@@ -477,7 +478,6 @@ def calculate_spread_strikes(
   # Sort by Short Strike Ascending (Lowest first).
   # The first item is the furthest OTM strike that meets our income requirement.
   valid_candidates.sort(key=lambda x: x['short_strike'])
-  print(f'valid_candidates: {valid_candidates}')
 
   best = valid_candidates[0]
 

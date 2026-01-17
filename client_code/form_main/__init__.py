@@ -3,11 +3,12 @@ from anvil import *
 import plotly.graph_objects as go
 import anvil.server
 import datetime
+from ..shared import config
 
 class form_main(form_mainTemplate):
   def __init__(self, **properties):
     self.init_components(**properties)
-    self.REFRESH_RATE_UI = 60
+    self.REFRESH_RATE_UI = config.UI_REFRESH_SECONDS
 
     self.check_box_automation.set_event_handler('change', self.check_box_automation_change)
     self.button_refresh_logs.set_event_handler('click', self.button_refresh_logs_click)
@@ -28,6 +29,12 @@ class form_main(form_mainTemplate):
     try:
       # Call the read-only view function
       state = anvil.server.call('get_dashboard_state')
+      if state.get('bot_is_stale') and state['automation_enabled']:
+        self.label_decision_state.text = "BOT OFFLINE (STALE)"
+        self.label_decision_state.foreground = "orange"
+      else:
+        self.label_decision_state.text = state['bot_status_text']
+        self.label_decision_state.foreground = state['bot_status_color']
 
       # --- Global Status ---
       self.label_active_env.text = f"Env: {state['active_env']}"
@@ -49,6 +56,8 @@ class form_main(form_mainTemplate):
 
       # PnL
       pnl = state['net_daily_pnl']
+      if pnl is None:
+        pnl = 0.0
       self.label_pnl_day.text = f"Day PnL: ${pnl:,.2f}"
       self.label_pnl_day.foreground = "green" if pnl >= 0 else "red"
 
@@ -143,13 +152,18 @@ class form_main(form_mainTemplate):
 
     if not gauge_data: return
 
-    current = gauge_data['current']
-    entry = gauge_data['entry']
-    target = gauge_data['target']
-    trigger = gauge_data['trigger']
+    try:
+      current = float(gauge_data.get('current', 0) or 0)
+      entry = float(gauge_data.get('entry', 0) or 0)
+      target = float(gauge_data.get('target', 0) or 0)
+      trigger = float(gauge_data.get('trigger', 0) or 0)
+    except (TypeError, ValueError):
+      self.plot_spread_gauge.visible = False
+      return
+
 
     # Define Scale Max (give some headroom above trigger)
-    max_val = max(trigger * 1.15, current * 1.1)
+    max_val = max(trigger * 1.15, current * 1.1, 1.0)
 
     fig = go.Figure(go.Indicator(
       mode = "number+gauge+delta",

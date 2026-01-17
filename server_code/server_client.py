@@ -27,14 +27,24 @@ def get_dashboard_state():
   settings_row = app_tables.settings.get()
   settings = dict(settings_row) if settings_row else {}
   env_status = server_api.get_environment_status()
-
+  
   # 2. Active Cycle
   cycle = server_db.get_active_cycle(config.ACTIVE_ENV)
   market_data = server_api.get_market_data_snapshot(cycle)
   status_meta = _get_bot_status_metadata(settings, env_status, cycle, market_data)
 
+  last_hb = settings['last_bot_heartbeat']
+  is_stale = False
+  if last_hb and settings['automation_enabled']:
+    # Ensure we are comparing UTC to UTC if needed, 
+    # but usually, dt.datetime.now() on server matches DB
+    diff = (dt.datetime.now() - last_hb).total_seconds()
+    is_stale = diff > config.UI_REFRESH_SECONDS * 2 # 5 minutes
+
   # Defaults
   data = {
+    'last_heartbeat': last_hb,
+    'bot_is_stale': is_stale,
     'active_env': config.ACTIVE_ENV,
     'automation_enabled': settings['automation_enabled'] if settings else False,
     'market_status': env_status.get('status', 'CLOSED'),
@@ -61,9 +71,6 @@ def get_dashboard_state():
   data['cycle_active'] = True
   data['cycle_id'] = cycle.id
   
-  #current_state = server_libs.determine_cycle_state(cycle, market_data, env_status)
-  #data['decision_state'] = current_state
-
   # --- HEDGE COMPONENT ---
   hedge = cycle.hedge_trade_link
   hedge_pnl_day = 0.0
@@ -152,21 +159,27 @@ def get_dashboard_state():
       'details': spread_details,
       'pnl': spread_pnl_total
     }
-
+    def safe_float(val, default=0.0) -> float:
+      try:
+        if val is None: return default
+        return float(val)
+      except (ValueError, TypeError):
+        return default
+        
     gauge_data = None
     if active_spreads:
       trade = active_spreads[0]
       # We want to visualize the DEBIT (Cost to Close)
       # Entry (Max Risk) -> Trigger (Panic) -> Entry (Breakeven) -> Target (Win) -> 0 (Max Win)
-
+      entry_px = trade.entry_price if trade.entry_price is not None else 0.0
       gauge_data = {
-        'current': market_data.get('spread_marks', {}).get(trade.id, 0.0),
-        'entry': trade.entry_price or 0.0,
-        'target': trade.target_harvest_price or 0.0,
-        'trigger': trade.roll_trigger_price or (trade.entry_price * 3.0),
+        'current': safe_float(market_data.get('spread_marks', {}).get(trade.id, 0.0)),
+        'entry': entry_px,
+        'target': trade.target_harvest_price if trade.target_harvest_price is not None else (entry_px * 0.5),
+        'trigger': trade.roll_trigger_price if trade.roll_trigger_price is not None else (entry_px * 3.0),
         'max_loss': trade.roll_trigger_price * 1.5 # Just for scaling the chart axis
       }
-
+      if gauge_data['trigger'] == 0: gauge_data['trigger'] = 1.0
     data['spread_gauge'] = gauge_data
 
   # --- CLOSED SPREAD ---
@@ -195,7 +208,7 @@ def get_dashboard_state():
     }
   
   # --- AGGREGATE ---
-  data['net_daily_pnl'] = hedge_pnl_day + spread_pnl_total
+  data['net_daily_pnl'] = round(hedge_pnl_day + spread_pnl_total,2)
 
   return data
 

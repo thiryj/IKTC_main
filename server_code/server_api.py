@@ -138,9 +138,75 @@ def get_market_data_snapshot(cycle) -> Dict:
     'hedge_delta': 0.0,
     'hedge_dte': 0
   }
+  # 1. Collect all symbols needed
+  symbols = [cycle.underlying]
 
+  hedge = getattr(cycle, 'hedge_trade_link', None)
+  if hedge and hedge.legs:
+    symbols.append(hedge.legs[0].occ_symbol)
+  income_trades = [t for t in cycle.trades if t.role == config.ROLE_INCOME and t.status == config.STATUS_OPEN]
+  for trade in income_trades:
+    for leg in trade.legs:
+      symbols.append(leg.occ_symbol)
+
+  # 2. Single Multi-Quote Call
+  symbol_str = ",".join(list(set(symbols))) # Deduplicate
+  params = {'symbols': symbol_str, 'greeks': 'true'}
+  resp = t.session.get(f"{t.endpoint}/markets/quotes", params=params, headers={'Accept': 'application/json'})
+
+  # 3. Map Results
+  raw_quotes = resp.json().get('quotes', {}).get('quote', [])
+  if isinstance(raw_quotes, dict): raw_quotes = [raw_quotes]
+
+  quote_map = {q['symbol']: q for q in raw_quotes}
+
+  def safe_float(val, default=0.0) -> float:
+    try:
+      if val is None: return default
+      return float(val)
+    except (ValueError, TypeError):
+      return default
+
+  # 4. Extract Underlying
+  u_q = quote_map.get(cycle.underlying)
+  if u_q:
+    last_px = u_q.get('last') or 0
+    open_px = u_q.get('open') or last_px or 0
+    prev_close_px = u_q.get('prevclose') or last_px or 0
+    snapshot['price'] = float(last_px)
+    snapshot['open'] = float(open_px)
+    snapshot['previous_close'] = float(prev_close_px)
+
+  # 5. Extract Hedge
+  if hedge and hedge.legs:
+    h_q = quote_map.get(hedge.legs[0].occ_symbol)
+    if h_q:
+      snapshot['hedge_last'] = (safe_float(h_q.get('bid')) + safe_float(h_q.get('ask'))) / 2.0 or safe_float(h_q.get('last'))
+      greeks = h_q.get('greeks')
+      if isinstance(greeks, dict):
+        snapshot['hedge_delta'] = safe_float(greeks.get('delta'))
+      else:
+        snapshot['hedge_delta'] = 0.0
+      # Extract DTE
+      # 'expiration_date': '2026-01-04'
+      exp_str = h_q.get('expiration_date')
+      if exp_str:
+        exp_date = dt.datetime.strptime(exp_str, "%Y-%m-%d").date()
+        snapshot['hedge_dte'] = (exp_date - dt.date.today()).days
+
+  # 6. Extract Spreads
+  for trade in income_trades:
+    short_leg = next((l for l in trade.legs if l.side == config.LEG_SIDE_SHORT), None)
+    long_leg = next((l for l in trade.legs if l.side == config.LEG_SIDE_LONG), None)
+    if short_leg and long_leg:
+      s_q = quote_map.get(short_leg.occ_symbol)
+      l_q = quote_map.get(long_leg.occ_symbol)
+      if s_q and l_q:
+        snapshot['spread_marks'][trade.id] = float(s_q.get('ask', 0)) - float(l_q.get('bid', 0))
+
+  return snapshot
+  '''
   # 1. Fetch Underlying Quote
-  # ... (Keep existing Underlying Logic) ...
   try:
     quote = _get_quote_direct(t, cycle.underlying)
     if quote:
@@ -212,6 +278,7 @@ def get_market_data_snapshot(cycle) -> Dict:
         pass
 
   return snapshot
+  '''      
   
 def get_option_chain(date: dt.date, symbol: str = None) -> List[Dict]:
   """
@@ -599,6 +666,17 @@ def _submit_order(t: TradierAPI, payload: Dict) -> Dict:
     Raw POST to /accounts/{id}/orders
     Returns normalized execution report.
     """
+  if config.DRY_RUN:
+    logger.log(f"DRY RUN: Order Suppressed -> {payload}", 
+               level=config.LOG_WARNING, 
+               source=config.LOG_SOURCE_API)
+    return {
+      'id': f"DRY_{dt.datetime.now().strftime('%H%M%S')}",
+      'status': 'filled',
+      'price': float(payload.get('price', 0) or 0),
+      'time': dt.datetime.now()
+    }
+    
   url = f"{t.endpoint}/accounts/{t.default_account_id}/orders"
 
   try:

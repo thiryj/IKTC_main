@@ -4,6 +4,7 @@ import datetime as dt
 ENV_SANDBOX = 'SANDBOX'
 ENV_PROD = 'PROD'
 IS_PROD = True  # Master - bot level environment selector.  True = PROD, False = SANDBOX
+DRY_RUN = True
 
 ACTIVE_ENV = ENV_PROD if IS_PROD else ENV_SANDBOX
 TARGET_UNDERLYING = {
@@ -61,6 +62,7 @@ MARKET_OPEN_TIME = dt.time(9, 30)
 DEFAULT_MULTIPLIER = 100
 MAX_DELTA_ERROR = 0.05   # short strike of income spread must be target_detla +/- MAX_DELTA_ERROR
 MAX_BID_ASK_SPREAD = .75
+UI_REFRESH_SECONDS = 60
 
 ACTIVE_RULESET = 'Standard_0DTE'
 
@@ -93,8 +95,6 @@ LEVEL_DB = LOG_INFO          # Record events, warnings, errors (Skip debug noise
 LEVEL_ALERT = LOG_CRITICAL   # Only wake human for disasters
 LOG_START_TIME = dt.time(9, 0)  # 9:00 AM ET
 LOG_STOP_TIME = dt.time(17, 0)  # 5:00 PM ET
-LOG_EMAIL = 'REDACTED_EMAIL'
-
 
 MARKET_HOLIDAYS = [
   dt.date(2026, 1, 1),   # New Year's

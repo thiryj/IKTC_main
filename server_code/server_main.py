@@ -19,16 +19,18 @@ def run_automation_routine():
     level=config.LOG_INFO,
     source=config.LOG_SOURCE_ORCHESTRATOR)
   '''
+  settings_row = app_tables.settings.get() 
+  if settings_row:
+    settings_row['last_bot_heartbeat'] = dt.datetime.now()
+    system_settings = dict(settings_row)
+  else:
+    system_settings = {}
+    
   current_env_account = config.ACTIVE_ENV # e.g., 'PROD' or 'SANDBOX'
   # 1. GLOBAL PRECONDITIONS
   # Check environment status (Market Open/Closed) and kill switch false BEFORE touching DB
   env_status = server_api.get_environment_status()
 
-  # Fetch global settings (Singleton row)
-  # Assuming 'settings' table has exactly one row
-  settings_row = app_tables.settings.get() 
-  system_settings = dict(settings_row) if settings_row else {}
-  
   # This check is now purely for "Is the Market Open?" / "Is Bot Enabled globally?"
   if not server_libs.can_run_automation(env_status, system_settings):
     logger.log(f"Automation skipped. Market: {env_status.get('status_message')}", 

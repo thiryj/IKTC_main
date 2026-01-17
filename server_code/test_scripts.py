@@ -9,9 +9,64 @@ from shared import config
 from . import server_libs
 from . import server_api
 from . import server_main
+from . import server_db
 
 #from . server_client import start_new_cycle, get_campaign_dashboard, run_auto, close_campaign_manual
 from anvil.tables import app_tables
+
+@anvil.server.callable
+def diagnostic_preflight() -> str:
+  print("--- DIAGNOSTIC: PRE-FLIGHT CHECK ---")
+
+  # 1. Test Heartbeat Update
+  s = app_tables.settings.get()
+  s['last_bot_heartbeat'] = dt.datetime.now()
+  print(f"Heartbeat updated to: {s['last_bot_heartbeat']}")
+
+  # 2. Test Scaling Logic
+  cycle = server_db.get_active_cycle(config.ACTIVE_ENV)
+  if cycle:
+    print(f"Active Env: {config.ACTIVE_ENV} | Underlying: {cycle.underlying}")
+
+    # Access the rules property (which we optimized to a cached dict)
+    rules = cycle.rules 
+    width = rules.get('spread_width')
+
+    db_rules = app_tables.rule_sets.get(name=config.ACTIVE_RULESET)
+    print(f"Logic Check: DB Width={db_rules['spread_width']} -> Effective Width={width}")
+
+    if cycle.underlying == 'SPY' and width != round(db_rules['spread_width'] / 10):
+      print("FAILURE: Scaling not applied correctly to SPY.")
+    else:
+      print("SUCCESS: Scaling logic verified.")
+  else:
+    print("NOTICE: No active cycle found to test scaling.")
+
+  return "Pre-flight complete. Check Server Console."
+
+@anvil.server.callable
+def diagnostic_batch_api() -> dict:
+  cycle = server_db.get_active_cycle(config.ACTIVE_ENV)
+  if not cycle: 
+    return {"error": "No active cycle"}
+
+  start_time = dt.datetime.now()
+  snapshot = server_api.get_market_data_snapshot(cycle)
+  end_time = dt.datetime.now()
+
+  duration = (end_time - start_time).total_seconds()
+
+  print(f"--- BATCH API TEST ---")
+  print(f"Duration: {duration:.2f} seconds")
+  print(f"Underlying: {snapshot.get('price')}")
+  print(f"Hedge Last: {snapshot.get('hedge_last')}")
+  print(f"Spread Marks: {snapshot.get('spread_marks')}")
+
+  return {
+    "duration": duration,
+    "underlying": snapshot.get('price'),
+    "marks_count": len(snapshot.get('spread_marks', {}))
+  }
 '''
 class TestScanner(unittest.TestCase):
 

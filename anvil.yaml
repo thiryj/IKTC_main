@@ -164,11 +164,14 @@ db_schema:
     - admin_ui: {width: 162}
       name: panic_threshold_dpu
       type: number
-    - admin_ui: {order: 20, width: 200}
+    - admin_ui: {order: 20, width: 131}
       name: max_entry_time
       type: string
-    - admin_ui: {order: 21, width: 200}
+    - admin_ui: {order: 21, width: 162}
       name: panic_min_drop_pct
+      type: number
+    - admin_ui: {order: 22, width: 200}
+      name: max_bid_ask_spread
       type: number
     server: full
     title: rule_sets
@@ -184,6 +187,9 @@ db_schema:
     - admin_ui: {width: 158}
       name: automation_enabled
       type: bool
+    - admin_ui: {order: 11, width: 200}
+      name: last_bot_heartbeat
+      type: datetime
     server: full
     title: settings
   trades:
