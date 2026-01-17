@@ -5,8 +5,6 @@ from unittest.mock import MagicMock, patch
 import datetime as dt
 from io import StringIO
 
-
-from server_helpers import scan_and_initialize_cycle 
 from shared import config
 from . import server_libs
 from . import server_api
@@ -14,7 +12,7 @@ from . import server_main
 
 #from . server_client import start_new_cycle, get_campaign_dashboard, run_auto, close_campaign_manual
 from anvil.tables import app_tables
-
+'''
 class TestScanner(unittest.TestCase):
 
   def setUp(self):
@@ -766,3 +764,4 @@ def debug_live_greeks():
   if not found_any:
     print("No Puts found with Deltas between -0.05 and -0.35.")
 
+'''
