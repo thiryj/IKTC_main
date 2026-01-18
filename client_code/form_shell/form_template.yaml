@@ -1,0 +1,32 @@
+components:
+- layout_properties: {slot: default}
+  name: content_panel
+  properties: {}
+  type: ColumnPanel
+- layout_properties: {slot: nav-right}
+  name: navbar_links
+  properties: {}
+  type: FlowPanel
+- components:
+  - event_bindings: {}
+    layout_properties: {grid_position: 'LXOFQW,CHYNXF'}
+    name: link_main
+    properties: {text: Main}
+    type: Link
+  - event_bindings: {}
+    layout_properties: {grid_position: 'VLXDRH,NJEYDI'}
+    name: link_crud
+    properties: {text: CRUD}
+    type: Link
+  layout_properties: {slot: left-nav}
+  name: column_panel_sidebar
+  properties: {}
+  type: ColumnPanel
+- layout_properties: {slot: title}
+  name: label_title
+  properties: {text: Iron Keep Trading Company}
+  type: Label
+container:
+  properties: {html: '@theme:standard-page.html'}
+  type: HtmlTemplate
+is_package: true

@@ -13,11 +13,16 @@ class form_trade_editor(form_trade_editorTemplate):
     self.refresh_data()
 
   def refresh_data(self):
+    print('in trade editor refresh')
     self.repeating_panel_trades.items = anvil.server.call('get_all_trades_for_editor')
+    #print(f'trades items: {self.repeating_panel_trades.items}')
 
   def button_delete_click(self, **event_args):
     # 'item' is the dictionary for the specific row
     trade = event_args['sender'].item
     if confirm(f"Delete {trade['role']} trade? This cannot be undone."):
-      anvil.server.call('crud_delete_trade', trade['id'])
-      self.refresh_data()
+      success = anvil.server.call('crud_delete_trade', trade['id'])
+      if success:
+        self.refresh_data()
+      else:
+        alert("Delete failed")

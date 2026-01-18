@@ -1,3 +1,36 @@
-components: []
+components:
+- layout_properties: {column: JKSDUP}
+  name: label_role
+  properties: {}
+  type: Label
+- layout_properties: {column: VJQQOR}
+  name: label_qty
+  properties: {}
+  type: Label
+- layout_properties: {column: OJLQEN}
+  name: label_px
+  properties: {}
+  type: Label
+- layout_properties: {column: UMMVHE}
+  name: label_time
+  properties: {}
+  type: Label
+- layout_properties: {column: SLFRSW}
+  name: label_harvest
+  properties: {}
+  type: Label
+- layout_properties: {column: HCNTOB}
+  name: label_trigger
+  properties: {}
+  type: Label
+- layout_properties: {column: CWKVBC}
+  name: label_pnl
+  properties: {}
+  type: Label
+- event_bindings: {}
+  layout_properties: {column: WXIIXN}
+  name: button_delete
+  properties: {text: Delete}
+  type: Button
 container: {type: DataRowPanel}
 is_package: true

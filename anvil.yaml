@@ -325,5 +325,5 @@ services:
 - client_config: {}
   server_config: {}
   source: /runtime/services/anvil/email.yml
-startup: {module: form_main, type: form}
+startup: {module: form_shell, type: form}
 startup_form: null

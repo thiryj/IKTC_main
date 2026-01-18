@@ -275,3 +275,28 @@ def _get_bot_status_metadata(settings, env_status, cycle, market_data):
       color = "#00CC00" # Green (Profit)
 
     return {'text': text, 'color': color}
+
+@anvil.server.callable
+def get_trades_crud_list() -> list:
+  """Returns a list of dictionaries for the CRUD data grid."""
+  cycle = server_db.get_active_cycle(config.ACTIVE_ENV)
+  if not cycle: return []
+
+  # Return data formatted for the UI
+  return [
+    {
+      'id': t.id,
+      'role': t.role,
+      'status': t.status,
+      'qty': t.quantity,
+      'entry': t.entry_price,
+      'harvest': t.target_harvest_price or 0.0,
+      'trigger': t.roll_trigger_price or 0.0,
+      'symbol': t.legs[0].occ_symbol if t.legs else "No Legs"
+    } for t in cycle.trades
+  ]
+
+@anvil.server.callable
+def delete_trade_manual(trade_id: str) -> bool:
+  """Manual surgery to remove a trade."""
+  return server_db.crud_delete_trade(trade_id)
