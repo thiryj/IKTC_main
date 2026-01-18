@@ -1,0 +1,19 @@
+components:
+- components:
+  - name: repeating_panel_trades
+    properties: {item_template: form_trade_editor.RowTemplate1}
+    type: RepeatingPanel
+  layout_properties: {grid_position: 'FNMVYQ,ZCTGAK'}
+  name: data_grid_1
+  properties:
+    columns:
+    - {data_key: column_1, id: JKSDUP, title: Role}
+    - {data_key: column_2, id: VJQQOR, title: Qty}
+    - {data_key: column_3, id: OJLQEN, title: Entry Px}
+    - {data_key: column_1, id: HFJTQL, title: Harvest}
+    - {data_key: column_3, id: UGZRNO, title: Entry Time}
+    - {data_key: column_2, id: RUACIU, title: Trigger}
+    - {data_key: column_4, id: DAXTWE, title: Column 4}
+  type: DataGrid
+container: {type: ColumnPanel}
+is_package: true

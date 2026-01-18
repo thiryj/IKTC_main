@@ -37,8 +37,8 @@ def get_dashboard_state():
   is_stale = False
   if last_hb and settings['automation_enabled']:
     # Ensure we are comparing UTC to UTC if needed, 
-    # but usually, dt.datetime.now() on server matches DB
-    diff = (dt.datetime.now() - last_hb).total_seconds()
+    now_aware = dt.datetime.now(dt.timezone.utc) 
+    diff = (now_aware - last_hb).total_seconds()
     is_stale = diff > config.UI_REFRESH_SECONDS * 2 # 5 minutes
 
   # Defaults

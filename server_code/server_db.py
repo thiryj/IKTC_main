@@ -354,3 +354,61 @@ def _hydrate_cycle_children(cycle, cycle_row):
     # Schema: 'hedge_trade' (column in cycles table)
     if cycle_row['hedge_trade'] and t_row.get_id() == cycle_row['hedge_trade'].get_id():
       cycle.hedge_trade_link = trade_obj
+
+# ------CRUD-----------------#
+@anvil.server.callable
+def get_all_trades_for_editor() -> list:
+  """Fetches all trades for the currently active environment for the CRUD grid."""
+  cycle = get_active_cycle(config.ACTIVE_ENV)
+  if not cycle: return []
+
+  # Return as list of dicts for easy Anvil Data Grid binding
+  trades = []
+  for t in cycle.trades:
+    trades.append({
+      'id': t.id,
+      'role': t.role,
+      'status': t.status,
+      'qty': t.quantity,
+      'entry_px': t.entry_price,
+      'entry_time': t.entry_time,
+      'capital_required': t.capital_required,
+      'target_harvest': t.target_harvest_price,
+      'roll_trigger': t.roll_trigger_price,
+      'pnl': t.pnl
+    })
+  return trades
+
+@anvil.server.callable
+@anvil.tables.in_transaction
+def crud_add_manual_trade(cycle_id: str, role: str, qty: int, entry_px: float) -> bool:
+  """Manual entry for when you trade outside the bot."""
+  cycle_row = app_tables.cycles.get_by_id(cycle_id)
+  if not cycle_row: return False
+
+  app_tables.trades.add_row(
+    cycle=cycle_row,
+    role=role,
+    status=config.STATUS_OPEN,
+    quantity=qty,
+    entry_price=entry_px,
+    entry_time=dt.datetime.now(),
+    pnl=0.0
+  )
+  return True
+
+@anvil.server.callable
+@anvil.tables.in_transaction
+def crud_delete_trade(trade_id: str) -> bool:
+  """Cascade delete trade and children."""
+  row = app_tables.trades.get_by_id(trade_id)
+  if row:
+    # Delete related legs
+    for leg in app_tables.legs.search(trade=row):
+      leg.delete()
+      # Delete related transactions
+    for txn in app_tables.transactions.search(trade=row):
+      txn.delete()
+    row.delete()
+    return True
+  return False
