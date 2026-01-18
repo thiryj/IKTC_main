@@ -11,10 +11,7 @@ components:
     - {data_key: column_2, id: VJQQOR, title: Qty}
     - {data_key: column_3, id: OJLQEN, title: Entry Px}
     - {data_key: column_1, id: UMMVHE, title: Entry Time}
-    - {data_key: column_2, id: SLFRSW, title: Harvest}
-    - {data_key: column_3, id: HCNTOB, title: Trigger}
-    - {data_key: column_4, id: CWKVBC, title: PnL}
-    - {data_key: column_1, id: WXIIXN, title: Delete}
+    - {data_key: column_1, id: WXIIXN, title: Edit}
   type: DataGrid
 container: {type: ColumnPanel}
 is_package: true

@@ -412,3 +412,39 @@ def crud_delete_trade(trade_id: str) -> bool:
     row.delete()
     return True
   return False
+
+# In server_db.py
+
+@anvil.server.callable
+@anvil.tables.in_transaction
+def crud_settle_trade_manual(trade_id: str, exit_px: float) -> bool:
+  """Manually closes a trade in the DB to sync with external broker actions"""
+  trade_row = app_tables.trades.get_by_id(trade_id)
+  if not trade_row:
+    return False
+
+    # Reuse your existing robust logic that handles:
+    # 1. Transactions 2. Leg Deactivation 3. PnL Calc 4. Trade Status
+  close_trade(
+    trade_row=trade_row,
+    fill_price=float(exit_px),
+    fill_time=dt.datetime.now(dt.timezone.utc),
+    order_id="MANUAL_EXTERNAL_SYNC"
+  )
+
+  logger.log(f"Manual Sync: Trade {trade_id} closed at ${exit_px}", 
+             level=config.LOG_INFO, 
+             source=config.LOG_SOURCE_DB)
+  return True
+
+@anvil.server.callable
+@anvil.tables.in_transaction
+def crud_update_trade_fields(trade_id: str, updates: dict) -> bool:
+  row = app_tables.trades.get_by_id(trade_id)
+  if not row: return False
+
+    # Only allow specific fields to be edited to prevent corruption
+  for key in ['quantity', 'notes', 'roll_trigger_price', 'target_harvest_price']:
+    if key in updates:
+      row[key] = updates[key]
+  return True

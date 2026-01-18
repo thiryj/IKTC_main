@@ -3,7 +3,7 @@ import datetime as dt
 # Environment section: PROD or SANDBOX
 ENV_SANDBOX = 'SANDBOX'
 ENV_PROD = 'PROD'
-IS_PROD = True  # Master - bot level environment selector.  True = PROD, False = SANDBOX
+IS_PROD = False  # Master - bot level environment selector.  True = PROD, False = SANDBOX
 DRY_RUN = True
 
 ACTIVE_ENV = ENV_PROD if IS_PROD else ENV_SANDBOX

@@ -15,22 +15,10 @@ components:
   name: label_time
   properties: {}
   type: Label
-- layout_properties: {column: SLFRSW}
-  name: label_harvest
-  properties: {}
-  type: Label
-- layout_properties: {column: HCNTOB}
-  name: label_trigger
-  properties: {}
-  type: Label
-- layout_properties: {column: CWKVBC}
-  name: label_pnl
-  properties: {}
-  type: Label
 - event_bindings: {}
   layout_properties: {column: WXIIXN}
-  name: button_delete
-  properties: {text: Delete}
+  name: button_edit
+  properties: {role: tonal-button, text: Edit}
   type: Button
 container: {type: DataRowPanel}
 is_package: true
