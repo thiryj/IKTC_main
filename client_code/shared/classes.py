@@ -66,6 +66,7 @@ class Trade:
     self.entry_time = row['entry_time'] # Renamed
     self.exit_time = row['exit_time']   # Renamed
     self.order_id_external = row['order_id_external']
+    self.notes = row['notes']
 
   @property
   def cycle(self):

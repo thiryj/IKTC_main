@@ -358,93 +358,81 @@ def _hydrate_cycle_children(cycle, cycle_row):
 # ------CRUD-----------------#
 @anvil.server.callable
 def get_all_trades_for_editor() -> list:
-  """Fetches all trades for the currently active environment for the CRUD grid."""
   cycle = get_active_cycle(config.ACTIVE_ENV)
   if not cycle: return []
 
-  # Return as list of dicts for easy Anvil Data Grid binding
-  trades = []
+  trades_list = []
   for t in cycle.trades:
-    trades.append({
+    # Resolve display symbol
+    display_symbol = cycle.underlying
+    if t.legs:
+      short_leg = next((l for l in t.legs if l.side == config.LEG_SIDE_SHORT), t.legs[0])
+      display_symbol = short_leg.occ_symbol
+
+    trades_list.append({
       'id': t.id,
       'role': t.role,
-      'status': t.status,
-      'qty': t.quantity,
-      'entry_px': t.entry_price,
-      'entry_time': t.entry_time,
-      'capital_required': t.capital_required,
-      'target_harvest': t.target_harvest_price,
-      'roll_trigger': t.roll_trigger_price,
-      'pnl': t.pnl
+      'symbol': display_symbol,
+      'quantity': t.quantity,             # Standardized
+      'entry_price': t.entry_price,       # Standardized
+      'entry_time': t.entry_time,         # Standardized
+      'target_harvest_price': t.target_harvest_price, # Standardized
+      'roll_trigger_price': t.roll_trigger_price,     # Standardized
+      'pnl': t.pnl or 0.0,
+      'notes': t.notes or ""
     })
-  return trades
+  return trades_list
 
 @anvil.server.callable
 @anvil.tables.in_transaction
-def crud_add_manual_trade(cycle_id: str, role: str, qty: int, entry_px: float) -> bool:
-  """Manual entry for when you trade outside the bot."""
-  cycle_row = app_tables.cycles.get_by_id(cycle_id)
-  if not cycle_row: return False
+def crud_update_trade_open(trade_id: str, data: dict) -> bool:
+  """Updates metadata for an open trade."""
+  row = app_tables.trades.get_by_id(trade_id)
+  if not row: return False
 
-  app_tables.trades.add_row(
-    cycle=cycle_row,
-    role=role,
-    status=config.STATUS_OPEN,
-    quantity=qty,
-    entry_price=entry_px,
-    entry_time=dt.datetime.now(),
-    pnl=0.0
+  row.update(
+    quantity=float(data['quantity'] or 0),
+    entry_time=data['entry_time'],
+    entry_price=float(data['entry_price'] or 0),
+    target_harvest_price=float(data['target_harvest_price'] or 0) if data['target_harvest_price'] else None,
+    roll_trigger_price=float(data['roll_trigger_price'] or 0) if data['roll_trigger_price'] else None,
+    notes=data['notes']
+  )
+  return True
+
+@anvil.server.callable
+@anvil.tables.in_transaction
+def crud_settle_trade_manual(trade_id: str, data: dict) -> bool:
+  """Updates metadata and then finalizes the trade using the close_trade logic."""
+  row = app_tables.trades.get_by_id(trade_id)
+  if not row: return False
+
+    # 1. Update metadata first (in case quantity or entry time was also edited)
+  crud_update_trade_open(trade_id, data)
+
+  # 2. Settle using existing logic
+  # fill_time uses the date_picker if provided, otherwise current time
+  fill_time = data['entry_time'] if data['entry_time'] else dt.datetime.now(dt.timezone.utc)
+
+  close_trade(
+    trade_row=row,
+    fill_price=float(data['exit_price'] or 0),
+    fill_time=fill_time,
+    order_id="MANUAL_SETTLEMENT"
   )
   return True
 
 @anvil.server.callable
 @anvil.tables.in_transaction
 def crud_delete_trade(trade_id: str) -> bool:
-  """Cascade delete trade and children."""
-  row = app_tables.trades.get_by_id(trade_id)
-  if row:
-    # Delete related legs
-    for leg in app_tables.legs.search(trade=row):
-      leg.delete()
-      # Delete related transactions
-    for txn in app_tables.transactions.search(trade=row):
-      txn.delete()
-    row.delete()
-    return True
-  return False
-
-# In server_db.py
-
-@anvil.server.callable
-@anvil.tables.in_transaction
-def crud_settle_trade_manual(trade_id: str, exit_px: float) -> bool:
-  """Manually closes a trade in the DB to sync with external broker actions"""
-  trade_row = app_tables.trades.get_by_id(trade_id)
-  if not trade_row:
-    return False
-
-    # Reuse your existing robust logic that handles:
-    # 1. Transactions 2. Leg Deactivation 3. PnL Calc 4. Trade Status
-  close_trade(
-    trade_row=trade_row,
-    fill_price=float(exit_px),
-    fill_time=dt.datetime.now(dt.timezone.utc),
-    order_id="MANUAL_EXTERNAL_SYNC"
-  )
-
-  logger.log(f"Manual Sync: Trade {trade_id} closed at ${exit_px}", 
-             level=config.LOG_INFO, 
-             source=config.LOG_SOURCE_DB)
-  return True
-
-@anvil.server.callable
-@anvil.tables.in_transaction
-def crud_update_trade_fields(trade_id: str, updates: dict) -> bool:
+  """Cascading delete of trade, legs, and transactions."""
   row = app_tables.trades.get_by_id(trade_id)
   if not row: return False
 
-    # Only allow specific fields to be edited to prevent corruption
-  for key in ['quantity', 'notes', 'roll_trigger_price', 'target_harvest_price']:
-    if key in updates:
-      row[key] = updates[key]
+  for leg in app_tables.legs.search(trade=row): leg.delete()
+  for txn in app_tables.transactions.search(trade=row): txn.delete()
+  row.delete()
   return True
+
+
+
