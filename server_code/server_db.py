@@ -372,6 +372,7 @@ def get_all_trades_for_editor() -> list:
     trades_list.append({
       'id': t.id,
       'role': t.role,
+      'status': t.status,
       'symbol': display_symbol,
       'quantity': t.quantity,             # Standardized
       'entry_price': t.entry_price,       # Standardized
