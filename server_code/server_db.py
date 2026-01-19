@@ -132,7 +132,7 @@ def save_trade(trade_obj):
     exit_time=trade_obj.exit_time
   )
 
-@anvil.tables.in_transaction
+
 def record_new_trade(
   cycle_row,
   role: str,
@@ -227,8 +227,8 @@ def record_new_trade(
   )
   return Trade(trade_row)
 
-@anvil.tables.in_transaction
-def close_trade(trade_row, fill_price: float, fill_time: dt.datetime, order_id: str, fees: float = 0.0):
+
+def close_trade(trade_row, fill_price: float, fill_time: dt.datetime, order_id: str, fees: float = 0.0)-> None:
   """Finalizes a trade: Records closing transaction, deactivates legs, updates trade status/PnL"""
   # 1. Determine Action String
   action_type = "CLOSE_SPREAD" if trade_row['role'] == config.ROLE_INCOME else "CLOSE_HEDGE"
@@ -269,7 +269,7 @@ def close_trade(trade_row, fill_price: float, fill_time: dt.datetime, order_id: 
     pnl=_fmt(pnl)
   )
   
-@anvil.tables.in_transaction
+
 def settle_zombie_trade(trade_row):
   """
     Settles a missing trade using WORST CASE assumption.
@@ -384,13 +384,8 @@ def get_all_trades_for_editor() -> list:
     })
   return trades_list
 
-@anvil.server.callable
-@anvil.tables.in_transaction
-def crud_update_trade_open(trade_id: str, data: dict) -> bool:
-  """Updates metadata for an open trade."""
-  row = app_tables.trades.get_by_id(trade_id)
-  if not row: return False
-
+def _perform_trade_update(row: anvil.tables.Row, data: dict) -> None:
+  """Internal helper to update trade fields. No transaction wrapper."""
   row.update(
     quantity=float(data['quantity'] or 0),
     entry_time=data['entry_time'],
@@ -399,6 +394,14 @@ def crud_update_trade_open(trade_id: str, data: dict) -> bool:
     roll_trigger_price=float(data['roll_trigger_price'] or 0) if data['roll_trigger_price'] else None,
     notes=data['notes']
   )
+
+@anvil.server.callable
+@anvil.tables.in_transaction
+def crud_update_trade_open(trade_id: str, data: dict) -> bool:
+  """Updates metadata for an open trade."""
+  row = app_tables.trades.get_by_id(trade_id)
+  if not row: return False
+  _perform_trade_update(row, data)
   return True
 
 @anvil.server.callable
@@ -408,8 +411,8 @@ def crud_settle_trade_manual(trade_id: str, data: dict) -> bool:
   row = app_tables.trades.get_by_id(trade_id)
   if not row: return False
 
-    # 1. Update metadata first (in case quantity or entry time was also edited)
-  crud_update_trade_open(trade_id, data)
+    # A. Perform the metadata update using the WORKER
+  _perform_trade_update(row, data)
 
   # 2. Settle using existing logic
   # fill_time uses the date_picker if provided, otherwise current time

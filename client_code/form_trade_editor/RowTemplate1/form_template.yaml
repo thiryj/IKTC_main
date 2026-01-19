@@ -20,5 +20,9 @@ components:
   name: button_edit
   properties: {role: tonal-button, text: Edit}
   type: Button
+- layout_properties: {column: EPDANT}
+  name: label_status
+  properties: {}
+  type: Label
 container: {type: DataRowPanel}
 is_package: true

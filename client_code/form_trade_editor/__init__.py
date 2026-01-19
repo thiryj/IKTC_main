@@ -5,6 +5,7 @@ import anvil.tables as tables
 import anvil.tables.query as q
 from anvil.tables import app_tables
 from .form_trade_detail_card import form_trade_detail_card
+from ..shared import config
 
 
 class form_trade_editor(form_trade_editorTemplate):
@@ -16,7 +17,12 @@ class form_trade_editor(form_trade_editorTemplate):
 
   def refresh_data(self):
     #print('in trade editor refresh')
-    self.repeating_panel_trades.items = anvil.server.call('get_all_trades_for_editor')
+    trades = anvil.server.call('get_all_trades_for_editor')
+    self.repeating_panel_trades.items = sorted(trades, 
+                                               key=lambda x: (x['status'] != config.STATUS_OPEN ,
+                                                              x['role'] != config.ROLE_HEDGE)
+                                              )
+    
     #print(f'trades items: {self.repeating_panel_trades.items}')
 
   def handle_edit(self, trade: dict, **event_args) -> None:

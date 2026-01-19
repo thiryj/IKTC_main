@@ -12,8 +12,9 @@ class RowTemplate1(RowTemplate1Template):
     self.init_components(**properties)
 
     self.label_role.text = self.item.get('role', '-')
+    self.label_status.text = self.item.get('status', '-')
     self.label_qty.text = self.item.get('quantity', 0)
-    self.label_px.text = f"${self.item.get('entry_px', 0):.2f}"
+    self.label_px.text = f"${self.item.get('entry_price', 0):.2f}"
     #self.label_harvest.text = f"${self.item['target_harvest']:.2f}" if self.item.get('target_harvest') else "-"
     self.label_time.text = self.item['entry_time'].strftime('%Y-%m-%d %H:%M') if self.item.get('entry_time') else "-"
     #self.label_trigger.text = f"${self.item['roll_trigger']:.2f}" if self.item.get('roll_trigger') else "-"

@@ -2,6 +2,7 @@
 import datetime as dt
 from ._anvil_designer import form_trade_detail_cardTemplate
 import anvil
+import re
 
 class form_trade_detail_card(form_trade_detail_cardTemplate):
   def __init__(self, trade: dict, **properties):
@@ -24,8 +25,13 @@ class form_trade_detail_card(form_trade_detail_cardTemplate):
   def check_settle_validity(self) -> None:
     """Enables Settle button only if Exit Price is populated."""
     val = self.text_box_exit_price.text
-    print(f'in settle validity.  val: {val}')
-    self.button_settle.enabled = (val is not None and str(val).strip() != "")
+    try:
+      float(val)
+      is_number = True
+    except (TypeError, ValueError):
+      is_number = False
+
+    self.button_settle.enabled = is_number
 
   def get_all_data(self) -> dict:
     return {
@@ -54,4 +60,9 @@ class form_trade_detail_card(form_trade_detail_cardTemplate):
   @anvil.handle("text_box_exit_price", "pressed_enter")
   def text_box_exit_price_pressed_enter(self, **event_args):
     """This method is called when the user presses Enter in this text box"""
+    self.check_settle_validity()
+
+  @anvil.handle("text_box_exit_price", "change")
+  def text_box_exit_price_change(self, **event_args):
+    """This method is called when the text in this text box is edited"""
     self.check_settle_validity()

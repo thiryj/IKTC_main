@@ -13,6 +13,7 @@ from . import server_db, server_logging as logger
 
 @anvil.server.callable
 @anvil.server.background_task
+@anvil.tables.in_transaction
 def run_automation_routine():    
   '''
   logger.log("Starting Automation Run ...",
