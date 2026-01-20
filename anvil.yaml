@@ -173,6 +173,9 @@ db_schema:
     - admin_ui: {order: 22, width: 200}
       name: max_bid_ask_spread
       type: number
+    - admin_ui: {order: 23, width: 200}
+      name: naked_hedge_theta_factor
+      type: number
     server: full
     title: rule_sets
   settings:

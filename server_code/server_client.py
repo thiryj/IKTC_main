@@ -30,6 +30,35 @@ def get_dashboard_state():
   
   # 2. Active Cycle
   cycle = server_db.get_active_cycle(config.ACTIVE_ENV)
+  if not cycle:
+    return {
+      'active_env': config.ACTIVE_ENV,
+      'automation_enabled': settings.get('automation_enabled', False),
+      'market_status': env_status.get('status', 'CLOSED'),
+      'market_time': env_status.get('now'),
+      'cycle_active': False, # UI uses this to hide cards
+      'net_daily_pnl': 0.0,
+      'bot_status_text': "IDLE (NO CYCLE)",
+      'bot_status_color': "gray",
+      'hedge': {
+        'active': False, 
+        'symbol': 'No Active Hedge', 
+        'status_color': 'gray',
+        'details': '-'
+      },
+      'spread': {
+        'active': False, 
+        'symbol': 'No Active Spread', 
+        'status_color': 'gray',
+        'details': '-'
+      },
+      'closed_session': {
+        'visible': False, 
+        'pnl': 0.0,
+        'text': '', 
+        'color': 'gray'
+      }
+    }
   market_data = server_api.get_market_data_snapshot(cycle)
   status_meta = _get_bot_status_metadata(settings, env_status, cycle, market_data)
 

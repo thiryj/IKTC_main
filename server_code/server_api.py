@@ -132,12 +132,17 @@ def get_market_data_snapshot(cycle) -> Dict:
   t = _get_client()
   snapshot = {
     'price': 0.0, 'open': 0.0, 'previous_close': 0.0, 
-    'spread_marks': {},
-    # NEW: Hedge Stats
-    'hedge_last': 0.0,
-    'hedge_delta': 0.0,
+    'spread_marks': {}, 
+    'hedge_last': 0.0, 
+    'hedge_delta': 0.0, 
+    'hedge_theta': 0.0, 
     'hedge_dte': 0
   }
+
+  # 2. CRITICAL CHECK: If cycle is None, return empty snapshot immediately
+  if not cycle:
+    return snapshot
+    
   # 1. Collect all symbols needed
   symbols = [cycle.underlying]
 
@@ -185,6 +190,7 @@ def get_market_data_snapshot(cycle) -> Dict:
       greeks = h_q.get('greeks')
       if isinstance(greeks, dict):
         snapshot['hedge_delta'] = safe_float(greeks.get('delta'))
+        snapshot['hedge_theta'] = abs(safe_float(greeks.get('theta')))
       else:
         snapshot['hedge_delta'] = 0.0
       # Extract DTE
@@ -205,80 +211,6 @@ def get_market_data_snapshot(cycle) -> Dict:
         snapshot['spread_marks'][trade.id] = float(s_q.get('ask', 0)) - float(l_q.get('bid', 0))
 
   return snapshot
-  '''
-  # 1. Fetch Underlying Quote
-  try:
-    quote = _get_quote_direct(t, cycle.underlying)
-    if quote:
-      last = float(quote.get('last') or 0)
-      open_px = float(quote.get('open') or 0)
-      prev_close = float(quote.get('prevclose') or 0)
-      if open_px == 0: open_px = last
-      if prev_close == 0: prev_close = last
-      snapshot['price'] = last
-      snapshot['open'] = open_px
-      snapshot['previous_close'] = prev_close
-      #logger.log(f"Market Data: Last={last} Open={open_px} Prev={prev_close}", level=config.LOG_INFO, source=config.LOG_SOURCE_API)
-  except Exception as e:
-    logger.log(f"Error fetching underlying: {e}", level=config.LOG_WARNING, source=config.LOG_SOURCE_API)
-    
-
-    # 2. Fetch Hedge Quote & Greeks
-  hedge = getattr(cycle, 'hedge_trade_link', None)
-  if hedge and hasattr(hedge, 'legs') and hedge.legs:
-    try:
-      symbol = hedge.legs[0].occ_symbol
-      # Using get_option_chain logic for single symbol to ensure we get greeks? 
-      # Or just _get_quote_direct? Quotes usually have greeks in Tradier.
-      h_quote = _get_quote_direct(t, symbol, greeks=True)
-      if h_quote:
-        # SMART PRICING: Use Midpoint for illiquid LEAPS, fallback to Last
-        bid = float(h_quote.get('bid') or 0)
-        ask = float(h_quote.get('ask') or 0)
-        last = float(h_quote.get('last') or 0)
-        if bid > 0 and ask > 0:
-          snapshot['hedge_last'] = (bid + ask) / 2.0
-        else:
-          snapshot['hedge_last'] = last
-
-        # Extract Delta
-        greeks = h_quote.get('greeks', {})
-        if greeks:
-          snapshot['hedge_delta'] = float(greeks.get('delta', 0))
-
-          # Extract DTE
-          # 'expiration_date': '2026-01-04'
-        exp_str = h_quote.get('expiration_date')
-        if exp_str:
-          exp_date = dt.datetime.strptime(exp_str, "%Y-%m-%d").date()
-          snapshot['hedge_dte'] = (exp_date - dt.date.today()).days
-
-    except Exception as e:
-      logger.log(f"Error fetching hedge data: {e}", level=config.LOG_WARNING, source=config.LOG_SOURCE_API)
-
-    # 3. Fetch Spread Marks
-    # ... (Keep existing Spread Logic) ...
-    # (Copy the spread logic from previous steps)
-  for trade in cycle.trades:
-    if trade.role == config.ROLE_INCOME and trade.status == config.STATUS_OPEN:
-      try:
-        short_leg = next((l for l in trade.legs if l.side == config.LEG_SIDE_SHORT), None)
-        long_leg = next((l for l in trade.legs if l.side == config.LEG_SIDE_LONG), None)
-
-        if short_leg and long_leg:
-          s_q = _get_quote_direct(t, short_leg.occ_symbol)
-          l_q = _get_quote_direct(t, long_leg.occ_symbol)
-
-          if s_q and l_q:
-            s_ask = float(s_q.get('ask') or s_q.get('last') or 0)
-            l_bid = float(l_q.get('bid') or l_q.get('last') or 0)
-            cost = s_ask - l_bid
-            snapshot['spread_marks'][trade.id] = cost
-      except Exception:
-        pass
-
-  return snapshot
-  '''      
   
 def get_option_chain(date: dt.date, symbol: str = None) -> List[Dict]:
   """
@@ -592,14 +524,13 @@ def wait_for_order_fill(order_id: str, timeout_seconds: int = 10) -> Tuple[str, 
     status_string values: 'filled', 'canceled', 'rejected', 'expired', 'timeout'
     """
   t = _get_client()
-  '''
-  if 'sandbox' in t.endpoint:
-    logger.log(f"API (Sandbox): Simulating instant fill for {order_id} to unblock logic.", 
-               level=config.LOG_WARNING, 
-               source=config.LOG_SOURCE_API)
-    time.sleep(1.0) # Simulate network latency
-    return True, 0.0
-  '''
+  # Dry Run handling
+  if order_id.startswith("DRY_"):
+    logger.log(f"SIMULATION: Auto-filling simulated order {order_id}", 
+              level=config.LOG_INFO, 
+              source=config.LOG_SOURCE_API)
+    return 'filled', 0.0  # Or pass the price back if you want to test PnL math
+    
   url = f"{t.endpoint}/accounts/{t.default_account_id}/orders/{order_id}"
   start_time = time.time()
 

@@ -423,8 +423,8 @@ def crud_update_trade_metadata(trade_id: str, data: dict) -> bool:
 
 @anvil.server.callable
 @anvil.tables.in_transaction
-def crud_settle_trade_manual(trade_id: str, data: dict) -> bool:
-  """Updates metadata and then finalizes the trade using the close_trade logic."""
+def crud_settle_trade_manual(trade_id: str, data: dict, close_cycle: bool=False) -> bool:
+  """Updates metadata and then finalizes the trade using the close_trade logic and optionally closes the entire campaign/cycle."""
   row = app_tables.trades.get_by_id(trade_id)
   if not row: return False
 
@@ -433,14 +433,35 @@ def crud_settle_trade_manual(trade_id: str, data: dict) -> bool:
 
   # 2. Settle using existing logic
   # fill_time uses the date_picker if provided, otherwise current time
-  fill_time = data['exit_time'] or dt.datetime.now(dt.timezone.utc)
-
+  settle_time = data['exit_time'] or dt.datetime.now(dt.timezone.utc)
   close_trade(
     trade_row=row,
     fill_price=float(data.get('exit_price') or 0),
-    fill_time=fill_time,
+    fill_time=settle_time,
     order_id="MANUAL_SETTLEMENT"
   )
+  # 3. Optional: Close the entire cycle
+  if close_cycle and row['cycle']:
+    cycle_row = row['cycle']
+    cycle_row['status']= config.STATUS_CLOSED
+    cycle_row['end_date'] = settle_time.date()
+
+    # B. Calculate Aggregate PnL (Sum of all trades in Cycle)
+    # Note: We sum (pnl * quantity * multiplier) to get actual Dollars
+    total_dollars = 0.0
+    all_trades = app_tables.trades.search(cycle=cycle_row)
+
+    for t in all_trades:
+      t_pnl = t['pnl'] or 0.0
+      t_qty = t['quantity'] or 0
+      # Dollars = (Exit - Entry) * Qty * 100
+      total_dollars += t_pnl * t_qty * config.DEFAULT_MULTIPLIER
+
+    cycle_row['total_pnl'] = round(total_dollars, 2)
+    
+    logger.log(f"Manual Sync: Cycle {row['cycle'].get_id()} CLOSED. Final PnL: ${total_dollars:+.2f}", 
+               level=config.LOG_INFO, 
+               source=config.LOG_SOURCE_DB)
   return True
 
 @anvil.server.callable

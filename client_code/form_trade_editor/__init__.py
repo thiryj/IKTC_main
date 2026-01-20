@@ -44,12 +44,24 @@ class form_trade_editor(form_trade_editorTemplate):
   
     elif action == "settle":
       data = detail_card.get_all_data()
-      if confirm("Settle this trade and mark as CLOSED in database?"):
-        anvil.server.call('crud_settle_trade_manual', trade['id'], data)
+      close_cycle_requested = False
+      # check if this is a hedge and if we are flat
+      other_open_trades = [
+        t for t in self.repeating_panel_trades.items 
+        if t['status'] == config.STATUS_OPEN and t['id'] != trade['id']
+      ]
+      if trade['role'] == config.ROLE_HEDGE and not other_open_trades:
+        close_cycle_requested = confirm(
+          "Hedge settled and no other spreads are open. "
+          "Yes: Close Cycle, done for day. "
+          "Cancel: Close hedge, leave cycle open.  Renter hedge immediately",
+          title="End of Cycle?"
+        )
+      
+      anvil.server.call('crud_settle_trade_manual', trade['id'], data, close_cycle_requested)
   
     elif action == "delete":
       if confirm("PERMANENTLY DELETE trade and all history?"):
         anvil.server.call('crud_delete_trade', trade['id'])
   
-      # 4. Cleanup
     self.refresh_data()

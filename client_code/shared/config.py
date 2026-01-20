@@ -4,7 +4,7 @@ import datetime as dt
 ENV_SANDBOX = 'SANDBOX'
 ENV_PROD = 'PROD'
 IS_PROD = True  # Master - bot level environment selector.  True = PROD, False = SANDBOX
-DRY_RUN = True
+DRY_RUN = False
 
 ACTIVE_ENV = ENV_PROD if IS_PROD else ENV_SANDBOX
 TARGET_UNDERLYING = {
@@ -12,11 +12,12 @@ TARGET_UNDERLYING = {
   ENV_SANDBOX: 'SPY'
 }
 
-# Debugging Flags
+# Guardrail flags
 ENFORCE_TRADING_HOURS = True   #disable to allow after hours automation for testing
 ENFORCE_LATE_OPEN_GUARDRAIL = True
 ENFORCE_ZOMBIE_CHECKS = True
 ENFORCE_FREQUENCY_CHECKS = True
+HARVEST_NAKED_HEDGE = True
 
 # Risk Management
 # Hard cap on leverage. Even if spreads are $0.05, we limit the ratio.
@@ -47,6 +48,7 @@ STATE_HEDGE_MISSING = 'HEDGE_MISSING'
 STATE_SPREAD_MISSING = 'SPREAD_MISSING'
 STATE_HEDGE_TOO_WEAK = 'HEDGE_TOO_WEAK' # Delta < 15
 STATE_HEDGE_ADJUSTMENT_NEEDED = 'HEDGE_ADJUSTMENT_NEEDED' # New
+STATE_NAKED_HEDGE_HARVEST = 'NAKED_HEDGE_HARVEST'
 STATE_IDLE = 'IDLE'
 
 # Alert Levels

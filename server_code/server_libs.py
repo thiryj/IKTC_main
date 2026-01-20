@@ -33,6 +33,9 @@ def determine_cycle_state(cycle: Cycle, market_data: MarketData, env_status: Env
   if _check_roll_needed(cycle, market_data):
     return config.STATE_ROLL_REQUIRED
 
+  if _check_naked_hedge_harvest(cycle, market_data):
+    return config.STATE_NAKED_HEDGE_HARVEST
+
   if _check_hedge_maintenance(cycle, market_data):
     return config.STATE_HEDGE_ADJUSTMENT_NEEDED
 
@@ -181,6 +184,34 @@ def _check_spread_missing(cycle: Cycle, env_status: EnvStatus) -> bool:
     return False
 
   return True
+
+def _check_naked_hedge_harvest(cycle: Cycle, market_data: MarketData) -> bool:
+  """Rule: No spreads open AND hedge profit > (Factor * Theta)"""
+  if not config.HARVEST_NAKED_HEDGE: return False
+
+  hedge = cycle.hedge_trade_link
+  if not hedge or hedge.status != config.STATUS_OPEN: return False
+
+    # 1. "Naked" Check: Are there any open income spreads?
+  open_spreads = [t for t in cycle.trades if t.role == config.ROLE_INCOME and t.status == config.STATUS_OPEN]
+  if len(open_spreads) > 0:
+    return False
+
+  # 2. Profit Calculation (Total Unrealized)
+  # Math: (Current - Entry) > Factor * abs(Theta)
+  profit_per_share = market_data.get('hedge_last', 0.0) - (hedge.entry_price or 0.0)
+  theta_per_share = abs(market_data.get('hedge_theta', 0.0))
+  factor = cycle.rules.get('naked_hedge_theta_factor', 10.0)
+
+  threshold = factor * theta_per_share
+
+  if profit_per_share > threshold and profit_per_share > 0:
+    logger.log(f"NAKED WINDFALL: Profit ${profit_per_share:.2f}/sh > Threshold ${threshold:.2f}/sh ({factor}x Theta)", 
+               level=config.LOG_INFO, 
+               source=config.LOG_SOURCE_LIBS)
+    return True
+
+  return False
 
 def _has_traded_today(cycle: Cycle, env_status: EnvStatus) -> bool:
   """Checks if an INCOME trade has already occurred today."""

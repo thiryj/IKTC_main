@@ -401,6 +401,47 @@ def run_automation_routine():
                  level=config.LOG_CRITICAL, 
                  source=config.LOG_SOURCE_ORCHESTRATOR)
 #---------------------------------------------------#
+  elif decision_state == config.STATE_NAKED_HEDGE_HARVEST:
+    logger.log("Executing Naked Hedge Windfall Harvest...", 
+               level=config.LOG_CRITICAL, 
+               source=config.LOG_SOURCE_ORCHESTRATOR)
+
+    hedge_trade = cycle.hedge_trade_link
+    try:
+      # 1. Close Position (Market Order for guaranteed lock-in)
+      order_res = server_api.close_position(hedge_trade, order_type='market')
+      order_id = order_res.get('id')
+
+      if order_id:
+        status, fill_px = server_api.wait_for_order_fill(order_id, timeout_seconds=config.ORDER_TIMEOUT_SECONDS)
+        if status == 'filled':
+          # 2. Settle the trade in DB
+          server_db.close_trade(
+            trade_row=hedge_trade._row,
+            fill_price=fill_px or float(order_res['price']),
+            fill_time=dt.datetime.now(dt.timezone.utc),
+            order_id=order_id
+          )
+
+          # 3. CRITICAL: Close the cycle (This was a campaign-ending event)
+          # We reuse the logic to finalize PnL and end_date
+          # Note: You can call a helper or just update cycle_row directly
+          cycle._row['status'] = config.STATUS_CLOSED
+          cycle._row['end_date'] = dt.date.today()
+
+          # Recalculate total Cycle PnL
+          total_dollars = sum([(t['pnl'] or 0.0) * (t['quantity'] or 0) * 100 for t in app_tables.trades.search(cycle=cycle._row)])
+          cycle._row['total_pnl'] = round(total_dollars, 2)
+
+          logger.log(f"Cycle Closed via Windfall Harvest. Final PnL: ${total_dollars:+.2f}", 
+                     level=config.LOG_CRITICAL, 
+                     source=config.LOG_SOURCE_ORCHESTRATOR)
+    except Exception as e:
+      logger.log(f"Windfall Harvest Failed: {e}", 
+                 level=config.LOG_CRITICAL, 
+                 source=config.LOG_SOURCE_ORCHESTRATOR)
+
+  #---------------------------------------------------#
   elif decision_state == config.STATE_HARVEST_TARGET_HIT:
     # Strategy: Close spread at 50% profit
     spread_trade = server_libs.get_winning_spread(cycle, market_data)
