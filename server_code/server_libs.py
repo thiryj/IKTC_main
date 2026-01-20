@@ -17,7 +17,6 @@ def can_run_automation(env_status: dict, settings:dict) -> bool:
     
   if config.ENFORCE_TRADING_HOURS and env_status.get('status') != 'OPEN':
       return False
-
   return True
 
 def is_db_consistent(cycle: Optional[Cycle], positions: List[dict]) -> bool:
@@ -338,6 +337,7 @@ def check_entry_conditions(
   # Overnight Gap
   if prev_close > 0:
     overnight_drop_pct = (open_price - prev_close) / prev_close
+    print(f'overnight  drop %: {overnight_drop_pct}')
     if overnight_drop_pct < -gap_thresh:
       return False, f"Overnight gap {overnight_drop_pct:.1%} exceeds limit"
 
