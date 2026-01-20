@@ -379,6 +379,8 @@ def get_all_trades_for_editor() -> list:
       'entry_time': t.entry_time,         # Standardized
       'target_harvest_price': t.target_harvest_price, # Standardized
       'roll_trigger_price': t.roll_trigger_price,     # Standardized
+      'exit_time': t.exit_time,
+      'exit_price': t.exit_price,
       'pnl': t.pnl or 0.0,
       'notes': t.notes or ""
     })
@@ -386,18 +388,33 @@ def get_all_trades_for_editor() -> list:
 
 def _perform_trade_update(row: anvil.tables.Row, data: dict) -> None:
   """Internal helper to update trade fields. No transaction wrapper."""
-  row.update(
-    quantity=float(data['quantity'] or 0),
-    entry_time=data['entry_time'],
-    entry_price=float(data['entry_price'] or 0),
-    target_harvest_price=float(data['target_harvest_price'] or 0) if data['target_harvest_price'] else None,
-    roll_trigger_price=float(data['roll_trigger_price'] or 0) if data['roll_trigger_price'] else None,
-    notes=data['notes']
-  )
+  row['quantity'] = float(data.get('quantity') or 0)
+  row['entry_time'] = data.get('entry_time')
+  row['entry_price'] = float(data.get('entry_price') or 0)
+  
+  # Handle optional targets
+  row['target_harvest_price'] = float(data['target_harvest_price']) if data.get('target_harvest_price') else None
+  row['roll_trigger_price'] = float(data['roll_trigger_price']) if data.get('roll_trigger_price') else None
+  
+  row['notes'] = data.get('notes')
+  
+  # IF TRADE IS CLOSED: Sync the exit data and recalculate PnL
+  if row['status'] == config.STATUS_CLOSED:
+    row['exit_price'] = float(data.get('exit_price') or 0)
+    row['exit_time'] = data.get('exit_time')
+  
+    # Recalculate PnL
+    entry = row['entry_price'] or 0.0
+    exit_px = row['exit_price'] or 0.0
+    if row['role'] == config.ROLE_INCOME:
+      row['pnl'] = entry - exit_px
+    else:
+      row['pnl'] = exit_px - entry
+  
 
 @anvil.server.callable
 @anvil.tables.in_transaction
-def crud_update_trade_open(trade_id: str, data: dict) -> bool:
+def crud_update_trade_metadata(trade_id: str, data: dict) -> bool:
   """Updates metadata for an open trade."""
   row = app_tables.trades.get_by_id(trade_id)
   if not row: return False
@@ -416,11 +433,11 @@ def crud_settle_trade_manual(trade_id: str, data: dict) -> bool:
 
   # 2. Settle using existing logic
   # fill_time uses the date_picker if provided, otherwise current time
-  fill_time = data['entry_time'] if data['entry_time'] else dt.datetime.now(dt.timezone.utc)
+  fill_time = data['exit_time'] or dt.datetime.now(dt.timezone.utc)
 
   close_trade(
     trade_row=row,
-    fill_price=float(data['exit_price'] or 0),
+    fill_price=float(data.get('exit_price') or 0),
     fill_time=fill_time,
     order_id="MANUAL_SETTLEMENT"
   )

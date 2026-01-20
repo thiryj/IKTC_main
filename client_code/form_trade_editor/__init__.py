@@ -40,7 +40,7 @@ class form_trade_editor(form_trade_editorTemplate):
     # 3. Action Logic
     if action == "save":
       data = detail_card.get_all_data()
-      anvil.server.call('crud_update_trade_open', trade['id'], data)
+      anvil.server.call('crud_update_trade_metadata', trade['id'], data)
   
     elif action == "settle":
       data = detail_card.get_all_data()

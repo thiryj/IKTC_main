@@ -18,6 +18,8 @@ class form_trade_detail_card(form_trade_detail_cardTemplate):
     self.text_box_entry_price.text = trade.get('entry_price', 0)
     self.text_box_target_harvest.text = trade.get('target_harvest_price')
     self.text_box_roll_trigger.text = trade.get('roll_trigger_price')
+    self.text_box_exit_price.text = trade.get('exit_price')
+    self.date_picker_exit.date = trade.get('exit_time') # NEW PICKER
     self.text_box_notes.text = trade.get('notes', "")
 
     self.check_settle_validity()
@@ -41,6 +43,7 @@ class form_trade_detail_card(form_trade_detail_cardTemplate):
       'target_harvest_price': self.text_box_target_harvest.text,
       'roll_trigger_price': self.text_box_roll_trigger.text,
       'exit_price': self.text_box_exit_price.text,
+      'exit_time': self.date_picker_exit.date,
       'notes': self.text_box_notes.text
     }
 
