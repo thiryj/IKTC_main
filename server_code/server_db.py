@@ -477,4 +477,15 @@ def crud_delete_trade(trade_id: str) -> bool:
   return True
 
 
+def close_active_cycle(cycle_id: str) -> None:
+  """Worker to finalize a campaign. Sets status, date, and calculates total dollars."""
+  row = app_tables.cycles.get_by_id(cycle_id)
+  if row:
+    row['status'] = config.STATUS_CLOSED
+    row['end_date'] = dt.date.today()
+    # Sum up PnL * Qty * 100 for every trade in this cycle
+    total = sum([(t['pnl'] or 0) * (t['quantity'] or 0) * 100 
+                 for t in app_tables.trades.search(cycle=row)])
+    row['total_pnl'] = round(total, 2)
+
 

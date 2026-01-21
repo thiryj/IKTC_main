@@ -4,6 +4,7 @@ from anvil.tables import app_tables
 
 import datetime as dt
 import pytz
+from typing import Optional, Tuple, Dict, List
 
 from shared import config
 from shared.classes import Cycle, Trade
@@ -139,47 +140,29 @@ def run_automation_routine():
     liabilities_cleared = True
 
     # 2. Phase 1: Close Liabilities (Spreads)
-    # We MUST clear these before selling the shield.
     for trade in income_trades:
-      logger.log(f"Emergency Closing Liability {trade.id}...", 
-                 level=config.LOG_INFO, 
-                 source=config.LOG_SOURCE_ORCHESTRATOR)
-      try:
-        # A. Submit
-        order_res = server_api.close_position(trade, order_type='market')
-        order_id = order_res.get('id')
-        if not order_id:
-          logger.log(f"API rejected submission for {trade.id}", 
-                     level=config.LOG_CRITICAL, 
-                     source=config.LOG_SOURCE_ORCHESTRATOR)
-          liabilities_cleared = False
-          continue # Best effort: Try closing other liabilities
-
-        # Poll for fill
-        status, fill_px = server_api.wait_for_order_fill(order_id, timeout_seconds=5)
-        if status == 'filled':
-          pass
-        else:
-          logger.log(f"Close Order {order_id} did not fill. Aborting Sequence.", 
-                     level=config.LOG_CRITICAL, 
-                     source=config.LOG_SOURCE_ORCHESTRATOR)
-          liabilities_cleared = False
-          continue # Note: We do NOT cancel market orders in panic; we hope they fill eventually.
-
-        final_price = fill_px if fill_px > 0 else float(order_res['price'])
-        
-        server_db.close_trade(
-          trade_row=trade._row,
-          fill_price=final_price, 
-          fill_time=dt.datetime.now(),
-          order_id=order_id
-        )
-
-      except Exception as e:
-        logger.log(f"Exception closing Income Trade {trade.id}: {e}", 
-                   level=config.LOG_CRITICAL, 
-                   source=config.LOG_SOURCE_ORCHESTRATOR)
+      order_res = server_api.close_position(trade, order_type='market')
+      success = _execute_settlement_and_sync(trade, order_res, "Panic Spread Exit")
+      if not success:
         liabilities_cleared = False
+        logger.log(f"ALERT: Failed to confirm spread {trade.id} closed. Holding Hedge.", 
+                   level=config.LOG_CRITICAL)
+      
+      # 3. Phase 2: Close Hedges (Only if spreads are confirmed gone)  
+      if liabilities_cleared:
+        for trade in hedge_trades:
+          order_res = server_api.close_position(trade, order_type='market')
+
+          # Use helper
+          h_success = _execute_settlement_and_sync(trade, order_res, "Panic Hedge Exit")
+
+          if h_success:
+            # 4. Campaign Logic: Close the cycle
+            logger.log("Panic Harvest Complete. Closing Cycle.", level=config.LOG_INFO)
+            # This worker sets end_date, total_pnl, and status=CLOSED
+            server_db.close_active_cycle(cycle.id) 
+      else:
+        logger.log("PANIC ABORTED: Liabilities still present in DB. System holding Hedge for protection.", level=config.LOG_CRITICAL)
         
     # 3. Phase 2: Close Assets (Hedge)
     # ONLY proceed if we successfully submitted close orders for all liabilities
@@ -187,48 +170,19 @@ def run_automation_routine():
       logger.log("Liabilities cleared. Closing Hedges...", 
                  level=config.LOG_INFO, 
                  source=config.LOG_SOURCE_ORCHESTRATOR)
-      for trade in hedge_trades:
+      for h_trade in hedge_trades:
         logger.log(f"Closing Hedge Asset {trade.id}...", 
                    level=config.LOG_INFO, 
                    source=config.LOG_SOURCE_ORCHESTRATOR)
-        try:
-          order_res = server_api.close_position(trade, order_type='market')
-          order_id = order_res.get('id')
-          if order_id:
-            status, fill_px = server_api.wait_for_order_fill(order_id, timeout_seconds=5)
-            if status == 'filled':
-              final_price = fill_px if fill_px > 0 else float(order_res['price'])
-              server_db.close_trade(
-                trade_row=trade._row,
-                fill_price=final_price,
-                fill_time=order_res['time'],
-                order_id=order_res['id']
-              )
-            elif status == 'timeout':
-              logger.log(f"Hedge Close {order_id} timed out. Manual check required.", 
-                         level=config.LOG_CRITICAL, 
-                         source=config.LOG_SOURCE_ORCHESTRATOR)
-            else:
-              logger.log(f"Hedge Close {order_id} has status {status}. Manual check required.", 
-                         level=config.LOG_CRITICAL, 
-                         source=config.LOG_SOURCE_ORCHESTRATOR)
-          else:
-            logger.log(f"API rejected Hedge Close for {trade.id}", 
-                       level=config.LOG_CRITICAL, 
-                       source=config.LOG_SOURCE_ORCHESTRATOR)
-        except Exception as e:
-          # If hedge fails to close, it's annoying but safe (we still own the option)
-          logger.log(f"Failed to close Hedge {trade.id}: {e}", 
-                     level=config.LOG_WARNING, 
-                     source=config.LOG_SOURCE_ORCHESTRATOR)
-
-        # Only mark Cycle closed if everything worked
-      if cycle_row:
-        cycle_row['status'] = config.STATUS_CLOSED
-        logger.log("Cycle Status updated to CLOSED.", 
-                   level=config.LOG_INFO, 
-                   source=config.LOG_SOURCE_ORCHESTRATOR)
-
+        
+        h_order = server_api.close_position(h_trade, order_type='market')
+        h_success = _execute_settlement_and_sync(h_trade, h_order, "Panic Hedge Exit")
+        if h_success:
+          # --- STAGE 4: TERMINAL ACTION ---
+          logger.log("Hedge settled. Finalizing Cycle.", level=config.LOG_INFO)
+          # This function sets end_date, calculates total_pnl, and sets status=CLOSED
+          server_db.close_active_cycle(cycle.id)
+               
     else:
       logger.log("Liabilities NOT cleared. ABORTING Hedge Close. System holding Hedge.", 
                  level=config.LOG_CRITICAL, 
@@ -249,154 +203,39 @@ def run_automation_routine():
 
     # Force Market Order for immediate exit
     close_res = server_api.close_position(spread_trade, order_type='market')
-    close_order_id = close_res.get('id')
-    if not close_order_id:
-      logger.log("Roll Aborted - API rejected Close Order.", 
-                 level=config.LOG_CRITICAL, 
-                 source=config.LOG_SOURCE_ORCHESTRATOR)
-      return
+    settled = _execute_settlement_and_sync(spread_trade, close_res, "Roll Exit")
 
-    # Poll for Fill (Aggressive Wait)
-    status, close_px = server_api.wait_for_order_fill(close_order_id, 
-                                                      timeout_seconds=config.ORDER_TIMEOUT_SECONDS)
-    if status != 'filled':
-      logger.log(f"Roll Aborted - Close Order {status}.", 
-                 level=config.LOG_CRITICAL, 
-                 source=config.LOG_SOURCE_ORCHESTRATOR)
-      # Note: Position is likely stuck in 'pending' state. Bot will retry next loop.
-      return
+    if settled:
+      # --- STEP 2: RE-ENTRY LOGIC ---
+      # A. Check Safety (Don't re-enter if market is crashing)
+      is_safe, safety_msg = server_libs.check_roll_safety(market_data, cycle.rules)
+      if not is_safe:
+        logger.log(f"Roll Re-Entry Aborted: {safety_msg}. Staying Flat.", 
+                  level=config.LOG_WARNING, 
+                  source=config.LOG_SOURCE_ORCHESTRATOR)
+        return
 
-    realized_debit = close_px if close_px > 0 else float(close_res['price'])
-    server_db.crud_settle_trade_manual(trade_id=close_order_id, 
-                                       data={
-                                        'exit_price': realized_debit,
-                                        'exit_time': dt.datetime.now(dt.timezone.utc),
-                                        'notes' : f"Liability Closed. Realized Debit: ${realized_debit:.2f}"
-                                       }
-                                      )
+      roll_result, target_date = _find_best_roll_candidate(cycle, spread_trade, market_data)
+      if roll_result:
+        # --- STEP 3: OPEN NEW (Asset) ---
+        trade_data = {
+          'quantity': spread_trade.quantity,
+          'short_strike': roll_result['short_leg']['strike'],
+          'long_strike': roll_result['long_leg']['strike'],
+          'short_leg_data': roll_result['short_leg'],
+          'long_leg_data': roll_result['long_leg'],
+          'net_credit': roll_result['new_credit']
+        }
 
-    # --- STEP 2: RE-ENTRY LOGIC ---
-    # A. Check Safety (Don't re-enter if market is crashing)
-    is_safe, safety_msg = server_libs.check_roll_safety(market_data, cycle.rules)
-    if not is_safe:
-      logger.log(f"Roll Re-Entry Aborted: {safety_msg}. Staying Flat.", 
-                 level=config.LOG_WARNING, 
-                 source=config.LOG_SOURCE_ORCHESTRATOR)
-      return
-
-    # B. Find Target Date (1-2 DTE)
-    valid_dates = server_api.get_expirations()
-    retry_offsets = [1, 2, 3] # Tomorrow -> Day After -> T+3 -> Next Week
-    roll_result = None
-    target_date = None
-    chain = []
-    # Identify current short strike for "Down" logic
-    legs = getattr(spread_trade, 'legs', [])
-    current_short = next((l for l in legs if l.side == config.LEG_SIDE_SHORT), None)
-    if not current_short:
-      logger.log("CRITICAL: Could not find short leg on closed trade. Cannot calculate roll.", 
-                 level=config.LOG_CRITICAL, 
-                 source=config.LOG_SOURCE_ORCHESTRATOR)
-      return
-      
-    for days in retry_offsets:
-      candidate_date = server_libs.find_closest_expiration(valid_dates, target_dte=days)
-      if not candidate_date: continue
-      if candidate_date == target_date: continue 
-      
-      candidate_chain = server_api.get_option_chain(date=candidate_date)
-      if not candidate_chain: continue
-
-      result = server_libs.calculate_roll_legs(
-        chain=candidate_chain,
-        current_short_strike=current_short.strike,
-        width=cycle.rules['spread_width'],
-        cost_to_close=realized_debit
-      )
-      if result:
-        # SUCCESS: We found a date and strikes that work!
-        roll_result = result
-        target_date = candidate_date
-        logger.log(f"Found valid Roll at {target_date} (T+{days})", 
-                    level=config.LOG_INFO, 
-                    source=config.LOG_SOURCE_ORCHESTRATOR)
-        break # Stop hunting
-      else:
-        logger.log(f"Date {candidate_date} (T+{days}) too expensive/invalid. Checking next expiry...", 
-                    level=config.LOG_DEBUG, 
-                    source=config.LOG_SOURCE_ORCHESTRATOR)
+        order_res = server_api.open_spread_position(trade_data)
         
-    if not roll_result:
-      logger.log("Roll Re-Entry Failed: Checked T+1/2/3/7. No valid strikes cover cost. Staying Flat.", 
-                level=config.LOG_WARNING, 
-                source=config.LOG_SOURCE_ORCHESTRATOR)
-      return
-
-    # --- STEP 3: OPEN ASSET (Limit Order) ---
-    logger.log(f"Step 2 - Opening New Spread (Limit ${roll_result['new_credit']:.2f})...", 
-               level=config.LOG_INFO, 
-               source=config.LOG_SOURCE_ORCHESTRATOR)
-
-    # Construct Trade Data for API
-    # Note: calculate_roll_legs returns 'new_credit' which is the GROSS credit of new spread
-    trade_data = {
-      'quantity': spread_trade.quantity, # Maintain same size
-      'short_strike': roll_result['short_leg']['strike'],
-      'long_strike': roll_result['long_leg']['strike'],
-      'short_leg_data': roll_result['short_leg'],
-      'long_leg_data': roll_result['long_leg'],
-      'net_credit': roll_result['new_credit']
-    }
-
-    open_res = server_api.open_spread_position(trade_data)
-    open_order_id = open_res.get('id')
-    if open_order_id:      
-      logger.log(f"Waiting for Re-Entry fill ({config.ORDER_TIMEOUT_SECONDS}s)...", 
-                 level=config.LOG_INFO, 
-                 source=config.LOG_SOURCE_ORCHESTRATOR)
-      status, open_px = server_api.wait_for_order_fill(open_order_id, config.ORDER_TIMEOUT_SECONDS)
-      if status == 'filled':
-        final_credit = open_px if open_px > 0 else roll_result['new_credit']
-        # Reset daily_hedge_ref
-        current_hedge = market_data.get('hedge_last', 0.0)
-        if current_hedge > 0:
-          cycle.daily_hedge_ref = current_hedge
-          cycle._row['daily_hedge_ref'] = current_hedge
-          logger.log(f"LOG: Roll Complete. Hedge Reference reset to ${current_hedge:.2f}",
-                     level=config.LOG_INFO, 
-                     source=config.LOG_SOURCE_ORCHESTRATOR)
-        server_db.record_new_trade(
-          cycle_row=cycle_row,
-          role=config.ROLE_INCOME,
-          trade_dict=trade_data,
-          order_id=open_order_id,
-          fill_price=final_credit,
-          fill_time=dt.datetime.now()
-        )
-        logger.log("Roll Re-Entry Successful.", 
-                   level=config.LOG_INFO, 
-                   source=config.LOG_SOURCE_ORCHESTRATOR)
-      elif status == 'timeout':
-        logger.log("Re-Entry timed out. Canceling...", 
-                   level=config.LOG_WARNING, 
-                   source=config.LOG_SOURCE_ORCHESTRATOR)
+        entered = _execute_entry_and_sync(cycle, order_res, trade_data, config.ROLE_INCOME, "Roll Entry")
+        if entered:
+          _reset_cycle_hedge_reference(cycle, market_data)
       else:
-        logger.log(f"Roll Re-Entry failed ({status}). Staying Flat.", 
-                   level=config.LOG_WARNING, 
-                   source=config.LOG_SOURCE_ORCHESTRATOR)
-        
-        if server_api.cancel_order(open_order_id):
-          logger.log("Order canceled. System Flat (Stop Loss Taken).", 
-                    level=config.LOG_INFO, 
-                    source=config.LOG_SOURCE_ORCHESTRATOR)
-        else:
-          logger.log(f"CRITICAL: Failed to cancel stuck Roll Entry {open_order_id}!", 
-                     level=config.LOG_CRITICAL, 
-                     source=config.LOG_SOURCE_ORCHESTRATOR)
-    else:
-      logger.log("API rejected Re-Entry Order.", 
-                 level=config.LOG_CRITICAL, 
-                 source=config.LOG_SOURCE_ORCHESTRATOR)
+        logger.log("Roll Aborted: No valid strikes found to cover costs. Staying Flat.", 
+                   level=config.LOG_WARNING)
+
 #---------------------------------------------------#
   elif decision_state == config.STATE_NAKED_HEDGE_HARVEST:
     hedge_trade = cycle.hedge_trade_link
@@ -409,73 +248,18 @@ def run_automation_routine():
     if success:
       logger.log("Hedge Harvested. Closing the current Cycle.", level=config.LOG_INFO)
       server_db.close_active_cycle(cycle.id) # Assuming a helper that sets end_date/status
-    
-      '''
-      order_id = order_res.get('id')
-
-      if order_id:
-        status, fill_px = server_api.wait_for_order_fill(order_id, timeout_seconds=config.ORDER_TIMEOUT_SECONDS)
-        if status == 'filled':
-          # 2. Settle the trade in DB
-          server_db.close_trade(
-            trade_row=hedge_trade._row,
-            fill_price=fill_px or float(order_res['price']),
-            fill_time=dt.datetime.now(dt.timezone.utc),
-            order_id=order_id
-          )
-
-          # 3. CRITICAL: Close the cycle (This was a campaign-ending event)
-          # We reuse the logic to finalize PnL and end_date
-          # Note: You can call a helper or just update cycle_row directly
-          cycle._row['status'] = config.STATUS_CLOSED
-          cycle._row['end_date'] = dt.date.today()
-
-          # Recalculate total Cycle PnL
-          total_dollars = sum([(t['pnl'] or 0.0) * (t['quantity'] or 0) * 100 for t in app_tables.trades.search(cycle=cycle._row)])
-          cycle._row['total_pnl'] = round(total_dollars, 2)
-
-          logger.log(f"Cycle Closed via Windfall Harvest. Final PnL: ${total_dollars:+.2f}", 
-                     level=config.LOG_CRITICAL, 
-                     source=config.LOG_SOURCE_ORCHESTRATOR)
-      '''
-
-  #---------------------------------------------------#
-  elif decision_state == config.STATE_HARVEST_TARGET_HIT:
-    spread_trade = server_libs.get_winning_spread(cycle, market_data)
-    if spread_trade:
-      logger.log(f"Harvest Target Hit! Trade {spread_trade.id}. Closing...", 
-                 level=config.LOG_INFO, 
+      
+      logger.log(f"Cycle Closed via Windfall Harvest. Final PnL: ${total_dollars:+.2f}", 
+                 level=config.LOG_CRITICAL, 
                  source=config.LOG_SOURCE_ORCHESTRATOR)
-      order_res = server_api.close_position(spread_trade)    
-      order_id = order_res.get('id')
-      if order_id:
-        status, fill_px = server_api.wait_for_order_fill(order_id, config.ORDER_TIMEOUT_SECONDS)
-        if status == 'filled':
-          final_price = fill_px if fill_px > 0 else float(order_res['price'])
-          server_db.crud_settle_trade_manual(
-            trade_id=spread_trade.id,
-            data={
-              'exit_price': final_price,
-              'exit_time': dt.datetime.now(dt.timezone.utc),
-              'notes': f"Auto Harvest filled at {final_price}"
-            }
-          )
-      elif status == 'timeout':
-          logger.log("Harvest timed out. Canceling...", 
-                     level=config.LOG_WARNING, 
-                     source=config.LOG_SOURCE_ORCHESTRATOR)
-          if server_api.cancel_order(order_id):
-            logger.log("Harvest order canceled. Will retry next cycle.", 
-                       level=config.LOG_INFO, 
-                       source=config.LOG_SOURCE_ORCHESTRATOR)
-          else:
-            logger.log(f"CRITICAL: Failed to cancel stuck Harvest Order {order_id}!", 
-                       level=config.LOG_CRITICAL, 
-                       source=config.LOG_SOURCE_ORCHESTRATOR)
-      else:
-        logger.log(f"Harvest order failed ({status}).", 
-                   level=config.LOG_WARNING, 
-                   source=config.LOG_SOURCE_ORCHESTRATOR)
+
+#---------------------------------------------------#
+  elif decision_state == config.STATE_HARVEST_TARGET_HIT:
+    trade = server_libs.get_winning_spread(cycle, market_data)
+    if trade:
+      order_res = server_api.close_position(trade)
+      _execute_settlement_and_sync(trade, order_res, "Profit Harvest")
+      
 #---------------------------------------------------#
   elif decision_state == config.STATE_HEDGE_MISSING:
     logger.log("Hedge missing. Attempting to buy protection...", 
@@ -523,61 +307,9 @@ def run_automation_routine():
       rules=cycle.rules # Pass the raw dictionary from the wrapper
     )
     if is_valid:
-      logger.log(f"Entry Valid! Qty: {trade_data['quantity']}", 
-                 level=config.LOG_INFO, 
-                 source=config.LOG_SOURCE_ORCHESTRATOR)
-        
-      # 3. Execute Order (API)
       order_res = server_api.open_spread_position(trade_data)
-      order_id = order_res.get('id')
-      if not order_id:
-        logger.log("New spread entry order rejected by broker.", 
-                   level=config.LOG_CRITICAL, 
-                   source=config.LOG_SOURCE_ORCHESTRATOR)
-      else:
-        # 2. SYNCHRONOUS WAIT (The IOC Simulation)
-        status, fill_px = server_api.wait_for_order_fill(order_id, config.ORDER_TIMEOUT_SECONDS)
-        if status == 'filled':
-          final_price = fill_px if fill_px > 0 else float(order_res['price'])
-          current_hedge = market_data.get('hedge_last', 0.0)
-          if current_hedge > 0:
-            cycle.daily_hedge_ref = current_hedge
-            cycle._row['daily_hedge_ref'] = current_hedge
-          
-          server_db.record_new_trade(
-            cycle_row=cycle_row, 
-            role=config.ROLE_INCOME,
-            trade_dict=trade_data,
-            order_id=order_id,
-            fill_price=final_price,
-            fill_time=dt.datetime.now() # Use actual time
-          )
-          logger.log("Open spread trade filled and recorded.", 
-                     level=config.LOG_INFO, 
-                     source=config.LOG_SOURCE_ORCHESTRATOR)
-
-        elif status == 'timeout':
-          # 3B. TIMEOUT: Cancel and Abort
-          logger.log("Open spread entry timed out. Canceling order...", 
-                     level=config.LOG_WARNING, 
-                     source=config.LOG_SOURCE_ORCHESTRATOR)
-          if server_api.cancel_order(order_id):
-            logger.log("Order canceled. System remains IDLE.",                      
-                       level=config.LOG_INFO,                      
-                       source=config.LOG_SOURCE_ORCHESTRATOR)
-          else:
-            logger.log(f"CRITICAL: Failed to cancel stuck Entry Order {order_id}!", 
-                       level=config.LOG_CRITICAL, 
-                       source=config.LOG_SOURCE_ORCHESTRATOR)
-        else:
-          # Canceled/Rejected by Broker
-          logger.log(f"Entry order failed ({status}). Logic aborting.", 
-                     level=config.LOG_WARNING, 
-                     source=config.LOG_SOURCE_ORCHESTRATOR)
-    else:
-      logger.log(f"Entry Logic Rejected: {reason}", 
-                 level=config.LOG_INFO, 
-                 source=config.LOG_SOURCE_ORCHESTRATOR)
+      _execute_entry_and_sync(cycle, order_res, trade_data, config.ROLE_INCOME, "Standard Spread Entry")
+      
 #---------------------------------------------------#      
   elif decision_state == config.STATE_HEDGE_ADJUSTMENT_NEEDED:
     logger.log("Hedge Adjustment Required. Rolling position...", 
@@ -587,58 +319,47 @@ def run_automation_routine():
     old_hedge = cycle.hedge_trade_link
 
     # 1. Close Old Hedge
-    logger.log(f"LOG: Closing old hedge {old_hedge.id}...",
-               level=config.LOG_INFO, 
-               source=config.LOG_SOURCE_ORCHESTRATOR)
     close_res = server_api.close_position(old_hedge)
-    close_order_id = close_res.get('id')
-    if close_order_id:
-      status, close_px = server_api.wait_for_order_fill(close_order_id, timeout_seconds=10)
-      if status == 'filled':
-        realized_debit = close_px if close_px > 0 else float(close_res['price'])
-        server_db.close_trade(
-          trade_row=old_hedge._row,
-          fill_price=realized_debit,
-          fill_time=dt.datetime.now(), # Use actual time, or close_res['time'] if available/parsed
-          order_id=close_order_id
-        )
-        logger.log("Old Hedge Closed successfully.", 
-                   level=config.LOG_INFO, 
-                   source=config.LOG_SOURCE_ORCHESTRATOR)
-      else:
-        logger.log(f"Hedge Close failed with status {status}. Aborting Roll.", 
-                   level=config.LOG_CRITICAL, 
-                   source=config.LOG_SOURCE_ORCHESTRATOR)
-        # We abort here because if we can't close the old one, we shouldn't buy a new one 
+    settled = _execute_settlement_and_sync(old_hedge, close_res, "Hedge Roll Exit")
+    if settled:
+      valid_dates = server_api.get_expirations()
+      target_dte = cycle.rules.get('hedge_target_dte', 90)
+      
+      best_date = server_libs.find_closest_expiration(valid_dates, target_dte)
+      if not best_date:
+        logger.log("Hedge Roll Aborted: No valid expirations found.", level=config.LOG_CRITICAL)
         return
-    else:
-      logger.log("Hedge Close timed out. Aborting hedge roll.", 
-                 level=config.LOG_CRITICAL, 
-                 source=config.LOG_SOURCE_ORCHESTRATOR)
-      return
-    
-    # 2. Buy New Hedge
-    # 1. Get Valid Expirations
-    valid_dates = server_api.get_expirations()
-    target_dte = cycle.rules['hedge_target_dte'] # e.g. 90
-    
-    best_date = server_libs.find_closest_expiration(valid_dates, target_dte)
-    if not best_date: return
-    
-    chain = server_api.get_option_chain(date=best_date)
-    if not chain: return
 
-    # Select Strike
-    leg_to_buy = server_libs.select_hedge_strike(
-      chain, 
-      target_delta=cycle.rules['hedge_target_delta']
-    )
-    if leg_to_buy:
-      _execute_hedge_entry(cycle, leg_to_buy)
-    else:
-      logger.log("Closed old hedge but could not find new one!", 
-                 level=config.LOG_CRITICAL, 
-                 source=config.LOG_SOURCE_ORCHESTRATOR)
+      chain = server_api.get_option_chain(date=best_date)
+      if not chain: return
+
+      leg_to_buy = server_libs.select_hedge_strike(
+        chain, 
+        target_delta=cycle.rules.get('hedge_target_delta', 0.25)
+      )
+      if leg_to_buy:
+        trade_data = {
+          'quantity': 1,
+          'short_strike': 0,
+          'long_strike': leg_to_buy['strike'],
+          'short_leg_data': {}, 
+          'long_leg_data': leg_to_buy
+        }
+
+        order_res = server_api.buy_option(leg_to_buy)
+        entered = _execute_entry_and_sync(
+          cycle, 
+          order_res, 
+          trade_data, 
+          config.ROLE_HEDGE, 
+          "Hedge Roll Entry")
+        if entered:
+          # Post-Logic: Reset the daily hedge reference to the new purchase price
+          _reset_cycle_hedge_reference(cycle, market_data)
+      else:
+        logger.log("Closed old hedge but could not find new one!", 
+                  level=config.LOG_CRITICAL, 
+                  source=config.LOG_SOURCE_ORCHESTRATOR)
 #---------------------------------------------------#      
   elif decision_state == config.STATE_IDLE:
      logger.log("No action required.", 
@@ -777,3 +498,61 @@ def _execute_entry_and_sync(cycle: Cycle, order_res: dict, trade_data: dict, rol
   logger.log(f"TIMEOUT: {action_desc} failed. Canceling order...", level=config.LOG_WARNING)
   server_api.cancel_order(order_id)
   return False
+
+def _find_best_roll_candidate(cycle: Cycle, old_trade: Trade, market_data: dict) -> Tuple[Optional[dict], Optional[dt.date]]:
+  """
+    Hunts across expirations to find a roll that satisfies the credit requirement.
+    Returns (roll_result_dict, target_date)
+    """
+  # 1. Identify the 'Line in the Sand' (Current Short Strike)
+  # We must roll DOWN, so the new short must be lower than this.
+  legs = getattr(old_trade, 'legs', [])
+  current_short = next((l for l in legs if l.side == config.LEG_SIDE_SHORT), None)
+  if not current_short:
+    logger.log("ROLL ERROR: Could not identify short leg for strike comparison.", level=config.LOG_CRITICAL)
+    return None, None
+
+    # 2. Identify the 'Debt' we need to cover
+    # We use the mark from market_data (the price we just paid to exit)
+  realized_debit = market_data.get('spread_marks', {}).get(old_trade.id, 0.0)
+
+  # 3. Get valid dates and scan (T+1 through T+3)
+  valid_dates = server_api.get_expirations()
+  retry_offsets = [1, 2, 3] 
+
+  for days in retry_offsets:
+    candidate_date = server_libs.find_closest_expiration(valid_dates, target_dte=days)
+    if not candidate_date: continue
+
+    chain = server_api.get_option_chain(date=candidate_date)
+    if not chain: continue
+
+      # Call the math worker in libs to find the best strikes on this date
+    result = server_libs.calculate_roll_legs(
+      chain=chain,
+      current_short_strike=current_short.strike,
+      width=cycle.rules['spread_width'],
+      cost_to_close=realized_debit
+    )
+
+    if result:
+      logger.log(f"Roll Found: {candidate_date} (T+{days}) at ${result['new_credit']:.2f} credit", level=config.LOG_INFO)
+      return result, candidate_date
+
+  return None, None
+
+def _reset_cycle_hedge_reference(cycle: Cycle, market_data: dict) -> None:
+  """
+  Updates the Cycle's daily_hedge_ref to the current market price.
+  This 'zeroes out' the hedge PnL for the Panic Harvest calculation.
+  """
+  current_hedge_px = market_data.get('hedge_last', 0.0)
+
+  if current_hedge_px > 0:
+    try:
+      # Update the DB row directly
+      cycle._row['daily_hedge_ref'] = current_hedge_px
+      logger.log(f"Hedge Reference reset to ${current_hedge_px:.2f} for Cycle {cycle.id}", 
+                 level=config.LOG_INFO, source=config.LOG_SOURCE_ORCHESTRATOR)
+    except Exception as e:
+      logger.log(f"Failed to reset hedge reference: {e}", level=config.LOG_WARNING)
