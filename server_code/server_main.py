@@ -6,7 +6,7 @@ import datetime as dt
 import pytz
 
 from shared import config
-from shared.classes import Cycle
+from shared.classes import Cycle, Trade
 from . import server_libs  # The Brains (Clean Stubs)
 from . import server_api  # The Hands (Dirty Stubs)
 from . import server_db, server_logging as logger
@@ -707,3 +707,70 @@ def _execute_hedge_entry(cycle, leg_to_buy) -> bool:
                level=config.LOG_INFO, 
                source=config.LOG_SOURCE_ORCHESTRATOR)
     return False
+
+# In server_main.py (Private helper)
+def _execute_settlement_and_sync(trade_obj: Trade, order_res: dict, action_desc: str, close_cycle: bool = False) -> bool:
+  """
+    Unified handler for all position exits. 
+    Synchronizes Broker fill with DB Settlement.
+    """
+  order_id = order_res.get('id')
+  if not order_id:
+    logger.log(f"FAILED: {action_desc} rejected by API.", level=config.LOG_CRITICAL)
+    return False
+
+    # 1. Wait (Outside Transaction)
+  status, fill_px = server_api.wait_for_order_fill(order_id, config.ORDER_TIMEOUT_SECONDS)
+  if status == 'filled':
+    # 2. Record (Inside Transaction - via CRUD function)
+    final_px = fill_px if fill_px > 0 else float(order_res['price'])
+    server_db.crud_settle_trade_manual(
+      trade_id=trade_obj.id,
+      data={'exit_price': final_px, 
+            'exit_time': dt.datetime.now(dt.timezone.utc), 
+            'notes': f"[AUTO] {action_desc}"},
+      close_cycle=close_cycle
+    )
+    logger.log(f"SUCCESS: {action_desc} recorded at ${final_px}", level=config.LOG_INFO)
+    return True
+
+    # 3. Handle Failures (Timeout/Canceled)
+  logger.log(f"ALERT: {action_desc} {status.upper()}. Manual check required.", level=config.LOG_CRITICAL)
+  return False
+
+# In server_main.py (Private helper)
+def _execute_entry_and_sync(cycle: Cycle, order_res: dict, trade_data: dict, role: str, action_desc: str) -> bool:
+  """
+    Unified handler for all position entries.
+    Includes Safety: Cancels order on broker if timeout occurs.
+    """
+  order_id = order_res.get('id')
+  if not order_id: return False
+
+    # 1. Wait
+  status, fill_px = server_api.wait_for_order_fill(order_id, config.ORDER_TIMEOUT_SECONDS)
+
+  if status == 'filled':
+    # 2. Record (Inside Transaction)
+    final_px = fill_px if fill_px > 0 else float(order_res['price'])
+    new_trade = server_db.record_new_trade(
+      cycle_row=cycle._row,
+      role=role,
+      trade_dict=trade_data,
+      order_id=order_id,
+      fill_price=final_px,
+      fill_time=dt.datetime.now(dt.timezone.utc)
+    )
+
+    # Link hedge specifically
+    if role == config.ROLE_HEDGE:
+      cycle._row['hedge_trade'] = new_trade._row
+
+    logger.log(f"SUCCESS: {action_desc} filled at ${final_px}", level=config.LOG_INFO)
+    return True
+
+    # 3. SAFETY: If entry didn't fill, we MUST cancel it on broker 
+    # so we don't accidentally fill later and desync.
+  logger.log(f"TIMEOUT: {action_desc} failed. Canceling order...", level=config.LOG_WARNING)
+  server_api.cancel_order(order_id)
+  return False

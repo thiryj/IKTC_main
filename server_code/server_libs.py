@@ -664,3 +664,4 @@ def get_zombie_trades(cycle: Cycle, positions: List[Dict]) -> List[Trade]:
         zombies.append(trade)
 
   return zombies
+
