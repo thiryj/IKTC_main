@@ -47,29 +47,36 @@ def log(message: str, level: int = config.LOG_INFO, source: str = "System", cont
 
     # 2. DATABASE (Persistent Record)
   if level >= config.LEVEL_DB:
-    try:
-      # Convert context to string for storage if present
-      data_str = json.dumps(context, default=str) if context else None
-
-      app_tables.logs.add_row(
-        timestamp=dt.datetime.now(),
-        level=config.LOG_NAMES.get(level, "UNKNOWN"),
-        source=source,
-        message=message,
-        data=data_str,
-        environment=config.ACTIVE_ENV
-      )
-    except Exception as e:
-      # Fallback if DB fails (don't crash the bot)
-      print(f"!! LOGGING ERROR !! Failed to write to DB: {e}")
-
-    # 3. ALERTS (Async / Human)
-  if level >= config.LEVEL_ALERT:
-    # Launch background task so we don't block the trading logic
-    # while waiting for Email/SMS servers.
-    anvil.server.launch_background_task('send_alert_async', message, level, source)
+    anvil.server.launch_background_task(
+      'persist_log_and_alert_async', 
+      message, level, source, context, config.ACTIVE_ENV
+    )
 
 # --- BACKGROUND TASKS ---
+@anvil.server.background_task
+def persist_log_and_alert_async(message, level, source, context, environment):
+  """
+    This runs in a SEPARATE transaction. 
+    Even if the bot crashes, this persists.
+    """
+  # 1. Write to DB
+  try:
+    data_str = json.dumps(context, default=str) if context else None
+    app_tables.logs.add_row(
+      timestamp=dt.datetime.now(),
+      level=config.LOG_NAMES.get(level, "UNKNOWN"),
+      source=source,
+      message=message,
+      data=data_str,
+      environment=environment
+    )
+  except Exception as e:
+    print(f"FAILED TO PERSIST LOG: {e}")
+
+    # 2. If Critical, send the alert (Pushover)
+  if level >= config.LEVEL_ALERT:
+    send_alert_async(message, level, source) # Call your existing alert logic
+
 @anvil.server.callable
 @anvil.server.background_task
 def send_alert_async(message, level, source):

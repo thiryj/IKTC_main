@@ -257,7 +257,8 @@ def run_automation_routine():
       return
 
     # Poll for Fill (Aggressive Wait)
-    status, close_px = server_api.wait_for_order_fill(close_order_id, timeout_seconds=10)
+    status, close_px = server_api.wait_for_order_fill(close_order_id, 
+                                                      timeout_seconds=config.ORDER_TIMEOUT_SECONDS)
     if status != 'filled':
       logger.log(f"Roll Aborted - Close Order {status}.", 
                  level=config.LOG_CRITICAL, 
@@ -266,19 +267,15 @@ def run_automation_routine():
       return
 
     realized_debit = close_px if close_px > 0 else float(close_res['price'])
-
-    server_db.close_trade(
-      trade_row=spread_trade._row,
-      fill_price=realized_debit, 
-      fill_time=dt.datetime.now(),
-      order_id=close_order_id
-    )
-    logger.log(f"Liability Closed. Realized Debit: ${realized_debit:.2f}", 
-               level=config.LOG_INFO, 
-               source=config.LOG_SOURCE_ORCHESTRATOR)
+    server_db.crud_settle_trade_manual(trade_id=close_order_id, 
+                                       data={
+                                        'exit_price': realized_debit,
+                                        'exit_time': dt.datetime.now(dt.timezone.utc),
+                                        'notes' : f"Liability Closed. Realized Debit: ${realized_debit:.2f}"
+                                       }
+                                      )
 
     # --- STEP 2: RE-ENTRY LOGIC ---
-
     # A. Check Safety (Don't re-enter if market is crashing)
     is_safe, safety_msg = server_libs.check_roll_safety(market_data, cycle.rules)
     if not is_safe:
@@ -443,7 +440,6 @@ def run_automation_routine():
 
   #---------------------------------------------------#
   elif decision_state == config.STATE_HARVEST_TARGET_HIT:
-    # Strategy: Close spread at 50% profit
     spread_trade = server_libs.get_winning_spread(cycle, market_data)
     if spread_trade:
       logger.log(f"Harvest Target Hit! Trade {spread_trade.id}. Closing...", 
@@ -455,15 +451,14 @@ def run_automation_routine():
         status, fill_px = server_api.wait_for_order_fill(order_id, config.ORDER_TIMEOUT_SECONDS)
         if status == 'filled':
           final_price = fill_px if fill_px > 0 else float(order_res['price'])
-          server_db.close_trade(
-            trade_row=spread_trade._row,
-            fill_price=final_price,
-            fill_time=order_res['time'],
-            order_id=order_res['id']
+          server_db.crud_settle_trade_manual(
+            trade_id=spread_trade.id,
+            data={
+              'exit_price': final_price,
+              'exit_time': dt.datetime.now(dt.timezone.utc),
+              'notes': f"Auto Harvest filled at {final_price}"
+            }
           )
-          logger.log("Trade closed and DB updated.", 
-                    level=config.LOG_INFO, 
-                    source=config.LOG_SOURCE_ORCHESTRATOR)
       elif status == 'timeout':
           logger.log("Harvest timed out. Canceling...", 
                      level=config.LOG_WARNING, 
