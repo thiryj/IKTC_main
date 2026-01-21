@@ -399,14 +399,18 @@ def run_automation_routine():
                  source=config.LOG_SOURCE_ORCHESTRATOR)
 #---------------------------------------------------#
   elif decision_state == config.STATE_NAKED_HEDGE_HARVEST:
-    logger.log("Executing Naked Hedge Windfall Harvest...", 
-               level=config.LOG_CRITICAL, 
-               source=config.LOG_SOURCE_ORCHESTRATOR)
-
     hedge_trade = cycle.hedge_trade_link
-    try:
-      # 1. Close Position (Market Order for guaranteed lock-in)
-      order_res = server_api.close_position(hedge_trade, order_type='market')
+    order_res = server_api.close_position(hedge_trade, order_type='market')
+
+    # Post processing
+    success = _execute_settlement_and_sync(hedge_trade, order_res, "Naked Hedge Harvest")
+
+    # Close Cycle
+    if success:
+      logger.log("Hedge Harvested. Closing the current Cycle.", level=config.LOG_INFO)
+      server_db.close_active_cycle(cycle.id) # Assuming a helper that sets end_date/status
+    
+      '''
       order_id = order_res.get('id')
 
       if order_id:
@@ -433,10 +437,7 @@ def run_automation_routine():
           logger.log(f"Cycle Closed via Windfall Harvest. Final PnL: ${total_dollars:+.2f}", 
                      level=config.LOG_CRITICAL, 
                      source=config.LOG_SOURCE_ORCHESTRATOR)
-    except Exception as e:
-      logger.log(f"Windfall Harvest Failed: {e}", 
-                 level=config.LOG_CRITICAL, 
-                 source=config.LOG_SOURCE_ORCHESTRATOR)
+      '''
 
   #---------------------------------------------------#
   elif decision_state == config.STATE_HARVEST_TARGET_HIT:
@@ -711,31 +712,33 @@ def _execute_hedge_entry(cycle, leg_to_buy) -> bool:
 # In server_main.py (Private helper)
 def _execute_settlement_and_sync(trade_obj: Trade, order_res: dict, action_desc: str, close_cycle: bool = False) -> bool:
   """
-    Unified handler for all position exits. 
-    Synchronizes Broker fill with DB Settlement.
-    """
+  Unified handler for all position exits. 
+  Synchronizes Broker fill with DB Settlement. (wait and record)
+  """
   order_id = order_res.get('id')
   if not order_id:
     logger.log(f"FAILED: {action_desc} rejected by API.", level=config.LOG_CRITICAL)
     return False
 
-    # 1. Wait (Outside Transaction)
+  # 1. Wait (No db lock)
   status, fill_px = server_api.wait_for_order_fill(order_id, config.ORDER_TIMEOUT_SECONDS)
   if status == 'filled':
     # 2. Record (Inside Transaction - via CRUD function)
-    final_px = fill_px if fill_px > 0 else float(order_res['price'])
-    server_db.crud_settle_trade_manual(
-      trade_id=trade_obj.id,
-      data={'exit_price': final_px, 
-            'exit_time': dt.datetime.now(dt.timezone.utc), 
-            'notes': f"[AUTO] {action_desc}"},
-      close_cycle=close_cycle
-    )
-    logger.log(f"SUCCESS: {action_desc} recorded at ${final_px}", level=config.LOG_INFO)
-    return True
-
-    # 3. Handle Failures (Timeout/Canceled)
-  logger.log(f"ALERT: {action_desc} {status.upper()}. Manual check required.", level=config.LOG_CRITICAL)
+    try:
+      final_px = fill_px if fill_px > 0 else float(order_res['price'])
+      server_db.crud_settle_trade_manual(
+        trade_id=trade_obj.id,
+        data={'exit_price': final_px, 
+              'exit_time': dt.datetime.now(dt.timezone.utc), 
+              'notes': f"[AUTO] {action_desc}"},
+        close_cycle=close_cycle
+      )
+      logger.log(f"SUCCESS: {action_desc} recorded at ${final_px}", level=config.LOG_INFO)
+      return True
+    except Exception as e:
+      logger.log(f"DB SYNC ERROR: {action_desc} filled at broker but failed to record in DB: {e}", 
+                 level=config.LOG_CRITICAL)
+      return False
   return False
 
 # In server_main.py (Private helper)
