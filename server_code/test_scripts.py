@@ -95,7 +95,7 @@ def run_branch_test(scenario: str) -> str:
     # Find an open spread and set its 'Mark' to be > Trigger Price (e.g. 5.00)
     for t in cycle.trades:
       if t.role == config.ROLE_INCOME and t.status == config.STATUS_OPEN:
-        mock_data['spread_marks'][t.id] = 5.50
+        mock_data['spread_marks'][t.id] = 3.50
         break
 
   elif scenario == 'WINDFALL':

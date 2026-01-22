@@ -25,7 +25,7 @@ def log(message: str, level: int = config.LOG_INFO, source: str = "System", cont
   # Only apply time limits to low-priority logs (INFO/DEBUG).
   # Always let WARNING/CRITICAL through.
   # 1. Weekend Check (5=Saturday, 6=Sunday)
-  if level < config.LOG_WARNING:
+  if level < config.LOG_WARNING and config.ENFORCE_TRADING_HOURS and not config.DRY_RUN:
     # Get Current Eastern Time
     utc_now = dt.datetime.now(pytz.utc)
     eastern = pytz.timezone('US/Eastern')
