@@ -492,14 +492,16 @@ def close_active_cycle(cycle_id: str) -> None:
   """Worker to finalize a campaign. Sets status, date, and calculates total dollars."""
   row = app_tables.cycles.get_by_id(cycle_id)
   if not row: return
+  row['status'] = config.STATUS_CLOSED
+  row['end_date'] = dt.date.today()
   
   total = 0.0
   all_trades = app_tables.trades.search(cycle=row)
 
   for t in all_trades:
     # Use .get() and fallbacks to prevent NoneType errors during math
-    t_pnl = t.get('pnl') or 0.0
-    t_qty = t.get('quantity') or 0
+    t_pnl = t['pnl'] or 0.0
+    t_qty = t['quantity'] or 0
     total += t_pnl * t_qty * config.DEFAULT_MULTIPLIER
   
     row['total_pnl'] = round(total, 2)

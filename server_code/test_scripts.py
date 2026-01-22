@@ -126,7 +126,7 @@ def run_branch_test(scenario: str) -> str:
     income_trade = next((t for t in cycle.trades if t.role == config.ROLE_INCOME and t.status == config.STATUS_OPEN), None)
     if income_trade:
       # If target is 0.50, mock the cost at 0.40
-      target = income_trade.target_harvest_price or 0.50
+      target = income_trade.target_harvest_price or 1.16
       mock_data['spread_marks'][income_trade.id] = target - 0.10
       print(f"TEST: Mocking Spread {income_trade.id} cost at ${mock_data['spread_marks'][income_trade.id]} (Target: {target})")
     else:
@@ -137,8 +137,16 @@ def run_branch_test(scenario: str) -> str:
     mock_data['spread_marks'] = {} # Ensure no open spreads
     # Ensure we are 'past' the trade_start_delay (e.g., mock current time to 10:00 AM)
     hedge = cycle.hedge_trade_link
-    if hedge:
-      mock_data['hedge_last'] = hedge.entry_price or 10.0
+    if hedge and hedge.entry_price:
+      mock_data['hedge_last'] = hedge.entry_price
+    else:
+      mock_data['hedge_last'] = 0.01
+
+    mock_data['hedge_theta'] = 1.0 # Keep threshold at 10.0
+      # This makes _has_traded_today look for trades on a date with no data.
+    mock_today = dt.date.today() + dt.timedelta(days=1)
+
+    env_status['today'] = mock_today
     env_status['now'] = dt.datetime.combine(dt.date.today(), dt.time(10, 0))
     print("TEST: Mocking 'Flat' state at 10:00 AM to trigger Entry.")
     
