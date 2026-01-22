@@ -491,12 +491,19 @@ def crud_delete_trade(trade_id: str) -> bool:
 def close_active_cycle(cycle_id: str) -> None:
   """Worker to finalize a campaign. Sets status, date, and calculates total dollars."""
   row = app_tables.cycles.get_by_id(cycle_id)
-  if row:
-    row['status'] = config.STATUS_CLOSED
-    row['end_date'] = dt.date.today()
-    # Sum up PnL * Qty * 100 for every trade in this cycle
-    total = sum([(t['pnl'] or 0) * (t['quantity'] or 0) * 100 
-                 for t in app_tables.trades.search(cycle=row)])
+  if not row: return
+  
+  total = 0.0
+  all_trades = app_tables.trades.search(cycle=row)
+
+  for t in all_trades:
+    # Use .get() and fallbacks to prevent NoneType errors during math
+    t_pnl = t.get('pnl') or 0.0
+    t_qty = t.get('quantity') or 0
+    total += t_pnl * t_qty * config.DEFAULT_MULTIPLIER
+  
     row['total_pnl'] = round(total, 2)
+    logger.log(f"Cycle {cycle_id} CLOSED. Final Realized PnL: ${total:+.2f}", 
+               level=config.LOG_INFO, source=config.LOG_SOURCE_DB)
 
 

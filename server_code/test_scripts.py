@@ -93,16 +93,55 @@ def run_branch_test(scenario: str) -> str:
 
   elif scenario == 'ROLL_SPREAD':
     # Find an open spread and set its 'Mark' to be > Trigger Price (e.g. 5.00)
-    for t in cycle.trades:
-      if t.role == config.ROLE_INCOME and t.status == config.STATUS_OPEN:
-        mock_data['spread_marks'][t.id] = 5.50
-        break
+    income_trade = next((t for t in cycle.trades if t.role == config.ROLE_INCOME and t.status == config.STATUS_OPEN), None)
+
+    if income_trade:
+      # 2. Force the 'Mark' (Current Cost) to be ABOVE the trigger
+      # If trigger is 3.00, we'll make it 3.50
+      mock_data['spread_marks'][income_trade.id] = 3.50
+      print(f"TEST: Mocking Spread {income_trade.id} cost at $3.50 (Trigger: {income_trade.roll_trigger_price})")
+    else:
+      return "ERROR: You need one OPEN Income Spread in the DB to test a Roll."
 
   elif scenario == 'WINDFALL':
     # Hedge Profit > 10x Theta
     mock_data['spread_marks'] = {} # Naked
     mock_data['hedge_last'] = 200.0 # Massive gain
     mock_data['hedge_theta'] = 1.0
+
+  elif scenario == 'HEDGE_ROLL':
+    # Hedge Profit > 10x Theta
+    mock_data['hedge_dte'] = 45
+    print('testing hedge roll with old hedge')
+    pass
+  elif scenario == 'WINDFALL':
+    # Condition: No spreads open + Hedge Profit > 10x Theta
+    mock_data['spread_marks'] = {} # Force naked
+    mock_data['hedge_last'] = 200.0 # Force high price
+    mock_data['hedge_theta'] = 1.0  # 10x1 = 10. Profit 200-Entry > 10.
+    print(f"TEST: Mocking Naked Hedge at ${mock_data['hedge_last']} (Windfall Target)")
+
+  elif scenario == 'HARVEST':
+    # Condition: Spread Cost <= Target Harvest Price
+    income_trade = next((t for t in cycle.trades if t.role == config.ROLE_INCOME and t.status == config.STATUS_OPEN), None)
+    if income_trade:
+      # If target is 0.50, mock the cost at 0.40
+      target = income_trade.target_harvest_price or 0.50
+      mock_data['spread_marks'][income_trade.id] = target - 0.10
+      print(f"TEST: Mocking Spread {income_trade.id} cost at ${mock_data['spread_marks'][income_trade.id]} (Target: {target})")
+    else:
+      return "ERROR: Need an OPEN Income Spread to test Harvest."
+
+  elif scenario == 'SPREAD_MISSING':
+    # Condition: No open income spreads + valid market time
+    mock_data['spread_marks'] = {} # Ensure no open spreads
+    # Ensure we are 'past' the trade_start_delay (e.g., mock current time to 10:00 AM)
+    hedge = cycle.hedge_trade_link
+    if hedge:
+      mock_data['hedge_last'] = hedge.entry_price or 10.0
+    env_status['now'] = dt.datetime.combine(dt.date.today(), dt.time(10, 0))
+    print("TEST: Mocking 'Flat' state at 10:00 AM to trigger Entry.")
+    
 
   # 2. RUN ORCHESTRATOR
   # Instead of the heartbeat, we call the specific decision + execution logic

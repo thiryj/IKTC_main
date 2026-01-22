@@ -145,54 +145,35 @@ def process_state_decision(cycle: Cycle, decision_state: str, market_data: dict,
     # 2. Phase 1: Close Liabilities (Spreads)
     for trade in income_trades:
       order_res = server_api.close_position(trade, order_type='market')
-      current_mark = market_data.get('spread_marks', {}).get(trade.id, 0.0)
-      success = _execute_settlement_and_sync(trade, order_res, "Panic Spread Exit", fill_px_fallback=current_mark)
+      spread_mark = market_data.get('spread_marks', {}).get(trade.id, 0.0)
+      success = _execute_settlement_and_sync(trade, order_res, "Panic Spread Exit", fill_px_fallback=spread_mark)
       if not success:
         liabilities_cleared = False
         logger.log(f"ALERT: Failed to confirm spread {trade.id} closed. Holding Hedge.", 
                    level=config.LOG_CRITICAL)
-      
-      # 3. Phase 2: Close Hedges (Only if spreads are confirmed gone)  
-    if liabilities_cleared:
-      for h in hedge_trades:
-        print(f"DEBUG: Processing Hedge Trade ID: {h.id}") 
-        h_res = server_api.close_position(h, order_type='market')
-
-        # Use helper
-        _execute_settlement_and_sync(h, h_res, "Panic Hedge Exit")
-
-      # 4. FINAL CHECK: Is the cycle now totally flat?
-      # We query the DB to see if ANY trades are still open for this cycle
-      still_open = app_tables.trades.search(cycle=cycle._row, status=config.STATUS_OPEN)
-
-      if len(list(still_open)) == 0:
-        logger.log("Cycle is flat. Finalizing Cycle Record.", level=config.LOG_INFO)
-        server_db.close_active_cycle(cycle.id)
-      else:
-        logger.log("Cycle is NOT flat. Holding Cycle record open for manual review.", level=config.LOG_WARNING)
-          
-    else:
-      logger.log("PANIC ABORTED: Liabilities still present in DB. System holding Hedge for protection.", level=config.LOG_CRITICAL)
-        
+   
     # 3. Phase 2: Close Assets (Hedge)
     # ONLY proceed if we successfully submitted close orders for all liabilities
     if liabilities_cleared:
       logger.log("Liabilities cleared. Closing Hedges...", 
                  level=config.LOG_INFO, 
                  source=config.LOG_SOURCE_ORCHESTRATOR)
-      for h_trade in hedge_trades:
-        logger.log(f"Closing Hedge Asset {h_trade.id}...", 
+      for h in hedge_trades:
+        logger.log(f"Closing Hedge Asset {h.id}...", 
                    level=config.LOG_INFO, 
                    source=config.LOG_SOURCE_ORCHESTRATOR)
         
-        h_order = server_api.close_position(h_trade, order_type='market')
+        h_order = server_api.close_position(h, order_type='market')
         h_mark = market_data.get('hedge_last', 0.0)
-        h_success = _execute_settlement_and_sync(h_trade, h_order, "Panic Hedge Exit", fill_px_fallback=h_mark)
+        h_success = _execute_settlement_and_sync(h, h_order, "Panic Hedge Exit", fill_px_fallback=h_mark)
         if h_success:
           # --- STAGE 4: TERMINAL ACTION ---
-          logger.log("Hedge settled. Finalizing Cycle.", level=config.LOG_INFO)
-          # This function sets end_date, calculates total_pnl, and sets status=CLOSED
-          server_db.close_active_cycle(cycle.id)
+          still_open = app_tables.trades.search(cycle=cycle._row, status=config.STATUS_OPEN)
+          if len(list(still_open)) == 0:
+            logger.log("Cycle is flat. Finalizing Cycle Record.", level=config.LOG_INFO)
+            server_db.close_active_cycle(cycle.id)
+          else:
+            logger.log("Cycle is NOT flat. Holding Cycle open for review.", level=config.LOG_WARNING)
                
     else:
       logger.log("Liabilities NOT cleared. ABORTING Hedge Close. System holding Hedge.", 
@@ -214,7 +195,8 @@ def process_state_decision(cycle: Cycle, decision_state: str, market_data: dict,
 
     # Force Market Order for immediate exit
     close_res = server_api.close_position(spread_trade, order_type='market')
-    settled = _execute_settlement_and_sync(spread_trade, close_res, "Roll Exit")
+    mark = market_data.get('spread_marks', {}).get(spread_trade.id, 0.0)
+    settled = _execute_settlement_and_sync(spread_trade, close_res, "Roll Exit", fill_px_fallback=mark)
 
     if settled:
       # --- STEP 2: RE-ENTRY LOGIC ---
@@ -250,26 +232,24 @@ def process_state_decision(cycle: Cycle, decision_state: str, market_data: dict,
 #---------------------------------------------------#
   elif decision_state == config.STATE_NAKED_HEDGE_HARVEST:
     hedge_trade = cycle.hedge_trade_link
+    mark = market_data.get('hedge_last', 0.0)
     order_res = server_api.close_position(hedge_trade, order_type='market')
 
     # Post processing
-    success = _execute_settlement_and_sync(hedge_trade, order_res, "Naked Hedge Harvest")
+    success = _execute_settlement_and_sync(hedge_trade, order_res, "Naked Hedge Harvest", fill_px_fallback=mark)
 
     # Close Cycle
     if success:
       logger.log("Hedge Harvested. Closing the current Cycle.", level=config.LOG_INFO)
       server_db.close_active_cycle(cycle.id) # Assuming a helper that sets end_date/status
       
-      logger.log(f"Cycle Closed via Windfall Harvest. Final PnL: ${total_dollars:+.2f}", 
-                 level=config.LOG_CRITICAL, 
-                 source=config.LOG_SOURCE_ORCHESTRATOR)
-
 #---------------------------------------------------#
   elif decision_state == config.STATE_HARVEST_TARGET_HIT:
     trade = server_libs.get_winning_spread(cycle, market_data)
     if trade:
+      mark = market_data.get('spread_marks', {}).get(trade.id, 0.0)
       order_res = server_api.close_position(trade)
-      _execute_settlement_and_sync(trade, order_res, "Profit Harvest")
+      _execute_settlement_and_sync(trade, order_res, "Profit Harvest", fill_px_fallback=mark)
       
 #---------------------------------------------------#
   elif decision_state == config.STATE_HEDGE_MISSING:
@@ -319,7 +299,7 @@ def process_state_decision(cycle: Cycle, decision_state: str, market_data: dict,
     )
     if is_valid:
       order_res = server_api.open_spread_position(trade_data)
-      _execute_entry_and_sync(cycle, order_res, trade_data, config.ROLE_INCOME, "Standard Spread Entry")
+      _execute_entry_and_sync(cycle, order_res, trade_data, config.ROLE_INCOME, "Standard Spread Entry", fill_px_fallback=trade_data['net_credit'])
       
 #---------------------------------------------------#      
   elif decision_state == config.STATE_HEDGE_ADJUSTMENT_NEEDED:
@@ -330,8 +310,9 @@ def process_state_decision(cycle: Cycle, decision_state: str, market_data: dict,
     old_hedge = cycle.hedge_trade_link
 
     # 1. Close Old Hedge
-    close_res = server_api.close_position(old_hedge)
-    settled = _execute_settlement_and_sync(old_hedge, close_res, "Hedge Roll Exit")
+    old_h_mark = market_data.get('hedge_last', 0.0)
+    close_res = server_api.close_position(old_hedge, order_type='market')
+    settled = _execute_settlement_and_sync(old_hedge, close_res, "Hedge Roll Exit", fill_px_fallback=old_h_mark)
     if settled:
       valid_dates = server_api.get_expirations()
       target_dte = cycle.rules.get('hedge_target_dte', 90)
@@ -474,7 +455,7 @@ def _execute_settlement_and_sync(trade_obj: Trade, order_res: dict, action_desc:
   return False
 
 # In server_main.py (Private helper)
-def _execute_entry_and_sync(cycle: Cycle, order_res: dict, trade_data: dict, role: str, action_desc: str) -> bool:
+def _execute_entry_and_sync(cycle: Cycle, order_res: dict, trade_data: dict, role: str, action_desc: str, fill_px_fallback: float=0.0) -> bool:
   """
     Unified handler for all position entries.
     Includes Safety: Cancels order on broker if timeout occurs.
@@ -483,7 +464,7 @@ def _execute_entry_and_sync(cycle: Cycle, order_res: dict, trade_data: dict, rol
   if not order_id: return False
 
     # 1. Wait
-  status, fill_px = server_api.wait_for_order_fill(order_id, config.ORDER_TIMEOUT_SECONDS)
+  status, fill_px = server_api.wait_for_order_fill(order_id, config.ORDER_TIMEOUT_SECONDS, fill_px_fallback)
 
   if status == 'filled':
     # 2. Record (Inside Transaction)
