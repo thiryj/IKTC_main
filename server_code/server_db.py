@@ -504,8 +504,8 @@ def close_active_cycle(cycle_id: str) -> None:
     t_qty = t['quantity'] or 0
     total += t_pnl * t_qty * config.DEFAULT_MULTIPLIER
   
-    row['total_pnl'] = round(total, 2)
-    logger.log(f"Cycle {cycle_id} CLOSED. Final Realized PnL: ${total:+.2f}", 
-               level=config.LOG_INFO, source=config.LOG_SOURCE_DB)
+  row['total_pnl'] = round(total, 2)
+  logger.log(f"Cycle {cycle_id} CLOSED. Final Realized PnL: ${total:+.2f}", 
+              level=config.LOG_INFO, source=config.LOG_SOURCE_DB)
 
 

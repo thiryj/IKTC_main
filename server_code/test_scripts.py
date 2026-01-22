@@ -106,8 +106,15 @@ def run_branch_test(scenario: str) -> str:
   elif scenario == 'WINDFALL':
     # Hedge Profit > 10x Theta
     mock_data['spread_marks'] = {} # Naked
-    mock_data['hedge_last'] = 200.0 # Massive gain
-    mock_data['hedge_theta'] = 1.0
+    hedge = cycle.hedge_trade_link
+    entry_px = hedge.entry_price or 10.0
+
+    # We need Profit > (Factor * abs(Theta))
+    # If Factor is 10 and Theta is 0.60, we need > $6.00 profit
+    mock_data['hedge_last'] = entry_px + 15.0 # Guaranteed trigger
+    mock_data['hedge_theta'] = 0.60
+
+    print(f"TEST: Mocking Hedge at ${mock_data['hedge_last']} (Entry: ${entry_px}, Trigger: >${mock_data['hedge_theta']*10})")
 
   elif scenario == 'HEDGE_ROLL':
     # Hedge Profit > 10x Theta

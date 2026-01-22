@@ -260,6 +260,7 @@ def process_state_decision(cycle: Cycle, decision_state: str, market_data: dict,
 
 #---------------------------------------------------#
   elif decision_state == config.STATE_NAKED_HEDGE_HARVEST:
+    logger.log("NAKED WINDFALL! Harvesting Hedge Profit...", level=config.LOG_CRITICAL)
     hedge_trade = cycle.hedge_trade_link
     mark = market_data.get('hedge_last', 0.0)
     order_res = server_api.close_position(hedge_trade, order_type='market')
@@ -369,6 +370,9 @@ def process_state_decision(cycle: Cycle, decision_state: str, market_data: dict,
           'short_leg_data': {}, 
           'long_leg_data': leg_to_buy
         }
+        bid = float(leg_to_buy.get('bid', 0) or 0)
+        ask = float(leg_to_buy.get('ask', 0) or 0)
+        new_h_px = (bid + ask) / 2.0 if (bid and ask) else float(leg_to_buy.get('last', 0) or 0)
 
         order_res = server_api.buy_option(leg_to_buy)
         entered = _execute_entry_and_sync(
@@ -376,7 +380,9 @@ def process_state_decision(cycle: Cycle, decision_state: str, market_data: dict,
           order_res, 
           trade_data, 
           config.ROLE_HEDGE, 
-          "Hedge Roll Entry")
+          "Hedge Roll Entry",
+          fill_px_fallback=new_h_px
+        )
         if entered:
           # Post-Logic: Reset the daily hedge reference to the new purchase price
           _reset_cycle_hedge_reference(cycle, market_data)
