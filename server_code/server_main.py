@@ -21,30 +21,26 @@ def run_automation_routine():
     level=config.LOG_INFO,
     source=config.LOG_SOURCE_ORCHESTRATOR)
   '''
-  settings_row = app_tables.settings.get() 
-  if settings_row:
-    settings_row['last_bot_heartbeat'] = dt.datetime.now()
+  with anvil.tables.Transaction():
+    settings_row = app_tables.settings.get() 
+    if settings_row['processing_lock']:
+      return
+    settings_row['processing_lock'] = True
+    settings_row['last_bot_heartbeat'] = dt.datetime.now(dt.timezone.utc)
     system_settings = dict(settings_row)
-  else:
-    system_settings = {}
+    print(f"starting run proc lock is: {settings_row['processing_lock']}")
 
-    # 2. THE BUSY LOCK: 
-    # If the bot is already processing a trade, exit immediately.
-    if system_settings['processing_lock']:
-      # We don't log this at INFO level to avoid noise, but it's working
-      return 
+  try:
+    _execute_automation_loop(system_settings)
+  except Exception as e:
+    logger.log(f"CRITICAL: Automation loop crashed: {e}", level=config.LOG_CRITICAL)
 
-    try:
-      # 3. SET LOCK
-      system_settings['processing_lock'] = True
-      system_settings['last_bot_heartbeat'] = dt.datetime.now(dt.timezone.utc)
-
-      # 4. RUN ACTUAL LOGIC
-      _execute_automation_loop(system_settings)
-
-    finally:
-      # 5. RELEASE LOCK (Always happens even if code crashes)
-      system_settings['processing_lock'] = False
+  finally:
+    with anvil.tables.Transaction():
+      settings = app_tables.settings.get()
+      settings['processing_lock'] = False
+      print(f"run ended, proc lock is: {settings_row['processing_lock']}")
+    
 
 def _execute_automation_loop(system_settings):
     
@@ -267,9 +263,12 @@ def process_state_decision(cycle: Cycle, decision_state: str, market_data: dict,
   elif decision_state == config.STATE_HARVEST_TARGET_HIT:
     trade = server_libs.get_winning_spread(cycle, market_data)
     if trade:
+      logger.log(f"Executing Harvest for trade {trade.id} (Qty: {trade.quantity})", level=config.LOG_INFO)
       mark = market_data.get('spread_marks', {}).get(trade.id, 0.0)
       order_res = server_api.close_position(trade)
       _execute_settlement_and_sync(trade, order_res, "Profit Harvest", fill_px_fallback=mark)
+    else:
+      logger.log("Logic says Harvest, but no winning trade ID found.", level=config.LOG_WARNING)
       
 #---------------------------------------------------#
   elif decision_state == config.STATE_HEDGE_MISSING:
