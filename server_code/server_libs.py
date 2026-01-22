@@ -176,6 +176,10 @@ def _check_spread_missing(cycle: Cycle, env_status: EnvStatus) -> bool:
   if _has_traded_today(cycle, env_status):  #only one spread per day
     return False
     
+  open_spreads = [t for t in cycle.trades if t.role == config.ROLE_INCOME and t.status == config.STATUS_OPEN]
+  if len(open_spreads) > 0:
+    return False
+    
   open_spreads = [
     t for t in cycle.trades 
     if t.role == config.ROLE_INCOME and t.status == config.STATUS_OPEN

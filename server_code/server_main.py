@@ -27,6 +27,26 @@ def run_automation_routine():
     system_settings = dict(settings_row)
   else:
     system_settings = {}
+
+    # 2. THE BUSY LOCK: 
+    # If the bot is already processing a trade, exit immediately.
+    if system_settings['processing_lock']:
+      # We don't log this at INFO level to avoid noise, but it's working
+      return 
+
+    try:
+      # 3. SET LOCK
+      system_settings['processing_lock'] = True
+      system_settings['last_bot_heartbeat'] = dt.datetime.now(dt.timezone.utc)
+
+      # 4. RUN ACTUAL LOGIC
+      _execute_automation_loop(system_settings)
+
+    finally:
+      # 5. RELEASE LOCK (Always happens even if code crashes)
+      system_settings['processing_lock'] = False
+
+def _execute_automation_loop(system_settings):
     
   current_env_account = config.ACTIVE_ENV # e.g., 'PROD' or 'SANDBOX'
   # 1. GLOBAL PRECONDITIONS
