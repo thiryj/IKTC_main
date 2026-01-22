@@ -517,7 +517,7 @@ def close_position(trade, order_type: str = 'limit') -> Dict:
   result = _submit_order(t, payload)
   return result
 
-def wait_for_order_fill(order_id: str, timeout_seconds: int = 10) -> Tuple[str, float]:
+def wait_for_order_fill(order_id: str, timeout_seconds: int = 15, fill_px_fallback: float=0.0) -> Tuple[str, float]:
   """
     Polls Tradier for specific order ID until it is 'filled' or timeout occurs.
     Returns (status_string, avg_fill_price).
@@ -529,7 +529,7 @@ def wait_for_order_fill(order_id: str, timeout_seconds: int = 10) -> Tuple[str, 
     logger.log(f"SIMULATION: Auto-filling simulated order {order_id}", 
               level=config.LOG_INFO, 
               source=config.LOG_SOURCE_API)
-    return 'filled', 0.0  # Or pass the price back if you want to test PnL math
+    return 'filled', fill_px_fallback  # Or pass the price back if you want to test PnL math
     
   url = f"{t.endpoint}/accounts/{t.default_account_id}/orders/{order_id}"
   start_time = time.time()

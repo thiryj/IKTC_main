@@ -126,6 +126,9 @@ def run_automation_routine():
               source=config.LOG_SOURCE_ORCHESTRATOR, 
               context={'cycle_id': cycle.id})
 
+    process_state_decision(cycle, decision_state, market_data, env_status)
+
+def process_state_decision(cycle: Cycle, decision_state: str, market_data: dict, env_status: dict) -> None:
   # 5. EXECUTE
 #---------------------------------------------------#  
   if decision_state == config.STATE_PANIC_HARVEST:
@@ -142,27 +145,34 @@ def run_automation_routine():
     # 2. Phase 1: Close Liabilities (Spreads)
     for trade in income_trades:
       order_res = server_api.close_position(trade, order_type='market')
-      success = _execute_settlement_and_sync(trade, order_res, "Panic Spread Exit")
+      current_mark = market_data.get('spread_marks', {}).get(trade.id, 0.0)
+      success = _execute_settlement_and_sync(trade, order_res, "Panic Spread Exit", fill_px_fallback=current_mark)
       if not success:
         liabilities_cleared = False
         logger.log(f"ALERT: Failed to confirm spread {trade.id} closed. Holding Hedge.", 
                    level=config.LOG_CRITICAL)
       
       # 3. Phase 2: Close Hedges (Only if spreads are confirmed gone)  
-      if liabilities_cleared:
-        for trade in hedge_trades:
-          order_res = server_api.close_position(trade, order_type='market')
+    if liabilities_cleared:
+      for h in hedge_trades:
+        print(f"DEBUG: Processing Hedge Trade ID: {h.id}") 
+        h_res = server_api.close_position(h, order_type='market')
 
-          # Use helper
-          h_success = _execute_settlement_and_sync(trade, order_res, "Panic Hedge Exit")
+        # Use helper
+        _execute_settlement_and_sync(h, h_res, "Panic Hedge Exit")
 
-          if h_success:
-            # 4. Campaign Logic: Close the cycle
-            logger.log("Panic Harvest Complete. Closing Cycle.", level=config.LOG_INFO)
-            # This worker sets end_date, total_pnl, and status=CLOSED
-            server_db.close_active_cycle(cycle.id) 
+      # 4. FINAL CHECK: Is the cycle now totally flat?
+      # We query the DB to see if ANY trades are still open for this cycle
+      still_open = app_tables.trades.search(cycle=cycle._row, status=config.STATUS_OPEN)
+
+      if len(list(still_open)) == 0:
+        logger.log("Cycle is flat. Finalizing Cycle Record.", level=config.LOG_INFO)
+        server_db.close_active_cycle(cycle.id)
       else:
-        logger.log("PANIC ABORTED: Liabilities still present in DB. System holding Hedge for protection.", level=config.LOG_CRITICAL)
+        logger.log("Cycle is NOT flat. Holding Cycle record open for manual review.", level=config.LOG_WARNING)
+          
+    else:
+      logger.log("PANIC ABORTED: Liabilities still present in DB. System holding Hedge for protection.", level=config.LOG_CRITICAL)
         
     # 3. Phase 2: Close Assets (Hedge)
     # ONLY proceed if we successfully submitted close orders for all liabilities
@@ -171,12 +181,13 @@ def run_automation_routine():
                  level=config.LOG_INFO, 
                  source=config.LOG_SOURCE_ORCHESTRATOR)
       for h_trade in hedge_trades:
-        logger.log(f"Closing Hedge Asset {trade.id}...", 
+        logger.log(f"Closing Hedge Asset {h_trade.id}...", 
                    level=config.LOG_INFO, 
                    source=config.LOG_SOURCE_ORCHESTRATOR)
         
         h_order = server_api.close_position(h_trade, order_type='market')
-        h_success = _execute_settlement_and_sync(h_trade, h_order, "Panic Hedge Exit")
+        h_mark = market_data.get('hedge_last', 0.0)
+        h_success = _execute_settlement_and_sync(h_trade, h_order, "Panic Hedge Exit", fill_px_fallback=h_mark)
         if h_success:
           # --- STAGE 4: TERMINAL ACTION ---
           logger.log("Hedge settled. Finalizing Cycle.", level=config.LOG_INFO)
@@ -431,7 +442,7 @@ def _execute_hedge_entry(cycle, leg_to_buy) -> bool:
     return False
 
 # In server_main.py (Private helper)
-def _execute_settlement_and_sync(trade_obj: Trade, order_res: dict, action_desc: str, close_cycle: bool = False) -> bool:
+def _execute_settlement_and_sync(trade_obj: Trade, order_res: dict, action_desc: str, close_cycle: bool = False, fill_px_fallback: float=0.0) -> bool:
   """
   Unified handler for all position exits. 
   Synchronizes Broker fill with DB Settlement. (wait and record)
@@ -442,11 +453,11 @@ def _execute_settlement_and_sync(trade_obj: Trade, order_res: dict, action_desc:
     return False
 
   # 1. Wait (No db lock)
-  status, fill_px = server_api.wait_for_order_fill(order_id, config.ORDER_TIMEOUT_SECONDS)
+  status, fill_px = server_api.wait_for_order_fill(order_id, config.ORDER_TIMEOUT_SECONDS, fill_px_fallback)
   if status == 'filled':
     # 2. Record (Inside Transaction - via CRUD function)
     try:
-      final_px = fill_px if fill_px > 0 else float(order_res['price'])
+      final_px = fill_px if fill_px > 0 else fill_px_fallback
       server_db.crud_settle_trade_manual(
         trade_id=trade_obj.id,
         data={'exit_price': final_px, 

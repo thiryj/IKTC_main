@@ -67,6 +67,56 @@ def diagnostic_batch_api() -> dict:
     "underlying": snapshot.get('price'),
     "marks_count": len(snapshot.get('spread_marks', {}))
   }
+  
+@anvil.server.callable
+def run_branch_test(scenario: str) -> str:
+  """
+    Forces the bot into a specific state branch for testing.
+    Scenarios: 'PANIC', 'ROLL_SPREAD', 'WINDFALL', 'HARVEST', 'HEDGE_ROLL'
+    """
+  if not config.DRY_RUN:
+    return "ABORTED: You must set config.DRY_RUN = True before running branch tests!"
+
+  cycle = server_db.get_active_cycle(config.ACTIVE_ENV)
+  if not cycle: return "No active cycle found."
+
+  # 1. SETUP MOCK DATA
+  # We create a fake market_data snapshot to 'trick' the logic
+  mock_data = server_api.get_market_data_snapshot(cycle)
+  env_status = server_api.get_environment_status()
+
+  if scenario == 'PANIC':
+    # Force a massive drop: Open 5000, Price 4500
+    mock_data['open'] = 5000.0
+    mock_data['price'] = 4500.0
+    mock_data['hedge_last'] = 150.0 
+
+  elif scenario == 'ROLL_SPREAD':
+    # Find an open spread and set its 'Mark' to be > Trigger Price (e.g. 5.00)
+    for t in cycle.trades:
+      if t.role == config.ROLE_INCOME and t.status == config.STATUS_OPEN:
+        mock_data['spread_marks'][t.id] = 5.50
+        break
+
+  elif scenario == 'WINDFALL':
+    # Hedge Profit > 10x Theta
+    mock_data['spread_marks'] = {} # Naked
+    mock_data['hedge_last'] = 200.0 # Massive gain
+    mock_data['hedge_theta'] = 1.0
+
+  # 2. RUN ORCHESTRATOR
+  # Instead of the heartbeat, we call the specific decision + execution logic
+  
+  decision = server_libs.determine_cycle_state(cycle, mock_data, env_status)
+  print(f"TEST: Scenario '{scenario}' resulted in State: {decision}")
+
+  # 3. TRIGGER EXECUTION
+  # This will run your new abstracted _execute_settlement_and_sync logic
+  try:
+    server_main.process_state_decision(cycle, decision, mock_data, env_status)
+    return f"Branch Test {scenario} ({decision}) EXECUTED. Check logs."
+  except Exception as e:
+    return f"Execution Error in {decision}: {e}"
 '''
 class TestScanner(unittest.TestCase):
 

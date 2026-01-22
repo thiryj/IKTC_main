@@ -388,20 +388,31 @@ def get_all_trades_for_editor() -> list:
 
 def _perform_trade_update(row: anvil.tables.Row, data: dict) -> None:
   """Internal helper to update trade fields. No transaction wrapper."""
-  row['quantity'] = float(data.get('quantity') or 0)
-  row['entry_time'] = data.get('entry_time')
-  row['entry_price'] = float(data.get('entry_price') or 0)
-  
-  # Handle optional targets
-  row['target_harvest_price'] = float(data['target_harvest_price']) if data.get('target_harvest_price') else None
-  row['roll_trigger_price'] = float(data['roll_trigger_price']) if data.get('roll_trigger_price') else None
-  
-  row['notes'] = data.get('notes')
+  # 1. Basic Metadata (Update only if provided)
+  if 'quantity' in data:
+    row['quantity'] = float(data['quantity'] or 0)
+
+  if 'entry_time' in data:
+    row['entry_time'] = data['entry_time']
+
+  if 'entry_price' in data:
+    row['entry_price'] = float(data['entry_price'] or 0)
+
+  if 'target_harvest_price' in data:
+    row['target_harvest_price'] = float(data['target_harvest_price']) if data['target_harvest_price'] else None
+
+  if 'roll_trigger_price' in data:
+    row['roll_trigger_price'] = float(data['roll_trigger_price']) if data['roll_trigger_price'] else None
+
+  if 'notes' in data:
+    row['notes'] = data['notes']
   
   # IF TRADE IS CLOSED: Sync the exit data and recalculate PnL
-  if row['status'] == config.STATUS_CLOSED:
-    row['exit_price'] = float(data.get('exit_price') or 0)
-    row['exit_time'] = data.get('exit_time')
+  if row['status'] == config.STATUS_CLOSED or 'exit_price' in data:
+    if 'exit_price' in data:
+      row['exit_price'] = float(data['exit_price'] or 0)
+    if 'exit_time' in data:
+      row['exit_time'] = data['exit_time']
   
     # Recalculate PnL
     entry = row['entry_price'] or 0.0
