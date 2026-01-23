@@ -4,7 +4,7 @@ import datetime as dt
 ENV_SANDBOX = 'SANDBOX'
 ENV_PROD = 'PROD'
 IS_PROD = True  # Master - bot level environment selector.  True = PROD, False = SANDBOX
-DRY_RUN = True
+DRY_RUN = False
 
 ACTIVE_ENV = ENV_PROD if IS_PROD else ENV_SANDBOX
 TARGET_UNDERLYING = {
@@ -13,9 +13,9 @@ TARGET_UNDERLYING = {
 }
 
 # Guardrail flags
-ENFORCE_TRADING_HOURS = False   #disable to allow after hours automation for testing
+ENFORCE_TRADING_HOURS = True   #disable to allow after hours automation for testing
 ENFORCE_LATE_OPEN_GUARDRAIL = True
-ENFORCE_ZOMBIE_CHECKS = True
+ENFORCE_ZOMBIE_CHECKS = False
 ENFORCE_FREQUENCY_CHECKS = True
 HARVEST_NAKED_HEDGE = True
 

@@ -281,7 +281,7 @@ def settle_zombie_trade(trade_row):
   logger.log(f"DB: Settling Zombie Trade {trade_row.get_id()} as MAX LOSS.", 
              level=config.LOG_WARNING, 
              source=config.LOG_SOURCE_DB, 
-             context={trade_row.get_id()}
+             context={'trade_id': trade_row.get_id()}
             )
 
   # 1. Determine Worst Case Exit Price

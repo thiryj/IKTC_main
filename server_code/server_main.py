@@ -20,10 +20,10 @@ def run_automation_routine():
     level=config.LOG_INFO,
     source=config.LOG_SOURCE_ORCHESTRATOR)
   '''
-  print('run_automation_routine: start')
+  #print('run_automation_routine: start')
   if _set_processing_lock(True):
     return
-  print('run_automation_routine: after _set_processing_lock, executing loop')
+  #print('run_automation_routine: after _set_processing_lock, executing loop')
   try:
     _execute_automation_loop()
     print('run_automation_routine: after executing loop')

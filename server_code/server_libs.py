@@ -666,6 +666,7 @@ def get_zombie_trades(cycle: Cycle, positions: List[Dict]) -> List[Trade]:
         # If today == entry_date, maybe latency? 
         # For safety in this strategy, "Missing from Broker" = "Closed".
         zombies.append(trade)
-
+        
+  print(f'zombies: {zombies}')
   return zombies
 

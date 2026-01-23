@@ -249,10 +249,8 @@ def get_option_chain(date: dt.date, symbol: str = None) -> List[Dict]:
 
         # only trade SPXW, not SPX
         root = opt.get('root_symbol')
-        if symbol == 'SPX' and root != 'SPXW':
-          continue 
-        if not opt.get('strike') or not opt.get('bid'): 
-          continue
+        #if symbol == 'SPX' and root != 'SPXW': continue 
+        if not opt.get('strike') or not opt.get('bid'): continue
 
           # Ensure floats
         opt['strike'] = float(opt['strike'])
@@ -360,13 +358,19 @@ def buy_option(leg_data: Dict) -> Dict:
   """Submits a single leg buy order (Long Put Hedge)"""
   t = _get_client()
   underlying = config.TARGET_UNDERLYING[config.ACTIVE_ENV]
+  limit_price = float(leg_data.get('ask') or leg_data.get('last') or 0)
+
+  if limit_price == 0:
+    raise ValueError(f"Cannot buy {leg_data['symbol']} - No Ask price available.")
+    
   payload = {
     'class': 'option',
     'symbol': underlying,
     'option_symbol': leg_data['symbol'],
     'side': 'buy_to_open',
     'quantity': '1', # TODO: Hardcoded for now, or pass in args
-    'type': 'market', # Hedges usually bought at market or slight limit
+    'type': 'limit', # Hedges usually bought at market or slight limit
+    'price': f"{limit_price:.2f}",
     'duration': 'day'
   }
 
