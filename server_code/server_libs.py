@@ -33,6 +33,10 @@ def determine_cycle_state(cycle: Cycle, market_data: MarketData, env_status: Env
   if _check_roll_needed(cycle, market_data):
     return config.STATE_ROLL_REQUIRED
 
+  # 3. NEW: Trade was rolled out, but re-entry is missing
+  if _check_roll_reentry_needed(cycle, env_status): 
+    return config.STATE_ROLL_REENTRY_NEEDED
+
   if _check_naked_hedge_harvest(cycle, market_data):
     return config.STATE_NAKED_HEDGE_HARVEST
 
@@ -55,12 +59,14 @@ def determine_cycle_state(cycle: Cycle, market_data: MarketData, env_status: Env
 def _check_panic_harvest(cycle: Cycle, market_data: MarketData) -> bool:
   """Rule: Net Unit PnL (Hedge Gain + Spread PnL) > Panic Threshold"""
   hedge = cycle.hedge_trade_link 
-  if not hedge or hedge.status != config.STATUS_OPEN: return False
+  if not hedge or hedge.status != config.STATUS_OPEN: 
+    return False
   
   # 1. Calculate Hedge PnL (Daily Change)
   # Logic: (Current Price - Daily Reference) * Multiplier * Qty
   hedge_ref = cycle.daily_hedge_ref or 0.0
-  if hedge_ref == 0: return False 
+  if hedge_ref == 0: 
+    return False 
 
   # Guardrail: Only trigger Panic Harvest if the market is actually under stress.
   # If market is Green or Flat, we let the Standard Harvest logic handle profits.
@@ -115,6 +121,41 @@ def _check_roll_needed(cycle: Cycle, market_data: MarketData) -> bool:
         return True
   return False
 
+# In server_libs.py
+
+def _check_roll_reentry_needed(cycle: Cycle, env_status: EnvStatus) -> Optional[Trade]:
+  """
+    Checks if we are flat because of a recent Roll Exit and need to re-enter.
+    Returns the closed Trade object if we need to recover from it.
+    """
+  # 1. If we have an open spread, we don't need re-entry
+  open_spreads = [t for t in cycle.trades if t.role == config.ROLE_INCOME and t.status == config.STATUS_OPEN]
+  if open_spreads: 
+    return None
+
+    # 2. Look for Income trades closed TODAY
+  today_date = env_status['today']
+  income_closed_today = [
+    t for t in cycle.trades 
+    if t.role == config.ROLE_INCOME 
+    and t.status == config.STATUS_CLOSED 
+    and _is_today(t.exit_time, today_date)
+  ]
+
+  if not income_closed_today: 
+    return None
+
+    # 3. Sort by exit time to find the MOST RECENT one
+  income_closed_today.sort(key=lambda x: x.exit_time, reverse=True)
+  latest_exit = income_closed_today[0]
+
+  # 4. If the latest exit was a Roll (and not a Harvest), we are eligible for recovery
+  # We check the notes we set in our helper: "[AUTO] Roll Exit"
+  if "Roll Exit" in (latest_exit.notes or ""):
+    return latest_exit
+
+  return None
+
 def _check_hedge_maintenance(cycle: Cycle, market_data: MarketData) -> bool:
   """Rule: If Hedge Delta is outside of guardrails, OR DTE < 60"""
   if not cycle.hedge_trade_link:
@@ -165,29 +206,36 @@ def _check_profit_target(cycle: Cycle, market_data: MarketData) -> bool:
 def _check_hedge_missing(cycle: Cycle) -> bool:
   """Rule: Cycle is OPEN but has no *ACTIVE* Hedge Trade linked"""
   # 1. No link at all? Missing.
-  if not cycle.hedge_trade_link: return True
+  if not cycle.hedge_trade_link: 
+    return True
 
   # 2. Link exists, but status is CLOSED? Missing. (THE CRITICAL FIX)
-  if cycle.hedge_trade_link.status != config.STATUS_OPEN:  return True
+  if cycle.hedge_trade_link.status != config.STATUS_OPEN:  
+    return True
 
   return False
 
 def _check_spread_missing(cycle: Cycle, env_status: EnvStatus) -> bool:
-  if _has_traded_today(cycle, env_status): return False
+  if _has_traded_today(cycle, env_status): 
+    return False
 
-  if not _is_entry_window_open(env_status, cycle.rules): return False
+  if not _is_entry_window_open(env_status, cycle.rules): 
+    return False
     
   open_spreads = [t for t in cycle.trades if t.role == config.ROLE_INCOME and t.status == config.STATUS_OPEN]
-  if len(open_spreads) > 0: return False
+  if len(open_spreads) > 0: 
+    return False
 
   return True
 
 def _check_naked_hedge_harvest(cycle: Cycle, market_data: MarketData) -> bool:
   """Rule: No spreads open AND hedge profit > (Factor * Theta)"""
-  if not config.HARVEST_NAKED_HEDGE: return False
+  if not config.HARVEST_NAKED_HEDGE: 
+    return False
 
   hedge = cycle.hedge_trade_link
-  if not hedge or hedge.status != config.STATUS_OPEN: return False
+  if not hedge or hedge.status != config.STATUS_OPEN: 
+    return False
 
     # 1. "Naked" Check: Are there any open income spreads?
   open_spreads = [t for t in cycle.trades if t.role == config.ROLE_INCOME and t.status == config.STATUS_OPEN]
@@ -196,12 +244,14 @@ def _check_naked_hedge_harvest(cycle: Cycle, market_data: MarketData) -> bool:
 
   # 2. Profit Calculation (Total Unrealized)
   # Math: (Current - Entry) > Factor * abs(Theta)
-  profit_per_share = market_data.get('hedge_last', 0.0) - (hedge.entry_price or 0.0)
   theta_per_share = abs(market_data.get('hedge_theta', 0.0))
+  if theta_per_share <= 0: 
+    return False
+  profit_per_share = market_data.get('hedge_last', 0.0) - (hedge.entry_price or 0.0)
   factor = cycle.rules.get('naked_hedge_theta_factor', 10.0)
 
   threshold = factor * theta_per_share
-  print(f"theta_per_share: {theta_per_share}, profit_per_share: {profit_per_share}, threshold: {threshold}")
+  #print(f"theta_per_share: {theta_per_share}, profit_per_share: {profit_per_share}, threshold: {threshold}")
 
   if profit_per_share > threshold and profit_per_share > 0:
     logger.log(f"NAKED WINDFALL: Profit ${profit_per_share:.2f}/sh > Threshold ${threshold:.2f}/sh ({factor}x Theta)", 
@@ -261,7 +311,8 @@ def get_winning_spread(cycle: Cycle, market_data: MarketData) -> Optional[Trade]
 # --- CALCULATION LOGIC (ROLLS & ENTRY) ---
 def find_closest_expiration(valid_dates: List[dt.date], target_dte: int) -> Optional[dt.date]:
   """Given a list of valid dates, finds the one closest to Today + Target DTE"""
-  if not valid_dates: return None
+  if not valid_dates: 
+    return None
   today = dt.date.today()
   target_date = today + dt.timedelta(days=target_dte)
   return min(valid_dates, key=lambda d: abs((d - target_date).days))
@@ -293,7 +344,8 @@ def calculate_roll_legs(
     """
   # 1. Filter and Sort
   puts = [o for o in chain if o.get('option_type') == 'put']
-  if not puts: return None
+  if not puts: 
+    return None
 
     # Sort High to Low so we can find the "Lowest Valid" strike
   puts.sort(key=lambda x: x['strike'], reverse=True)
@@ -302,17 +354,20 @@ def calculate_roll_legs(
 
   def get_price(opt, side):
     val = opt.get(side)
-    if val is None or val == 0: val = opt.get('last', 0)
+    if val is None or val == 0: 
+      val = opt.get('last', 0)
     return float(val)
 
     # 2. Scan
   for short_candidate in puts:
     short_strike = short_candidate['strike']
-    if short_strike >= current_short_strike: continue
+    if short_strike >= current_short_strike: 
+      continue
 
     target_long = short_strike - width
     long_candidate = next((p for p in puts if abs(p['strike'] - target_long) < 0.05), None)
-    if not long_candidate: continue
+    if not long_candidate: 
+      continue
 
     credit_new = get_price(short_candidate, 'bid') - get_price(long_candidate, 'ask')
     if credit_new >= cost_to_close:
@@ -327,7 +382,8 @@ def calculate_roll_legs(
     else:
       # Credit dropped too low. Since premiums drop as strikes drop,
       # no further candidates will work. Stop scanning.
-      if best_candidate: break
+      if best_candidate: 
+        break
 
   return best_candidate
 
@@ -359,7 +415,8 @@ def check_entry_conditions(
     try:
       h, m = map(int, cutoff_val.split(':'))
       cutoff_time = dt.time(h, m)
-    except: pass
+    except ValueError: 
+      pass
 
   cutoff_dt = dt.datetime.combine(current_time.date(), cutoff_time)
   if config.ENFORCE_LATE_OPEN_GUARDRAIL and current_time > cutoff_dt:
@@ -402,13 +459,15 @@ def check_entry_conditions(
   return True, "Entry valid"
 
 def get_target_hedge_date(cycle: Cycle, current_date: Optional[dt.date] = None) -> dt.date:
-  if not current_date: current_date = dt.datetime.now().date()
+  if not current_date: 
+    current_date = dt.datetime.now().date()
   target_days = cycle.rules['hedge_target_dte']
   return current_date + dt.timedelta(days=target_days)
 
 def select_hedge_strike(chain: List[Dict], target_delta: float = 0.25) -> Optional[Dict]:
   puts = [opt for opt in chain if opt['option_type'] == config.TRADIER_OPTION_TYPE_PUT]
-  if not puts: return None
+  if not puts: 
+    return None
 
   def get_delta(opt):
     greeks = opt.get('greeks')
@@ -429,7 +488,8 @@ def calculate_spread_strikes(
   3. Selects the SAFEST (Lowest Strike) candidate that gets paid.
   """
   side_chain = [opt for opt in chain if opt['option_type'] == option_type]
-  if not side_chain: return None
+  if not side_chain: 
+    return None
   
   # Helper to get price (Midpoint fallback to Last for Sandbox safety)
   def get_prices(opt):
@@ -453,7 +513,8 @@ def calculate_spread_strikes(
   # 1. Scan all potential short legs
   for short_leg in side_chain:
     s_bid, s_ask = get_prices(short_leg)
-    if s_bid == 0 or s_ask == 0: continue
+    if s_bid == 0 or s_ask == 0: 
+      continue
 
     # SPX rule of thumb: If bid/ask spread > 0.75, it's not a real quote
     liquidity_threshold = rules.get('max_bid_ask_spread', config.MAX_BID_ASK_SPREAD)
@@ -471,11 +532,13 @@ def calculate_spread_strikes(
 
       # Exact match check
     long_leg = next((opt for opt in side_chain if abs(opt['strike'] - long_strike) < 0.01), None)
-    if not long_leg: continue
+    if not long_leg: 
+      continue
 
     # 2. Check Price (The "Money Talks" Filter)
     l_bid, l_ask = get_prices(long_leg)
-    if l_bid == 0 or l_ask == 0: continue
+    if l_bid == 0 or l_ask == 0: 
+      continue
     if (l_ask - l_bid) > liquidity_threshold: 
       reject_liquidity += 1
       continue
@@ -556,7 +619,8 @@ def get_spread_quantity(
   rules: Dict
 ) -> int:
   """Calculates position size using '5/C' rule (or scaled equivalent)"""
-  if spread_price <= 0: return 0
+  if spread_price <= 0: 
+    return 0
 
   raw_qty = int(round(hedge_quantity * rules['spread_size_factor'] / spread_price))
 
@@ -667,4 +731,15 @@ def get_zombie_trades(cycle: Cycle, positions: List[Dict]) -> List[Trade]:
         
   print(f'zombies: {zombies}')
   return zombies
+
+# timezone helper
+def _is_today(dt_val, today_date):
+  """Checks if a DB timestamp (UTC) happened 'Today' (Eastern)."""
+  if not dt_val: 
+    return False
+  if dt_val.tzinfo is None:
+    dt_val = pytz.utc.localize(dt_val)
+
+  eastern = pytz.timezone('US/Eastern')
+  return dt_val.astimezone(eastern).date() == today_date
 

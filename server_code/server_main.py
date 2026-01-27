@@ -215,7 +215,8 @@ def process_state_decision(cycle: Cycle, decision_state: str, market_data: dict,
                source=config.LOG_SOURCE_ORCHESTRATOR)
 
     spread_trade = server_libs.get_threatened_spread(cycle, market_data)
-    if not spread_trade: return
+    if not spread_trade: 
+      return
 
     # --- STEP 1: CLOSE LIABILITY (Market Order) ---
     logger.log(f"Step 1 - Emergency Closing Trade {spread_trade.id}...", 
@@ -258,6 +259,42 @@ def process_state_decision(cycle: Cycle, decision_state: str, market_data: dict,
         logger.log("Roll Aborted: No valid strikes found to cover costs. Staying Flat.", 
                    level=config.LOG_WARNING)
 
+  # In server_main.py -> process_state_decision
+#---------------------------------------------------#
+  elif decision_state == config.STATE_ROLL_REENTRY_NEEDED:
+    # 1. Identify which trade we are recovering from
+    old_trade = server_libs._check_roll_reentry_needed(cycle, env_status)
+    if not old_trade: 
+      return
+
+    logger.log(f"Recovery Triggered! Attempting Re-Entry for Roll {old_trade.id}...", level=config.LOG_INFO)
+
+    # 2. Safety & Strike Search
+    # Note: We use the actual 'exit_price' of the closed trade as the 'Debt' to cover
+    realized_debit = old_trade.exit_price or 0.0
+
+    roll_result, target_date = _find_best_roll_candidate(cycle, old_trade, realized_debit)
+
+    if roll_result:
+      # 3. Execute Entry (Reuse existing helper)
+      trade_data = {
+        'quantity': old_trade.quantity,
+        'short_strike': roll_result['short_leg']['strike'],
+        'long_strike': roll_result['long_leg']['strike'],
+        'short_leg_data': roll_result['short_leg'],
+        'long_leg_data': roll_result['long_leg'],
+        'net_credit': roll_result['new_credit']
+      }
+
+      order_res = server_api.open_spread_position(trade_data)
+      entered = _execute_entry_and_sync(cycle, order_res, trade_data, config.ROLE_INCOME, "Roll Re-Entry Recovery", 
+                                        fill_px_fallback=trade_data['net_credit'])
+
+      if entered:
+        _reset_cycle_hedge_reference(cycle, market_data)
+    else:
+      # We don't log CRITICAL here because we'll just try again next heartbeat
+      logger.log("Recovery Search: No valid strikes currently cover the debt. Waiting...", level=config.LOG_DEBUG)
 #---------------------------------------------------#
   elif decision_state == config.STATE_NAKED_HEDGE_HARVEST:
     logger.log("NAKED WINDFALL! Harvesting Hedge Profit...", level=config.LOG_CRITICAL)
@@ -356,7 +393,8 @@ def process_state_decision(cycle: Cycle, decision_state: str, market_data: dict,
         return
 
       chain = server_api.get_option_chain(date=best_date)
-      if not chain: return
+      if not chain: 
+        return
 
       leg_to_buy = server_libs.select_hedge_strike(
         chain, 
@@ -499,7 +537,8 @@ def _execute_entry_and_sync(cycle: Cycle, order_res: dict, trade_data: dict, rol
     Includes Safety: Cancels order on broker if timeout occurs.
     """
   order_id = order_res.get('id')
-  if not order_id: return False
+  if not order_id: 
+    return False
 
     # 1. Wait
   status, fill_px = server_api.wait_for_order_fill(order_id, config.ORDER_TIMEOUT_SECONDS, fill_px_fallback)
@@ -529,7 +568,7 @@ def _execute_entry_and_sync(cycle: Cycle, order_res: dict, trade_data: dict, rol
   server_api.cancel_order(order_id)
   return False
 
-def _find_best_roll_candidate(cycle: Cycle, old_trade: Trade, market_data: dict) -> Tuple[Optional[dict], Optional[dt.date]]:
+def _find_best_roll_candidate(cycle: Cycle, old_trade: Trade, realized_debit: float) -> Tuple[Optional[dict], Optional[dt.date]]:
   """
     Hunts across expirations to find a roll that satisfies the credit requirement.
     Returns (roll_result_dict, target_date)
@@ -537,14 +576,19 @@ def _find_best_roll_candidate(cycle: Cycle, old_trade: Trade, market_data: dict)
   # 1. Identify the 'Line in the Sand' (Current Short Strike)
   # We must roll DOWN, so the new short must be lower than this.
   legs = getattr(old_trade, 'legs', [])
-  current_short = next((l for l in legs if l.side == config.LEG_SIDE_SHORT), None)
+  current_short = next((leg for leg in legs if leg.side == config.LEG_SIDE_SHORT), None)
   if not current_short:
-    logger.log("ROLL ERROR: Could not identify short leg for strike comparison.", level=config.LOG_CRITICAL)
-    return None, None
+    # Fallback: If legs aren't hydrated, try to find them in the DB
+    leg_rows = app_tables.legs.search(trade=old_trade._row, side=config.LEG_SIDE_SHORT)
+    if leg_rows:
+      current_short = leg_rows[0]
+    else:
+      logger.log("ROLL ERROR: Could not identify short leg for strike comparison.", level=config.LOG_CRITICAL)
+      return None, None
 
-    # 2. Identify the 'Debt' we need to cover
-    # We use the mark from market_data (the price we just paid to exit)
-  realized_debit = market_data.get('spread_marks', {}).get(old_trade.id, 0.0)
+  # 2. Identify the 'Debt' we need to cover
+  # We use the mark from market_data (the price we just paid to exit)
+  #realized_debit = market_data.get('spread_marks', {}).get(old_trade.id, 0.0)
 
   # 3. Get valid dates and scan (T+1 through T+3)
   valid_dates = server_api.get_expirations()
@@ -552,19 +596,20 @@ def _find_best_roll_candidate(cycle: Cycle, old_trade: Trade, market_data: dict)
 
   for days in retry_offsets:
     candidate_date = server_libs.find_closest_expiration(valid_dates, target_dte=days)
-    if not candidate_date: continue
+    if not candidate_date: 
+      continue
 
     chain = server_api.get_option_chain(date=candidate_date)
-    if not chain: continue
+    if not chain: 
+      continue
 
-      # Call the math worker in libs to find the best strikes on this date
+    # Call the math worker in libs to find the best strikes on this date
     result = server_libs.calculate_roll_legs(
       chain=chain,
-      current_short_strike=current_short.strike,
+      current_short_strike=current_short['strike'],
       width=cycle.rules['spread_width'],
       cost_to_close=realized_debit
     )
-
     if result:
       logger.log(f"Roll Found: {candidate_date} (T+{days}) at ${result['new_credit']:.2f} credit", level=config.LOG_INFO)
       return result, candidate_date
