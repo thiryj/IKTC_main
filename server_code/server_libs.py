@@ -201,6 +201,7 @@ def _check_naked_hedge_harvest(cycle: Cycle, market_data: MarketData) -> bool:
   factor = cycle.rules.get('naked_hedge_theta_factor', 10.0)
 
   threshold = factor * theta_per_share
+  print(f"theta_per_share: {theta_per_share}, profit_per_share: {profit_per_share}, threshold: {threshold}")
 
   if profit_per_share > threshold and profit_per_share > 0:
     logger.log(f"NAKED WINDFALL: Profit ${profit_per_share:.2f}/sh > Threshold ${threshold:.2f}/sh ({factor}x Theta)", 
