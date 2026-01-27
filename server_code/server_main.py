@@ -238,7 +238,7 @@ def process_state_decision(cycle: Cycle, decision_state: str, market_data: dict,
                   source=config.LOG_SOURCE_ORCHESTRATOR)
         return
 
-      roll_result, target_date = _find_best_roll_candidate(cycle, spread_trade, market_data)
+      roll_result, target_date = _find_best_roll_candidate(cycle, spread_trade, mark)
       if roll_result:
         # --- STEP 3: OPEN NEW (Asset) ---
         trade_data = {
