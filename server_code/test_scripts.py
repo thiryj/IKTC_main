@@ -156,6 +156,20 @@ def run_branch_test(scenario: str) -> str:
     env_status['today'] = mock_today
     env_status['now'] = dt.datetime.combine(dt.date.today(), dt.time(10, 0))
     print("TEST: Mocking 'Flat' state at 10:00 AM to trigger Entry.")
+
+  elif scenario == 'RECOVERY_HUNT':
+    # 1. Ensure we are flat
+    mock_data['spread_marks'] = {}
+
+    # 2. Mock 'Calm' Market conditions so strikes are found
+    mock_data['price'] = 6900.0
+    mock_data['open'] = 6900.0
+    mock_data['previous_close'] = 6900.0
+
+    # 3. Ensure we are in the trading window
+    env_status['now'] = dt.datetime.combine(dt.date.today(), dt.time(11, 0))
+
+    print("TEST: Mocking 'Flat' state with a recent Roll Exit to trigger Recovery Hunt.")
     
 
   # 2. RUN ORCHESTRATOR

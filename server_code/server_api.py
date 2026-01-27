@@ -530,9 +530,13 @@ def wait_for_order_fill(order_id: str, timeout_seconds: int = 15, fill_px_fallba
   t = _get_client()
   # Dry Run handling
   if order_id.startswith("DRY_"):
-    logger.log(f"SIMULATION: Auto-filling simulated order {order_id}", 
-              level=config.LOG_INFO, 
-              source=config.LOG_SOURCE_API)
+    if "FAIL" in order_id:
+      logger.log(f"SIMULATION: Forcing Timeout for order {order_id}", level=config.LOG_WARNING)
+      return 'timeout', 0.0
+    else:
+      logger.log(f"SIMULATION: Auto-filling simulated order {order_id}", 
+                level=config.LOG_INFO, 
+                source=config.LOG_SOURCE_API)
     return 'filled', fill_px_fallback  # Or pass the price back if you want to test PnL math
     
   url = f"{t.endpoint}/accounts/{t.default_account_id}/orders/{order_id}"

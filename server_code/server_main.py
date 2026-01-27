@@ -287,6 +287,7 @@ def process_state_decision(cycle: Cycle, decision_state: str, market_data: dict,
       }
 
       order_res = server_api.open_spread_position(trade_data)
+      
       entered = _execute_entry_and_sync(cycle, order_res, trade_data, config.ROLE_INCOME, "Roll Re-Entry Recovery", 
                                         fill_px_fallback=trade_data['net_credit'])
 
@@ -602,11 +603,16 @@ def _find_best_roll_candidate(cycle: Cycle, old_trade: Trade, realized_debit: fl
     chain = server_api.get_option_chain(date=candidate_date)
     if not chain: 
       continue
-
+      
+    if hasattr(current_short, 'strike'):
+      strike_val = float(current_short.strike)
+    else:
+      strike_val = float(current_short['strike'])
+      
     # Call the math worker in libs to find the best strikes on this date
     result = server_libs.calculate_roll_legs(
       chain=chain,
-      current_short_strike=current_short['strike'],
+      current_short_strike=strike_val,
       width=cycle.rules['spread_width'],
       cost_to_close=realized_debit
     )
