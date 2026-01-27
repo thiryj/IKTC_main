@@ -329,3 +329,66 @@ def get_trades_crud_list() -> list:
 def delete_trade_manual(trade_id: str) -> bool:
   """Manual surgery to remove a trade."""
   return server_db.crud_delete_trade(trade_id)
+
+#-----------------------------------------#
+# KPI Dashboard
+@anvil.server.callable
+def get_performance_dashboard_stats() -> dict:
+  """Aggregates all Strategy KPIs for the Stats Page."""
+  # 1. Fetch all closed cycles for the active environment
+  cycles = list(app_tables.cycles.search(
+    status=config.STATUS_CLOSED, 
+    account=config.ACTIVE_ENV
+  ))
+
+  total_cycles = len(cycles)
+  if total_cycles == 0: return {'count': 0}
+
+  # 2. Headline Stats
+  total_net_pnl = sum([float(c['total_pnl'] or 0) for c in cycles])
+  winning_cycles_count = len([c for c in cycles if (c['total_pnl'] or 0) > 0])
+
+  # 3. Tactical Analysis (Iterate through cycles)
+  rolls_triggered = 0
+  rolls_saved_cycle = 0 # Rolled and ended profitable
+  panics = 0
+  windfalls = 0
+
+  for c in cycles:
+    # A. Roll Check: Did this cycle have more than one income spread?
+    income_trades = app_tables.trades.search(cycle=c, role=config.ROLE_INCOME)
+    if len(list(income_trades)) > 1:
+      rolls_triggered += 1
+      if (c['total_pnl'] or 0) > 0:
+        rolls_saved_cycle += 1
+
+    # B. Exit Analysis: Check notes for Panic/Windfall markers
+    notes = (c['notes'] or "").upper()
+    if "PANIC" in notes: panics += 1
+    if "WINDFALL" in notes: windfalls += 1
+
+  # 4. Income Trade Efficiency
+  all_closed_income = list(app_tables.trades.search(
+    role=config.ROLE_INCOME, 
+    status=config.STATUS_CLOSED,
+    cycle=anvil.tables.query.any_of(*cycles)
+  ))
+
+  income_wins = [t for t in all_closed_income if (t['pnl'] or 0) > 0]
+  avg_win_amt = (sum([t['pnl'] or 0 for t in income_wins]) / len(income_wins)) * 100 if income_wins else 0
+
+  return {
+    'total_cycles': total_cycles,
+    'total_net_pnl': round(total_net_pnl, 2),
+    'win_rate': round((winning_cycles_count / total_cycles) * 100, 1),
+    'avg_win_dollars': round(avg_win_amt, 2),
+
+    # Tactical KPIs
+    'roll_trigger_rate': round((rolls_triggered / total_cycles) * 100, 1),
+    'roll_success_rate': round((rolls_saved_cycle / rolls_triggered * 100), 1) if rolls_triggered > 0 else 0,
+    'panic_rate': round((panics / total_cycles) * 100, 1),
+    'windfall_rate': round((windfalls / total_cycles) * 100, 1),
+
+    # Average Profit per Cycle
+    'avg_cycle_pnl': round(total_net_pnl / total_cycles, 2)
+  }
