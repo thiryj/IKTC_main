@@ -173,19 +173,12 @@ def _check_hedge_missing(cycle: Cycle) -> bool:
   return False
 
 def _check_spread_missing(cycle: Cycle, env_status: EnvStatus) -> bool:
-  if _has_traded_today(cycle, env_status):  #only one spread per day
-    return False
+  if _has_traded_today(cycle, env_status): return False
+
+  if not _is_entry_window_open(env_status, cycle.rules): return False
     
   open_spreads = [t for t in cycle.trades if t.role == config.ROLE_INCOME and t.status == config.STATUS_OPEN]
-  if len(open_spreads) > 0:
-    return False
-    
-  open_spreads = [
-    t for t in cycle.trades 
-    if t.role == config.ROLE_INCOME and t.status == config.STATUS_OPEN
-  ]
-  if len(open_spreads) > 0:
-    return False
+  if len(open_spreads) > 0: return False
 
   return True
 
@@ -233,6 +226,14 @@ def _has_traded_today(cycle: Cycle, env_status: EnvStatus) -> bool:
       if t_date_et == today_date:
         return True
   return False
+
+def _is_entry_window_open(env_status: dict, rules: dict) -> bool:
+  """Checks only the clock-based start delay."""
+  current_time = env_status['now']
+  market_open_dt = dt.datetime.combine(current_time.date(), config.MARKET_OPEN_TIME)
+  minutes_since_open = (current_time - market_open_dt).total_seconds() / 60.0
+
+  return minutes_since_open >= rules.get('trade_start_delay', 15)
 
 # --- OBJECT RETRIEVAL HELPERS ---
 
@@ -396,10 +397,6 @@ def check_entry_conditions(
   except (ValueError, IndexError):
     # If format is weird, assume standard day and proceed, or log warning
     pass
-
-  # --- 4. FREQUENCY CHECK (only one spread open per day) ---
-  if config.ENFORCE_FREQUENCY_CHECKS and _has_traded_today(cycle, env_status):
-    return False, "Daily limit reached (1 spread per day)"
 
   return True, "Entry valid"
 
