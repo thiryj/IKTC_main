@@ -18,6 +18,11 @@ components:
     name: link_crud
     properties: {text: CRUD}
     type: Link
+  - event_bindings: {}
+    layout_properties: {grid_position: 'KPPRRV,ZAGZPB'}
+    name: link_stats
+    properties: {text: Stats}
+    type: Link
   layout_properties: {slot: left-nav}
   name: column_panel_sidebar
   properties: {}

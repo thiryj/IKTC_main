@@ -392,3 +392,145 @@ def get_performance_dashboard_stats() -> dict:
     # Average Profit per Cycle
     'avg_cycle_pnl': round(total_net_pnl / total_cycles, 2)
   }
+
+@anvil.server.callable
+def get_performance_headlines() -> dict:
+  """Calculates the Top-Row Business Metrics for the Stats Page."""
+  settings = app_tables.settings.get()
+  account_equity = float(settings['total_account_equity'] or 40000)
+
+  # 1. Fetch All Closed Cycles
+  cycles = list(app_tables.cycles.search(status=config.STATUS_CLOSED, account=config.ACTIVE_ENV))
+  if not cycles:
+    return {'active': False}
+
+  # 2. Time Calculations
+  first_date = min([c['start_date'] for c in cycles])
+  days_active = (dt.date.today() - first_date).days or 1
+
+  # 3. PnL Aggregation
+  total_net_pnl = sum([float(c['total_pnl'] or 0) for c in cycles])
+
+  # 4. ROI & CAGR
+  roi_per_day = (total_net_pnl / days_active) / account_equity
+  # Annualize using the standard compound formula
+  projected_cagr = ((1 + roi_per_day)**252 - 1) * 100
+
+  # 5. Spread Harvest Stats (Income Trades Only)
+  all_income = list(app_tables.trades.search(
+    role=config.ROLE_INCOME, status=config.STATUS_CLOSED,
+    cycle=anvil.tables.query.any_of(*cycles)
+  ))
+
+  harvests = [t for t in all_income if (t['pnl'] or 0) > 0]
+  harvest_rate = (len(harvests) / len(all_income)) * 100 if all_income else 0
+  avg_win_pnl = (sum([t['pnl'] or 0 for t in harvests]) / len(harvests)) * 100 if harvests else 0
+
+  # 6. Hedge Rent (The cost of the shield)
+  all_hedges = list(app_tables.trades.search(
+    role=config.ROLE_HEDGE, status=config.STATUS_CLOSED,
+    cycle=anvil.tables.query.any_of(*cycles)
+  ))
+  net_hedge_impact = sum([(t['pnl'] or 0) * (t['quantity'] or 1) * 100 for t in all_hedges])
+
+  return {
+    'active': True,
+    'total_pnl': round(total_net_pnl, 2),
+    'days_active': days_active,
+    'roi_day_pct': round(roi_per_day * 100, 3),
+    'projected_cagr': round(projected_cagr, 1),
+    'harvest_rate': round(harvest_rate, 1),
+    'avg_win_dollars': round(avg_win_pnl, 2),
+    'hedge_rent_total': round(net_hedge_impact, 2),
+    'capital_utilized_avg': 10000 # Placeholder for now
+  }
+
+@anvil.server.callable
+def get_strategic_efficiency() -> dict:
+  """Calculates tactical KPIs and the EV Forecast model."""
+  cycles = list(app_tables.cycles.search(status=config.STATUS_CLOSED, account=config.ACTIVE_ENV))
+  if not cycles: return {}
+  
+  # 1. Gather all CLOSED Income Trades
+  all_income = list(app_tables.trades.search(
+    role=config.ROLE_INCOME, status=config.STATUS_CLOSED,
+    cycle=anvil.tables.query.any_of(*cycles)
+  ))
+  
+  if not all_income: 
+    return {'active': False}
+  
+  # 2. Segment Wins vs. Losses (Stops/Roll Exits)
+  # A Win is a trade where realized PnL > 0 (The Harvest)
+  # A Loss is where PnL < 0 (The Stop/Roll Exit)
+  wins = [t for t in all_income if (t['pnl'] or 0) > 0]
+  losses = [t for t in all_income if (t['pnl'] or 0) < 0]
+  
+  # 3. Calculate Averages (Multiplied by 100 to get Dollars)
+  avg_win_val = (sum([t['pnl'] for t in wins]) / len(wins)) * 100 if wins else 0
+  avg_loss_val = (sum([t['pnl'] for t in losses]) / len(losses)) * 100 if losses else 0
+  
+  # Note: avg_loss_val will be a negative number (e.g., -250.00)
+  harvest_rate = len(wins) / len(all_income)
+  
+  # 4. ACTUAL EV CALCULATION
+  # Formula: (Win% * Avg_Win) + (Loss% * Avg_Loss)
+  actual_ev = (harvest_rate * avg_win_val) + ((1 - harvest_rate) * avg_loss_val)
+  
+  # 5. THEORETICAL BASELINE (The "Standard_0DTE" math)
+  # Assuming 0.15 Delta Target (85% Win Rate) and a 3x Credit Stop
+  # Using $1.00 as a standard credit unit for comparison
+  theory_win_rate = 0.85
+  theory_win = 50.0   # 50% harvest on $1.00 credit
+  theory_loss = -200.0 # Buying back at 3.00 (-2.00 loss)
+  theoretical_ev = (theory_win_rate * theory_win) + ((1 - theory_win_rate) * theory_loss)
+  
+  return {
+    'harvest_rate_pct': round(harvest_rate * 100, 1),
+    'avg_win_dollars': round(avg_win_val, 2),
+    'roll_stop_avg_dollars': round(abs(avg_loss_val), 2), # Show as positive 'Cost'
+    'actual_ev': round(actual_ev, 2),
+    'theoretical_ev': round(theoretical_ev, 2),
+    'alpha': round(actual_ev - theoretical_ev, 2), # Performance vs. Math
+    'trade_count': len(all_income)
+  }
+
+@anvil.server.callable
+def get_equity_curve_data() -> dict:
+  """Aggregates time-series data for the Cumulative PnL vs Capital Risked chart."""
+  cycles = list(app_tables.cycles.search(
+    status=config.STATUS_CLOSED, 
+    account=config.ACTIVE_ENV
+  ))
+
+  if not cycles:
+    return {'dates': [], 'cum_pnl': [], 'capital': []}
+
+    # Sort chronologically
+  cycles.sort(key=lambda x: x['end_date'] or dt.date.today())
+
+  dates = []
+  cum_pnl = []
+  capital_risked = []
+
+  running_pnl = 0.0
+
+  for c in cycles:
+    dates.append(c['end_date'])
+
+    # Add to cumulative PnL
+    running_pnl += float(c['total_pnl'] or 0)
+    cum_pnl.append(round(running_pnl, 2))
+
+    # Calculate Peak Capital Risked for this cycle
+    trades = app_tables.trades.search(cycle=c, role=config.ROLE_INCOME)
+
+    # Using the 'capital_required' DB column we established earlier
+    cycle_cap = sum([float(t['capital_required'] or 0) for t in trades])
+    capital_risked.append(cycle_cap)
+
+  return {
+    'dates': dates,
+    'cum_pnl': cum_pnl,
+    'capital': capital_risked
+  }
