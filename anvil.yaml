@@ -196,6 +196,9 @@ db_schema:
     - admin_ui: {order: 12, width: 200}
       name: processing_lock
       type: bool
+    - admin_ui: {order: 13, width: 200}
+      name: pause_new_entries
+      type: bool
     server: full
     title: settings
   trades:

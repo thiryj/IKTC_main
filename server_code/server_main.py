@@ -148,7 +148,7 @@ def _execute_automation_loop():
   # The brain analyzes the cycle + market data and returns ONE state constant
   market_data = server_api.get_market_data_snapshot(cycle)
   print(f'market: {market_data}')
-  decision_state = server_libs.determine_cycle_state(cycle, market_data, env_status)
+  decision_state = server_libs.determine_cycle_state(cycle, market_data, env_status, system_settings)
   if decision_state != config.STATE_IDLE:
     logger.log(f"Decision State -> {decision_state}", 
               level=config.LOG_INFO, 

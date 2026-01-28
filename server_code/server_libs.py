@@ -24,7 +24,7 @@ def is_db_consistent(cycle: Optional[Cycle], positions: List[dict]) -> bool:
   # Compare cycle.trades vs Tradier positions. Return False if mismatch found.
   return True
 
-def determine_cycle_state(cycle: Cycle, market_data: MarketData, env_status: EnvStatus) -> str:
+def determine_cycle_state(cycle: Cycle, market_data: MarketData, env_status: EnvStatus, settings:dict=None) -> str:
   """The "Policy Manager". Checks conditions in priority order"""
   
   if _check_panic_harvest(cycle, market_data):
@@ -49,11 +49,11 @@ def determine_cycle_state(cycle: Cycle, market_data: MarketData, env_status: Env
   if _check_hedge_missing(cycle):
     return config.STATE_HEDGE_MISSING
 
-  if _check_spread_missing(cycle, env_status):
+  if _check_spread_missing(cycle, env_status, settings):
     return config.STATE_SPREAD_MISSING
 
   return config.STATE_IDLE
-
+  
 # --- STATE CHECK FUNCTIONS ---
 
 def _check_panic_harvest(cycle: Cycle, market_data: MarketData) -> bool:
@@ -215,7 +215,12 @@ def _check_hedge_missing(cycle: Cycle) -> bool:
 
   return False
 
-def _check_spread_missing(cycle: Cycle, env_status: EnvStatus) -> bool:
+def _check_spread_missing(cycle: Cycle, env_status: EnvStatus, settings:dict=None) -> bool:
+
+  if settings and settings.get('pause_new_entries'):
+    print('not opening new spread due to: pause_new_entries')
+    return False
+    
   if _has_traded_today(cycle, env_status): 
     return False
 
