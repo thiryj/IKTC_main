@@ -197,3 +197,7 @@ class form_main(form_mainTemplate):
     # Tight Layout
     fig.update_layout(margin={'t':0, 'b':0, 'l':20, 'r':20}, height=50)
     self.plot_spread_gauge.figure = fig
+
+  @handle("check_pause_new_entries", "change")
+  def check_pause_new_entries_change(self, **event_args):
+    anvil.server.call('toggle_forbid_entries', self.check_forbid_entry.checked)

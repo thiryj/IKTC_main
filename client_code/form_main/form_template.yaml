@@ -23,6 +23,11 @@ components:
       name: button_refresh_ui
       properties: {role: outlined-button, text: Refresh UI}
       type: Button
+    - event_bindings: {}
+      layout_properties: {}
+      name: check_pause_new_entries
+      properties: {text: Pause New Spreads}
+      type: CheckBox
     layout_properties: {grid_position: 'KLTBHZ,LCWIVG'}
     name: flow_panel_1
     properties: {}

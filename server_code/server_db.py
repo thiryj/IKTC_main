@@ -508,4 +508,15 @@ def close_active_cycle(cycle_id: str) -> None:
   logger.log(f"Cycle {cycle_id} CLOSED. Final Realized PnL: ${total:+.2f}", 
               level=config.LOG_INFO, source=config.LOG_SOURCE_DB)
 
+@anvil.tables.in_transaction
+def sync_campaign_pnl(cycle_id: str) -> float:
+  """Recalculates lifetime realized PnL for an open campaign."""
+  row = app_tables.cycles.get_by_id(cycle_id)
+  if not row: 
+    return 0.0
 
+  all_closed = app_tables.trades.search(cycle=row, status=config.STATUS_CLOSED)
+  total = sum([(t['pnl'] or 0) * (t['quantity'] or 0) * 100 for t in all_closed])
+
+  row['total_pnl'] = round(total, 2)
+  return row['total_pnl']

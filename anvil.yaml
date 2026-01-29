@@ -35,6 +35,9 @@ db_schema:
     - admin_ui: {width: 200}
       name: notes
       type: string
+    - admin_ui: {order: 8.5, width: 200}
+      name: last_panic_date
+      type: date
     server: full
     title: cycles
   legs:
@@ -193,12 +196,15 @@ db_schema:
     - admin_ui: {order: 11, width: 200}
       name: last_bot_heartbeat
       type: datetime
-    - admin_ui: {order: 12, width: 200}
+    - admin_ui: {order: 12, width: 127}
       name: processing_lock
       type: bool
-    - admin_ui: {order: 13, width: 200}
+    - admin_ui: {order: 13, width: 150}
       name: pause_new_entries
       type: bool
+    - admin_ui: {order: 14, width: 163}
+      name: total_account_equity
+      type: number
     server: full
     title: settings
   trades:

@@ -1,6 +1,7 @@
 import anvil.server
 import anvil.tables as tables
 from anvil.tables import app_tables
+import anvil.tables.query as q
 import datetime as dt
 import pytz
 
@@ -12,7 +13,8 @@ from . import server_libs
 # timezone helper
 def _is_today(dt_val, today_date):
   """Checks if a DB timestamp (UTC) happened 'Today' (Eastern)."""
-  if not dt_val: return False
+  if not dt_val: 
+    return False
   if dt_val.tzinfo is None:
     dt_val = pytz.utc.localize(dt_val)
 
@@ -94,7 +96,8 @@ def get_dashboard_state():
     'color': "gray"
     }
   }
-  if not cycle: return data
+  if not cycle: 
+    return data
 
   # 3. Hydrate Cycle Data
   data['cycle_active'] = True
@@ -107,7 +110,8 @@ def get_dashboard_state():
     # PnL Calc
     current_price = market_data.get('hedge_last', 0.0)
     ref_price = cycle.daily_hedge_ref or 0.0
-    if ref_price == 0: ref_price = hedge.entry_price or 0.0
+    if ref_price == 0: 
+      ref_price = hedge.entry_price or 0.0
 
     hedge_pnl_day = (current_price - ref_price) * config.DEFAULT_MULTIPLIER * hedge.quantity
 
@@ -190,7 +194,8 @@ def get_dashboard_state():
     }
     def safe_float(val, default=0.0) -> float:
       try:
-        if val is None: return default
+        if val is None: 
+          return default
         return float(val)
       except (ValueError, TypeError):
         return default
@@ -208,7 +213,8 @@ def get_dashboard_state():
         'trigger': trade.roll_trigger_price if trade.roll_trigger_price is not None else (entry_px * 3.0),
         'max_loss': trade.roll_trigger_price * 1.5 # Just for scaling the chart axis
       }
-      if gauge_data['trigger'] == 0: gauge_data['trigger'] = 1.0
+      if gauge_data['trigger'] == 0: 
+        gauge_data['trigger'] = 1.0
     data['spread_gauge'] = gauge_data
 
   # --- CLOSED SPREAD ---
@@ -309,7 +315,8 @@ def _get_bot_status_metadata(settings, env_status, cycle, market_data):
 def get_trades_crud_list() -> list:
   """Returns a list of dictionaries for the CRUD data grid."""
   cycle = server_db.get_active_cycle(config.ACTIVE_ENV)
-  if not cycle: return []
+  if not cycle: 
+    return []
 
   # Return data formatted for the UI
   return [
@@ -342,7 +349,8 @@ def get_performance_dashboard_stats() -> dict:
   ))
 
   total_cycles = len(cycles)
-  if total_cycles == 0: return {'count': 0}
+  if total_cycles == 0: 
+    return {'count': 0}
 
   # 2. Headline Stats
   total_net_pnl = sum([float(c['total_pnl'] or 0) for c in cycles])
@@ -364,8 +372,10 @@ def get_performance_dashboard_stats() -> dict:
 
     # B. Exit Analysis: Check notes for Panic/Windfall markers
     notes = (c['notes'] or "").upper()
-    if "PANIC" in notes: panics += 1
-    if "WINDFALL" in notes: windfalls += 1
+    if "PANIC" in notes: 
+      panics += 1
+    if "WINDFALL" in notes: 
+      windfalls += 1
 
   # 4. Income Trade Efficiency
   all_closed_income = list(app_tables.trades.search(
@@ -395,142 +405,178 @@ def get_performance_dashboard_stats() -> dict:
 
 @anvil.server.callable
 def get_performance_headlines() -> dict:
-  """Calculates the Top-Row Business Metrics for the Stats Page."""
+  """Headline metrics based on Lifetime Trade History."""
   settings = app_tables.settings.get()
   account_equity = float(settings['total_account_equity'] or 40000)
 
-  # 1. Fetch All Closed Cycles
-  cycles = list(app_tables.cycles.search(status=config.STATUS_CLOSED, account=config.ACTIVE_ENV))
-  if not cycles:
+  # 1. Fetch all closed trades for environment
+  all_closed = list(app_tables.trades.search(
+    status=config.STATUS_CLOSED,
+    cycle=anvil.tables.query.any_of(*app_tables.cycles.search(account=config.ACTIVE_ENV))
+  ))
+
+  if not all_closed:
     return {'active': False}
 
-  # 2. Time Calculations
-  first_date = min([c['start_date'] for c in cycles])
-  days_active = (dt.date.today() - first_date).days or 1
+  # 2. PnL Aggregation
+  total_net_pnl = sum([(t['pnl'] or 0) * (t['quantity'] or 0) * 100 for t in all_closed])
 
-  # 3. PnL Aggregation
-  total_net_pnl = sum([float(c['total_pnl'] or 0) for c in cycles])
+  # 3. Time Logic (First Trade to Today)
+  first_date = min([t['entry_time'] for t in all_closed]).date()
+  days_active = (dt.date.today() - first_date).days or 1
 
   # 4. ROI & CAGR
   roi_per_day = (total_net_pnl / days_active) / account_equity
-  # Annualize using the standard compound formula
   projected_cagr = ((1 + roi_per_day)**252 - 1) * 100
 
-  # 5. Spread Harvest Stats (Income Trades Only)
-  all_income = list(app_tables.trades.search(
-    role=config.ROLE_INCOME, status=config.STATUS_CLOSED,
-    cycle=anvil.tables.query.any_of(*cycles)
-  ))
-
-  harvests = [t for t in all_income if (t['pnl'] or 0) > 0]
-  harvest_rate = (len(harvests) / len(all_income)) * 100 if all_income else 0
-  avg_win_pnl = (sum([t['pnl'] or 0 for t in harvests]) / len(harvests)) * 100 if harvests else 0
-
-  # 6. Hedge Rent (The cost of the shield)
-  all_hedges = list(app_tables.trades.search(
-    role=config.ROLE_HEDGE, status=config.STATUS_CLOSED,
-    cycle=anvil.tables.query.any_of(*cycles)
-  ))
-  net_hedge_impact = sum([(t['pnl'] or 0) * (t['quantity'] or 1) * 100 for t in all_hedges])
+  # 5. Income Trade Efficiency
+  income_trades = [t for t in all_closed if t['role'] == config.ROLE_INCOME]
+  harvests = [t for t in income_trades if (t['pnl'] or 0) > 0]
+  harvest_rate = (len(harvests) / len(income_trades)) * 100 if income_trades else 0
 
   return {
     'active': True,
     'total_pnl': round(total_net_pnl, 2),
     'days_active': days_active,
-    'roi_day_pct': round(roi_per_day * 100, 3),
+    'roi_day_pct': round(roi_per_day * 100, 2),
     'projected_cagr': round(projected_cagr, 1),
-    'harvest_rate': round(harvest_rate, 1),
-    'avg_win_dollars': round(avg_win_pnl, 2),
-    'hedge_rent_total': round(net_hedge_impact, 2),
-    'capital_utilized_avg': 10000 # Placeholder for now
+    'harvest_rate': round(harvest_rate, 1)
   }
 
 @anvil.server.callable
 def get_strategic_efficiency() -> dict:
   """Calculates tactical KPIs and the EV Forecast model."""
-  cycles = list(app_tables.cycles.search(status=config.STATUS_CLOSED, account=config.ACTIVE_ENV))
-  if not cycles: return {}
-  
-  # 1. Gather all CLOSED Income Trades
+  # 1. Fetch all cycles (Open and Closed) to get a full trade history
+  cycles = list(app_tables.cycles.search(account=config.ACTIVE_ENV))
+  if not cycles:
+    return {'active': False, 'trade_count': 0}
+
+  # 2. Gather all CLOSED Income Trades across those cycles
   all_income = list(app_tables.trades.search(
-    role=config.ROLE_INCOME, status=config.STATUS_CLOSED,
+    role=config.ROLE_INCOME, 
+    status=config.STATUS_CLOSED,
     cycle=anvil.tables.query.any_of(*cycles)
   ))
-  
-  if not all_income: 
-    return {'active': False}
-  
-  # 2. Segment Wins vs. Losses (Stops/Roll Exits)
-  # A Win is a trade where realized PnL > 0 (The Harvest)
-  # A Loss is where PnL < 0 (The Stop/Roll Exit)
+
+  if not all_income:
+    return {'active': False, 'trade_count': 0}
+
+  # 3. Segment Wins vs. Losses
   wins = [t for t in all_income if (t['pnl'] or 0) > 0]
   losses = [t for t in all_income if (t['pnl'] or 0) < 0]
-  
-  # 3. Calculate Averages (Multiplied by 100 to get Dollars)
+
+  # 4. Calculate Averages
   avg_win_val = (sum([t['pnl'] for t in wins]) / len(wins)) * 100 if wins else 0
-  avg_loss_val = (sum([t['pnl'] for t in losses]) / len(losses)) * 100 if losses else 0
-  
-  # Note: avg_loss_val will be a negative number (e.g., -250.00)
+
+  # Fallback: If no losses yet, use a theoretical -2.00 ($200) stop for the EV model
+  if not losses:
+    avg_loss_val = -200.0 
+  else:
+    avg_loss_val = (sum([t['pnl'] for t in losses]) / len(losses)) * 100
+
   harvest_rate = len(wins) / len(all_income)
-  
-  # 4. ACTUAL EV CALCULATION
-  # Formula: (Win% * Avg_Win) + (Loss% * Avg_Loss)
+
+  # 5. EV Formulas
   actual_ev = (harvest_rate * avg_win_val) + ((1 - harvest_rate) * avg_loss_val)
-  
-  # 5. THEORETICAL BASELINE (The "Standard_0DTE" math)
-  # Assuming 0.15 Delta Target (85% Win Rate) and a 3x Credit Stop
-  # Using $1.00 as a standard credit unit for comparison
+
+  # Theoretical Baseline (15 Delta)
   theory_win_rate = 0.85
-  theory_win = 50.0   # 50% harvest on $1.00 credit
-  theory_loss = -200.0 # Buying back at 3.00 (-2.00 loss)
+  theory_win = 50.0   
+  theory_loss = -200.0 
   theoretical_ev = (theory_win_rate * theory_win) + ((1 - theory_win_rate) * theory_loss)
-  
+
   return {
+    'active': True,
     'harvest_rate_pct': round(harvest_rate * 100, 1),
     'avg_win_dollars': round(avg_win_val, 2),
-    'roll_stop_avg_dollars': round(abs(avg_loss_val), 2), # Show as positive 'Cost'
+    'roll_stop_avg_dollars': round(abs(avg_loss_val), 2),
     'actual_ev': round(actual_ev, 2),
     'theoretical_ev': round(theoretical_ev, 2),
-    'alpha': round(actual_ev - theoretical_ev, 2), # Performance vs. Math
+    'alpha': round(actual_ev - theoretical_ev, 2),
     'trade_count': len(all_income)
   }
 
 @anvil.server.callable
 def get_equity_curve_data() -> dict:
-  """Aggregates time-series data for the Cumulative PnL vs Capital Risked chart."""
-  cycles = list(app_tables.cycles.search(
-    status=config.STATUS_CLOSED, 
-    account=config.ACTIVE_ENV
+  """Aggregates time-series data based on Trade Exit Dates."""
+  # 1. Fetch EVERY closed trade in this environment
+  all_closed = list(app_tables.trades.search(
+    status=config.STATUS_CLOSED,
+    cycle=anvil.tables.query.any_of(*app_tables.cycles.search(account=config.ACTIVE_ENV))
   ))
 
-  if not cycles:
+  if not all_closed:
     return {'dates': [], 'cum_pnl': [], 'capital': []}
 
-    # Sort chronologically
-  cycles.sort(key=lambda x: x['end_date'] or dt.date.today())
+    # 2. Group by Date
+    # Dictionary to hold {date: {'pnl': total, 'cap': peak_cap}}
+  daily_map = {}
+  for t in all_closed:
+    # Normalize exit_time to a date object
+    d = t['exit_time'].date() if t['exit_time'] else None
+    if not d: continue
 
+    if d not in daily_map:
+      daily_map[d] = {'pnl': 0.0, 'cap': 0.0}
+
+      # Add PnL (Dollars)
+    daily_map[d]['pnl'] += float(t['pnl'] or 0) * float(t['quantity'] or 0) * 100
+    # Track Peak Capital Risked for that day
+    daily_map[d]['cap'] = max(daily_map[d]['cap'], float(t['capital_required'] or 0))
+
+    # 3. Sort chronologically and build running total
+  sorted_dates = sorted(daily_map.keys())
   dates = []
   cum_pnl = []
-  capital_risked = []
+  capital = []
+  running_total = 0.0
 
-  running_pnl = 0.0
-
-  for c in cycles:
-    dates.append(c['end_date'])
-
-    # Add to cumulative PnL
-    running_pnl += float(c['total_pnl'] or 0)
-    cum_pnl.append(round(running_pnl, 2))
-
-    # Calculate Peak Capital Risked for this cycle
-    trades = app_tables.trades.search(cycle=c, role=config.ROLE_INCOME)
-
-    # Using the 'capital_required' DB column we established earlier
-    cycle_cap = sum([float(t['capital_required'] or 0) for t in trades])
-    capital_risked.append(cycle_cap)
+  for d in sorted_dates:
+    dates.append(d)
+    running_total += daily_map[d]['pnl']
+    cum_pnl.append(round(running_total, 2))
+    capital.append(daily_map[d]['cap'])
 
   return {
     'dates': dates,
     'cum_pnl': cum_pnl,
-    'capital': capital_risked
+    'capital': capital
+  }
+
+@anvil.server.callable
+def get_continuous_pulse_stats() -> dict:
+  # 1. REALIZED: Sum of EVERY closed trade in the environment
+  # This captures harvests from both past cycles and the current active campaign
+  all_closed_trades = app_tables.trades.search(
+    status=config.STATUS_CLOSED, 
+    cycle=q.any_of(*app_tables.cycles.search(account=config.ACTIVE_ENV))
+  )
+  realized_pnl = sum([(t['pnl'] or 0) * (t['quantity'] or 0) * 100 for t in all_closed_trades])
+
+  # 2. UNREALIZED: Current Mark-to-Market of OPEN trades
+  active_cycle = server_db.get_active_cycle(config.ACTIVE_ENV)
+  unrealized_pnl = 0.0
+
+  if active_cycle:
+    market_data = server_api.get_market_data_snapshot(active_cycle)
+
+    # Hedge Unrealized
+    hedge = active_cycle.hedge_trade_link
+    if hedge and hedge.status == config.STATUS_OPEN:
+      h_mark = market_data.get('hedge_last', 0.0)
+      h_entry = hedge.entry_price or 0.0
+      unrealized_pnl += (h_mark - h_entry) * 100 * hedge.quantity
+
+    # Spread Unrealized (If any are currently mid-trade)
+    active_spreads = [t for t in active_cycle.trades if t.role == config.ROLE_INCOME and t.status == config.STATUS_OPEN]
+    for s in active_spreads:
+      s_mark = market_data.get('spread_marks', {}).get(s.id, 0.0)
+      s_entry = s.entry_price or 0.0
+      unrealized_pnl += (s_entry - s_mark) * 100 * s.quantity
+
+  return {
+    'net_liquidation_pnl': round(realized_pnl + unrealized_pnl, 2),
+    'unrealized_pnl': round(unrealized_pnl, 2),
+    'realized_pnl': round(realized_pnl, 2),
+    'is_active': active_cycle is not None
   }

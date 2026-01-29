@@ -30,6 +30,9 @@ def determine_cycle_state(cycle: Cycle, market_data: MarketData, env_status: Env
   if _check_panic_harvest(cycle, market_data):
     return config.STATE_PANIC_HARVEST
 
+  if cycle.last_panic_date == env_status['today']:
+    return config.STATE_IDLE # Stay idle until tomorrow
+
   if _check_roll_needed(cycle, market_data):
     return config.STATE_ROLL_REQUIRED
 

@@ -17,6 +17,7 @@ class Cycle:
     self.end_date = row['end_date']
     self.daily_hedge_ref = row['daily_hedge_ref']
     self.total_pnl = row['total_pnl']
+    self.last_panic_date = row['last_panic_date']
     self.notes = row['notes']
 
     # Link Wrappers (Data Navigation Only)

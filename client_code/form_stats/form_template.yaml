@@ -1,6 +1,23 @@
 components:
 - components:
   - layout_properties: {}
+    name: label_net_liq
+    properties: {}
+    type: Label
+  - layout_properties: {}
+    name: label_unrealized
+    properties: {}
+    type: Label
+  - layout_properties: {}
+    name: label_realized_lifetime
+    properties: {}
+    type: Label
+  layout_properties: {grid_position: 'LIUJXG,LUINSX'}
+  name: panel_live_pulse
+  properties: {}
+  type: FlowPanel
+- components:
+  - layout_properties: {}
     name: label_roi_day
     properties: {}
     type: Label

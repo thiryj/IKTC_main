@@ -196,13 +196,15 @@ def process_state_decision(cycle: Cycle, decision_state: str, market_data: dict,
         h_mark = market_data.get('hedge_last', 0.0)
         h_success = _execute_settlement_and_sync(h, h_order, "Panic Hedge Exit", fill_px_fallback=h_mark)
         if h_success:
-          # --- STAGE 4: TERMINAL ACTION ---
-          still_open = app_tables.trades.search(cycle=cycle._row, status=config.STATUS_OPEN)
-          if len(list(still_open)) == 0:
-            logger.log("Cycle is flat. Finalizing Cycle Record.", level=config.LOG_INFO)
-            server_db.close_active_cycle(cycle.id)
-          else:
-            logger.log("Cycle is NOT flat. Holding Cycle open for review.", level=config.LOG_WARNING)
+          # --- CAMPAIGN LOGIC: HALT, DON'T CLOSE ---
+          # We keep status as 'OPEN' but we record a 'Last Panic' timestamp
+          # to prevent immediate re-entry into a crashing market.
+          cycle._row['last_panic_date'] = dt.date.today()
+
+          # Sync the Campaign PnL so the Dashboard stays accurate
+          server_db.sync_campaign_pnl(cycle.id)
+
+          logger.log("Panic Liquidation Complete. System is FLAT. Campaign remains OPEN but HALTED.", level=config.LOG_CRITICAL)
                
     else:
       logger.log("Liabilities NOT cleared. ABORTING Hedge Close. System holding Hedge.", 
@@ -304,12 +306,7 @@ def process_state_decision(cycle: Cycle, decision_state: str, market_data: dict,
     order_res = server_api.close_position(hedge_trade, order_type='market')
 
     # Post processing
-    success = _execute_settlement_and_sync(hedge_trade, order_res, "Naked Hedge Harvest", fill_px_fallback=mark)
-
-    # Close Cycle
-    if success:
-      logger.log("Hedge Harvested. Closing the current Cycle.", level=config.LOG_INFO)
-      server_db.close_active_cycle(cycle.id) # Assuming a helper that sets end_date/status
+    _execute_settlement_and_sync(hedge_trade, order_res, "Naked Hedge Harvest", fill_px_fallback=mark)
       
 #---------------------------------------------------#
   elif decision_state == config.STATE_HARVEST_TARGET_HIT:
