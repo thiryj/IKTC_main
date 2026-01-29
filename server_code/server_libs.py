@@ -71,6 +71,11 @@ def _check_panic_harvest(cycle: Cycle, market_data: MarketData) -> bool:
   if hedge_ref == 0: 
     return False 
 
+  # NEW GATE: Only panic if we have liabilities to worry about!
+  open_spreads = [t for t in cycle.trades if t.role == config.ROLE_INCOME and t.status == config.STATUS_OPEN]
+  if len(open_spreads) == 0:
+    return False # Let the 'Windfall' rule handle hedge-only profits
+    
   # Guardrail: Only trigger Panic Harvest if the market is actually under stress.
   # If market is Green or Flat, we let the Standard Harvest logic handle profits.
   current_price = market_data.get('price', 0.0)
@@ -376,6 +381,10 @@ def calculate_roll_legs(
     long_candidate = next((p for p in puts if abs(p['strike'] - target_long) < 0.05), None)
     if not long_candidate: 
       continue
+
+    # NEW MECHANICAL FIX: Ensure roots match (SPX vs SPXW)
+    if long_candidate.get('root_symbol') != short_candidate.get('root_symbol'):
+      continue # Skip this combination
 
     credit_new = get_price(short_candidate, 'bid') - get_price(long_candidate, 'ask')
     if credit_new >= cost_to_close:
