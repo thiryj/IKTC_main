@@ -590,10 +590,11 @@ def _find_best_roll_candidate(cycle: Cycle, old_trade: Trade, realized_debit: fl
 
   # 3. Get valid dates and scan (T+1 through T+3)
   valid_dates = server_api.get_expirations()
-  retry_offsets = [1, 2, 3] 
-
-  for days in retry_offsets:
-    candidate_date = server_libs.find_closest_expiration(valid_dates, target_dte=days)
+  future_dates = [d for d in valid_dates if d > dt.date.today()]
+  
+  horizon = int(cycle.rules.get('roll_search_horizon', 3))
+  for candidate_date in future_dates[:horizon]:
+    logger.log(f"Roll Search: Checking {candidate_date}...", level=config.LOG_DEBUG)
     if not candidate_date: 
       continue
 

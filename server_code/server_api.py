@@ -281,7 +281,7 @@ def get_expirations(symbol: str = None) -> List[dt.date]:
 
   try:
     # Endpoint: /v1/markets/options/expirations
-    params = {'symbol': symbol, 'include_all_roots': 'true'}
+    params = {'symbol': symbol, 'includeAllRoots': 'true'}
     resp = t.session.get(f"{t.endpoint}/markets/options/expirations", params=params, headers={'Accept': 'application/json'})
     data = resp.json()
 
