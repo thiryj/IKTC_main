@@ -266,3 +266,35 @@ def scrub_orphaned_rows() -> str:
       t_count += 1
 
   return f"Deep Scrub Complete: Removed {l_count} orphan Legs and {t_count} orphan Transactions."
+
+@anvil.server.callable
+def diagnostic_settings_sync() -> str:
+  print("--- DIAGNOSTIC: SETTINGS SYNC TEST ---")
+
+  # 1. TEST: GET
+  original_settings = anvil.server.call('get_live_settings')
+  if not isinstance(original_settings, dict):
+    return "FAILURE: get_live_settings did not return a dictionary."
+
+  orig_val = original_settings.get('ui_refresh_seconds', 60)
+  print(f"Original UI Refresh: {orig_val}")
+
+  # 2. TEST: SET (Update a value temporarily)
+  test_val = orig_val + 5
+  success = anvil.server.call('save_live_settings', {'ui_refresh_seconds': test_val})
+
+  if not success:
+    return "FAILURE: save_live_settings returned False."
+
+    # 3. TEST: VERIFY
+  updated_settings = anvil.server.call('get_live_settings')
+  new_val = updated_settings.get('ui_refresh_seconds')
+  print(f"Updated UI Refresh: {new_val}")
+
+  # CLEANUP: Revert to original
+  anvil.server.call('save_live_settings', {'ui_refresh_seconds': orig_val})
+
+  if new_val == test_val:
+    return f"SUCCESS: Settings sync verified. (Test Value: {test_val})"
+  else:
+    return f"FAILURE: Data mismatch. Sent {test_val}, got {new_val}"

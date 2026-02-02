@@ -528,18 +528,31 @@ def sync_campaign_pnl(cycle_id: str) -> float:
 
 #--------------------------------------------------------------#
 # Settings page
+
 @anvil.server.callable
-def get_settings_for_editor() -> dict:
+def get_live_settings() -> dict:
+  """Fetches the singleton settings row as a dictionary."""
   row = app_tables.settings.get()
-  return dict(row) if row else {}
+  if not row:
+    # Fail-safe: Create the row with defaults if it's missing
+    row = app_tables.settings.add_row(
+      total_account_equity=40000,
+      dry_run=True,
+      enforce_trading_hours=True,
+      ui_refresh_seconds=60,
+      pause_new_entries=False
+    )
+  return dict(row)
 
 @anvil.server.callable
 @anvil.tables.in_transaction
-def save_settings(new_settings: dict) -> None:
+def save_live_settings(updates: dict) -> bool:
+  """Saves a bundle of settings from the UI."""
   row = app_tables.settings.get()
-  if not row:
-    row = app_tables.settings.add_row()
+  if not row: return False
 
-    # Update only the specific fields
-  row.update(**new_settings)
-  logger.log("Settings updated via UI.", level=config.LOG_INFO)
+  # Update the row using the dictionary keys
+  row.update(**updates)
+
+  logger.log("Mission Control: Settings updated by user.", level=config.LOG_INFO)
+  return True

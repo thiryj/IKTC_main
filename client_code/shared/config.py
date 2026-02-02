@@ -13,7 +13,7 @@ TARGET_UNDERLYING = {
 }
 
 # Guardrail flags
-ENFORCE_TRADING_HOURS = True   #disable to allow after hours automation for testing
+ENFORCE_TRADING_HOURS = True   #disable to allow after hours automation for testing - refers to market open/close
 ENFORCE_LATE_OPEN_GUARDRAIL = True
 ENFORCE_ZOMBIE_CHECKS = False
 ENFORCE_CONSISTENCY_CHECKS = False

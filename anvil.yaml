@@ -208,12 +208,30 @@ db_schema:
     - admin_ui: {order: 14, width: 163}
       name: total_account_equity
       type: number
-    - admin_ui: {order: 15, width: 200}
+    - admin_ui: {order: 15, width: 73}
       name: dry_run
       type: bool
-    - admin_ui: {order: 16, width: 200}
+    - admin_ui: {order: 16, width: 157}
       name: last_reference_reset
       type: date
+    - admin_ui: {order: 17, width: 200}
+      name: enforce_trading_hours
+      type: bool
+    - admin_ui: {order: 18, width: 200}
+      name: enforce_late_open_guardrail
+      type: bool
+    - admin_ui: {order: 19, width: 200}
+      name: enforce_zombie_checks
+      type: bool
+    - admin_ui: {order: 20, width: 200}
+      name: enforce_consistency_checks
+      type: bool
+    - admin_ui: {order: 21, width: 200}
+      name: harvest_naked_hedge
+      type: bool
+    - admin_ui: {order: 22, width: 200}
+      name: ui_refresh_seconds
+      type: number
     server: full
     title: settings
   trades:
