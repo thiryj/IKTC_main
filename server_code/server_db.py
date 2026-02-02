@@ -520,3 +520,21 @@ def sync_campaign_pnl(cycle_id: str) -> float:
 
   row['total_pnl'] = round(total, 2)
   return row['total_pnl']
+
+#--------------------------------------------------------------#
+# Settings page
+@anvil.server.callable
+def get_settings_for_editor() -> dict:
+  row = app_tables.settings.get()
+  return dict(row) if row else {}
+
+@anvil.server.callable
+@anvil.tables.in_transaction
+def save_settings(new_settings: dict) -> None:
+  row = app_tables.settings.get()
+  if not row:
+    row = app_tables.settings.add_row()
+
+    # Update only the specific fields
+  row.update(**new_settings)
+  logger.log("Settings updated via UI.", level=config.LOG_INFO)
