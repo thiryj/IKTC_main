@@ -4,6 +4,7 @@ import anvil.server
 import anvil.tables as tables
 import anvil.tables.query as q
 from anvil.tables import app_tables
+from ...shared import config
 
 
 class RowTemplate1(RowTemplate1Template):
@@ -18,6 +19,8 @@ class RowTemplate1(RowTemplate1Template):
     #self.label_harvest.text = f"${self.item['target_harvest']:.2f}" if self.item.get('target_harvest') else "-"
     self.label_time.text = self.item['entry_time'].strftime('%Y-%m-%d %H:%M') if self.item.get('entry_time') else "-"
     #self.label_trigger.text = f"${self.item['roll_trigger']:.2f}" if self.item.get('roll_trigger') else "-"
+    if self.item['status'] == config.STATUS_CLOSED:
+      self.background = "#f8f9fa" # Very light gray for "History"
 
     # PnL with conditional coloring
     #pnl = self.item.get('pnl', 0)

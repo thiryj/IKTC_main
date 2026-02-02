@@ -140,7 +140,8 @@ def record_new_trade(
   order_id: str,
   fill_price: float,
   fill_time: dt.datetime,
-  fees: float = 0.0
+  fees: float = 0.0,
+  entry_reason: str = None
 ) -> Trade:
   """
   Persists a fully executed trade to the database.
@@ -163,6 +164,7 @@ def record_new_trade(
   trade_row = app_tables.trades.add_row(
     cycle=cycle_row,
     role=role,
+    entry_reason=entry_reason,
     status=config.STATUS_OPEN,
     quantity=trade_dict['quantity'],
     entry_price=_fmt(fill_price),
@@ -406,6 +408,9 @@ def _perform_trade_update(row: anvil.tables.Row, data: dict) -> None:
 
   if 'notes' in data:
     row['notes'] = data['notes']
+
+  if 'exclude_from_stats' in data:
+    row['exclude_from_stats'] = data['exclude_from_stats']
   
   # IF TRADE IS CLOSED: Sync the exit data and recalculate PnL
   if row['status'] == config.STATUS_CLOSED or 'exit_price' in data:

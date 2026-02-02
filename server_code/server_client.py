@@ -455,6 +455,7 @@ def get_strategic_efficiency() -> dict:
   all_income = list(app_tables.trades.search(
     role=config.ROLE_INCOME, 
     status=config.STATUS_CLOSED,
+    exclude_from_stats=False,
     cycle=anvil.tables.query.any_of(*cycles)
   ))
 
@@ -502,6 +503,7 @@ def get_equity_curve_data() -> dict:
   # 1. Fetch EVERY closed trade in this environment
   all_closed = list(app_tables.trades.search(
     status=config.STATUS_CLOSED,
+    exclude_from_stats=False,
     cycle=anvil.tables.query.any_of(*app_tables.cycles.search(account=config.ACTIVE_ENV))
   ))
 

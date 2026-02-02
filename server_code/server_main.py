@@ -264,7 +264,7 @@ def process_state_decision(cycle: Cycle, decision_state: str, market_data: dict,
 
         order_res = server_api.open_spread_position(trade_data)
         
-        entered = _execute_entry_and_sync(cycle, order_res, trade_data, config.ROLE_INCOME, "Roll Entry")
+        entered = _execute_entry_and_sync(cycle, order_res, trade_data, config.ROLE_INCOME, "Roll Entry", entry_reason=config.REASON_ROLL)
         if entered:
           _reset_cycle_hedge_reference(cycle, market_data)
       else:
@@ -300,7 +300,12 @@ def process_state_decision(cycle: Cycle, decision_state: str, market_data: dict,
 
       order_res = server_api.open_spread_position(trade_data)
       
-      entered = _execute_entry_and_sync(cycle, order_res, trade_data, config.ROLE_INCOME, "Roll Re-Entry Recovery", 
+      entered = _execute_entry_and_sync(cycle, 
+                                        order_res, 
+                                        trade_data, 
+                                        config.ROLE_INCOME, 
+                                        "Roll Re-Entry Recovery", 
+                                        entry_reason=config.REASON_RECOVERY,
                                         fill_px_fallback=trade_data['net_credit'])
 
       if entered:
@@ -377,7 +382,13 @@ def process_state_decision(cycle: Cycle, decision_state: str, market_data: dict,
     )
     if is_valid:
       order_res = server_api.open_spread_position(trade_data)
-      _execute_entry_and_sync(cycle, order_res, trade_data, config.ROLE_INCOME, "Standard Spread Entry", fill_px_fallback=trade_data['net_credit'])
+      _execute_entry_and_sync(cycle, 
+                              order_res, 
+                              trade_data, 
+                              config.ROLE_INCOME, 
+                              "Standard Spread Entry", 
+                              entry_reason=config.REASON_FRESH,
+                              fill_px_fallback=trade_data['net_credit'])
       
 #---------------------------------------------------#      
   elif decision_state == config.STATE_HEDGE_ADJUSTMENT_NEEDED:
@@ -539,7 +550,13 @@ def _execute_settlement_and_sync(trade_obj: Trade, order_res: dict, action_desc:
   return False
 
 # In server_main.py (Private helper)
-def _execute_entry_and_sync(cycle: Cycle, order_res: dict, trade_data: dict, role: str, action_desc: str, fill_px_fallback: float=0.0) -> bool:
+def _execute_entry_and_sync(cycle: Cycle, 
+                            order_res: dict, 
+                            trade_data: dict, 
+                            role: str, 
+                            action_desc: str, 
+                            entry_reason: str = None, 
+                            fill_px_fallback: float=0.0) -> bool:
   """
     Unified handler for all position entries.
     Includes Safety: Cancels order on broker if timeout occurs.
@@ -557,6 +574,7 @@ def _execute_entry_and_sync(cycle: Cycle, order_res: dict, trade_data: dict, rol
     new_trade = server_db.record_new_trade(
       cycle_row=cycle._row,
       role=role,
+      entry_reason=entry_reason,
       trade_dict=trade_data,
       order_id=order_id,
       fill_price=final_px,

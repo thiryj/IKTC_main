@@ -21,6 +21,7 @@ class form_trade_detail_card(form_trade_detail_cardTemplate):
     self.text_box_exit_price.text = trade.get('exit_price')
     self.date_picker_exit.date = trade.get('exit_time') # NEW PICKER
     self.text_box_notes.text = trade.get('notes', "")
+    self.check_exclude_from_stats.checked = trade.get('exclude_from_stats', False)
 
     self.check_settle_validity()
 
@@ -44,7 +45,8 @@ class form_trade_detail_card(form_trade_detail_cardTemplate):
       'roll_trigger_price': self.text_box_roll_trigger.text,
       'exit_price': self.text_box_exit_price.text,
       'exit_time': self.date_picker_exit.date,
-      'notes': self.text_box_notes.text
+      'notes': self.text_box_notes.text,
+      'exclude_from_stats': self.check_exclude_from_stats.checked
     }
 
   # Button Handlers - Raise x-close-alert to close the parent alert()
@@ -69,3 +71,8 @@ class form_trade_detail_card(form_trade_detail_cardTemplate):
   def text_box_exit_price_change(self, **event_args):
     """This method is called when the text in this text box is edited"""
     self.check_settle_validity()
+
+  @anvil.handle("check_exclude_from_stats", "change")
+  def check_exclude_from_stats_change(self, **event_args):
+    """This method is called when this checkbox is checked or unchecked"""
+    pass

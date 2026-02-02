@@ -89,6 +89,11 @@ components:
       name: button_delete
       properties: {role: tonal-button, text: Delete}
       type: Button
+    - event_bindings: {}
+      layout_properties: {}
+      name: check_exclude_from_stats
+      properties: {text: Exclude from stats}
+      type: CheckBox
     layout_properties: {grid_position: 'IDHOIL,DMTRCF'}
     name: flow_panel_5
     properties: {}

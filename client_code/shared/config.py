@@ -37,6 +37,11 @@ STATUS_CLOSED = 'CLOSED'
 ROLE_HEDGE = 'HEDGE'
 ROLE_INCOME = 'INCOME' # The daily spread
 
+# Income spread entry reasons
+REASON_FRESH = "FRESH"
+REASON_ROLL = "ROLL"  # rolls that were filled on the first try
+REASON_RECOVERY = "RECOVERY"  # subset of defensive rolls that needed additional hunting to find
+
 # Leg side: long/short
 LEG_SIDE_SHORT = "short"
 LEG_SIDE_LONG = "long"

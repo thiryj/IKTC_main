@@ -68,6 +68,8 @@ class Trade:
     self.exit_time = row['exit_time']   # Renamed
     self.order_id_external = row['order_id_external']
     self.notes = row['notes']
+    self.entry_reason = row['entry_reason'] or config.REASON_FRESH
+    self.exclude_from_stat = row['exclude_from_stats'] or False
 
   @property
   def cycle(self):

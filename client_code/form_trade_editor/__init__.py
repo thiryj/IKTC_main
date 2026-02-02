@@ -17,10 +17,21 @@ class form_trade_editor(form_trade_editorTemplate):
 
   def refresh_data(self):
     #print('in trade editor refresh')
-    trades = anvil.server.call('get_all_trades_for_editor')
+    trades = anvil.server.call('get_all_trades_for_editor') # in server_db
     self.repeating_panel_trades.items = sorted(trades, 
-                                               key=lambda x: (x['status'] != config.STATUS_OPEN ,
-                                                              x['role'] != config.ROLE_HEDGE)
+                                               key=lambda x: (
+                                                 # 1. Primary: Open trades (0) come before Closed trades (1)
+                                                 0 if x['status'] == config.STATUS_OPEN else 1,
+
+                                                 # 2. Secondary: If OPEN, Hedge (0) comes before Spread (1).
+                                                 # If CLOSED, we use 0 for everyone so the role is ignored.
+                                                 (0 if x['role'] == config.ROLE_HEDGE else 1) if x['status'] == config.STATUS_OPEN else 0,
+
+                                                 # 3. Tertiary: Reverse Chronological (Latest on top)
+                                                 # For closed trades, this uses exit_time. 
+                                                 # We use .timestamp() and make it negative.
+                                                 -(x.get('exit_time').timestamp() if x.get('exit_time') else 0)
+                                                )
                                               )
     
     #print(f'trades items: {self.repeating_panel_trades.items}')
