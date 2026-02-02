@@ -552,7 +552,7 @@ def wait_for_order_fill(order_id: str, timeout_seconds: int = 15, fill_px_fallba
         reason = order_data.get('reason_description', 'No reason provided')
         status = order_data.get('status')
         if status == 'filled':
-          fill_price = float(order_data.get('avg_fill_price') or 0.0)
+          fill_price = abs(float(order_data.get('avg_fill_price') or 0.0))
           logger.log(f"Order {order_id} FILLED at ${fill_price}", 
                      level=config.LOG_INFO, 
                      source=config.LOG_SOURCE_API)

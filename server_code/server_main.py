@@ -543,7 +543,7 @@ def _execute_entry_and_sync(cycle: Cycle, order_res: dict, trade_data: dict, rol
 
   if status == 'filled':
     # 2. Record (Inside Transaction)
-    final_px = fill_px if fill_px > 0 else float(order_res['price'])
+    final_px = fill_px if fill_px != 0 else float(order_res['price'])
     new_trade = server_db.record_new_trade(
       cycle_row=cycle._row,
       role=role,
