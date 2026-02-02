@@ -1,4 +1,5 @@
 import anvil.email
+from anvil.tables import app_tables
 from shared import config
 from shared.classes import Cycle, Trade
 from shared.types import MarketData, EnvStatus, RuleSetDict
@@ -213,15 +214,18 @@ def _check_profit_target(cycle: Cycle, market_data: MarketData) -> bool:
 
 def _check_hedge_missing(cycle: Cycle) -> bool:
   """Rule: Cycle is OPEN but has no *ACTIVE* Hedge Trade linked"""
-  # 1. No link at all? Missing.
-  if not cycle.hedge_trade_link: 
-    return True
+  # 1. Primary Check: Is the link on the cycle row valid?
+  if cycle.hedge_trade_link and cycle.hedge_trade_link.status == config.STATUS_OPEN:
+    return False
+  
+  # 2. Deep Search for an 'unlinked' open hedge
+  orphans = list(app_tables.trades.search(cycle=cycle._row, role=config.ROLE_HEDGE, status=config.STATUS_OPEN))
+  if orphans:
+    cycle._row['hedge_trade'] = orphans[0]
+    logger.log(f"Self-Healing: Re-linked orphaned hedge {orphans[0].get_id()} to Cycle", level=config.LOG_WARNING)
+    return False
 
-  # 2. Link exists, but status is CLOSED? Missing. (THE CRITICAL FIX)
-  if cycle.hedge_trade_link.status != config.STATUS_OPEN:  
-    return True
-
-  return False
+  return True
 
 def _check_spread_missing(cycle: Cycle, env_status: EnvStatus, settings:dict=None) -> bool:
 

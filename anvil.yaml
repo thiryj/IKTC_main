@@ -211,6 +211,9 @@ db_schema:
     - admin_ui: {order: 15, width: 200}
       name: dry_run
       type: bool
+    - admin_ui: {order: 16, width: 200}
+      name: last_reference_reset
+      type: date
     server: full
     title: settings
   trades:

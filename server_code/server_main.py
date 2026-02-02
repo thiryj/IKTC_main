@@ -105,49 +105,59 @@ def _execute_automation_loop():
     logger.log(f"Cycle {cycle.id} created and hydrated. Proceeding immediately.", 
                level=config.LOG_INFO, 
                source=config.LOG_SOURCE_ORCHESTRATOR)
-  cycle_row = cycle._row
+  
+  market_data = server_api.get_market_data_snapshot(cycle)
+  print(f'market: {market_data}')
+  # We only do this reset once per day (at the first heartbeat after open)
+  current_h_px = market_data.get('hedge_last', 0.0)
+  today = dt.date.today()
+  if system_settings['last_reference_reset'] and system_settings['last_reference_reset'] != dt.date.today() and current_h_px > 0:
+    cycle._row['daily_hedge_ref'] = current_h_px
+    system_settings['last_reference_reset'] = today
+    logger.log(f"Daily Sync: Hedge Reference reset to Morning Mark (${current_h_px})", level=config.LOG_INFO)
     
   # 3. SYNC REALITY (Dirty)
   # Ensure DB matches Tradier before making decisions
-  positions = server_api.get_current_positions()
+  if config.ENFORCE_ZOMBIE_CHECKS:
+    positions = server_api.get_current_positions()
 
-  # check for positions open in db that are not in broker
-  zombies = server_libs.get_zombie_trades(cycle, positions)
-  if config.ENFORCE_ZOMBIE_CHECKS and zombies:
-    logger.log(f"Found {len(zombies)} Zombie Trades. Executing Fail-Safe Settlement...", 
-               level=config.LOG_WARNING, 
-               source=config.LOG_SOURCE_ORCHESTRATOR)
-    for z_trade in zombies:
-      try:
-        server_db.settle_zombie_trade(z_trade._row)
-        msg = f"Zombie Trade {z_trade.id} detected and settled at MAX LOSS. Manual Check Required."
-        logger.log(msg, 
-                   level=config.LOG_CRITICAL, 
-                   source=config.LOG_SOURCE_ORCHESTRATOR)
-      except Exception as e:
-        logger.log(f"Failed to settle Zombie Trade {z_trade.id}: {e}", 
-                   level=config.LOG_CRITICAL, 
-                   source=config.LOG_SOURCE_ORCHESTRATOR)
-
-      # RELOAD CONTEXT
-      logger.log("Re-loading Cycle Context after Zombie Settlement...", 
-                 level=config.LOG_INFO, 
-                 source=config.LOG_SOURCE_ORCHESTRATOR)
-      cycle = server_db.get_active_cycle(current_env_account)
-      if not cycle:
-        return
-
-  if not server_libs.is_db_consistent(cycle, positions):
-    # Stop everything if the map doesn't match the territory
-    logger.log("DB/Broker Mismatch Detected (Non-Critical). Proceeding...", 
-               level=config.LOG_CRITICAL, 
-               source=config.LOG_SOURCE_ORCHESTRATOR)
-    return
+    # check for positions open in db that are not in broker
+    zombies = server_libs.get_zombie_trades(cycle, positions)
+    if zombies:
+      logger.log(f"Found {len(zombies)} Zombie Trades. Executing Fail-Safe Settlement...", 
+                level=config.LOG_WARNING, 
+                source=config.LOG_SOURCE_ORCHESTRATOR)
+      for z_trade in zombies:
+        try:
+          server_db.settle_zombie_trade(z_trade._row)
+          msg = f"Zombie Trade {z_trade.id} detected and settled at MAX LOSS. Manual Check Required."
+          logger.log(msg, 
+                    level=config.LOG_CRITICAL, 
+                    source=config.LOG_SOURCE_ORCHESTRATOR)
+        except Exception as e:
+          logger.log(f"Failed to settle Zombie Trade {z_trade.id}: {e}", 
+                    level=config.LOG_CRITICAL, 
+                    source=config.LOG_SOURCE_ORCHESTRATOR)
+  
+        # RELOAD CONTEXT
+        logger.log("Re-loading Cycle Context after Zombie Settlement...", 
+                  level=config.LOG_INFO, 
+                  source=config.LOG_SOURCE_ORCHESTRATOR)
+        cycle = server_db.get_active_cycle(current_env_account)
+        if not cycle:
+          return
+  if config.ENFORCE_CONSISTENCY_CHECKS:
+    positions = server_api.get_current_positions()
+    if not server_libs.is_db_consistent(cycle, positions):
+      #TODO:  this is currently a stub that always returns true
+      # Stop everything if the map doesn't match the territory
+      logger.log("DB/Broker Mismatch Detected (Non-Critical). Proceeding...", 
+                level=config.LOG_CRITICAL, 
+                source=config.LOG_SOURCE_ORCHESTRATOR)
+      return
 
   # 4. DETERMINE STATE
   # The brain analyzes the cycle + market data and returns ONE state constant
-  market_data = server_api.get_market_data_snapshot(cycle)
-  print(f'market: {market_data}')
   decision_state = server_libs.determine_cycle_state(cycle, market_data, env_status, system_settings)
   if decision_state != config.STATE_IDLE:
     logger.log(f"Decision State -> {decision_state}", 
@@ -556,7 +566,8 @@ def _execute_entry_and_sync(cycle: Cycle, order_res: dict, trade_data: dict, rol
     # Link hedge specifically
     if role == config.ROLE_HEDGE:
       cycle._row['hedge_trade'] = new_trade._row
-
+      cycle._row['daily_hedge_ref'] = final_px
+      
     logger.log(f"SUCCESS: {action_desc} filled at ${final_px}", level=config.LOG_INFO)
     return True
 
