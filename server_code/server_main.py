@@ -265,9 +265,8 @@ def process_state_decision(cycle: Cycle, decision_state: str, market_data: dict,
 
         order_res = server_api.open_spread_position(trade_data)
         
-        entered = _execute_entry_and_sync(cycle, order_res, trade_data, config.ROLE_INCOME, "Roll Entry", entry_reason=config.REASON_ROLL)
-        if entered:
-          _reset_cycle_hedge_reference(cycle, market_data)
+        _execute_entry_and_sync(cycle, order_res, trade_data, config.ROLE_INCOME, "Roll Entry", entry_reason=config.REASON_ROLL)
+
       else:
         logger.log("Roll Aborted: No valid strikes found to cover costs. Staying Flat.", 
                    level=config.LOG_WARNING)
@@ -301,16 +300,13 @@ def process_state_decision(cycle: Cycle, decision_state: str, market_data: dict,
 
       order_res = server_api.open_spread_position(trade_data)
       
-      entered = _execute_entry_and_sync(cycle, 
+      _execute_entry_and_sync(cycle, 
                                         order_res, 
                                         trade_data, 
                                         config.ROLE_INCOME, 
                                         "Roll Re-Entry Recovery", 
                                         entry_reason=config.REASON_RECOVERY,
                                         fill_px_fallback=trade_data['net_credit'])
-
-      if entered:
-        _reset_cycle_hedge_reference(cycle, market_data)
     else:
       # We don't log CRITICAL here because we'll just try again next heartbeat
       logger.log("Recovery Search: No valid strikes currently cover the debt. Waiting...", level=config.LOG_DEBUG)

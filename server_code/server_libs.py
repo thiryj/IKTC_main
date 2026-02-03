@@ -65,13 +65,7 @@ def _check_panic_harvest(cycle: Cycle, market_data: MarketData) -> bool:
   hedge = cycle.hedge_trade_link 
   if not hedge or hedge.status != config.STATUS_OPEN: 
     return False
-  
-  # 1. Calculate Hedge PnL (Daily Change)
-  # Logic: (Current Price - Daily Reference) * Multiplier * Qty
-  hedge_ref = cycle.daily_hedge_ref or 0.0
-  if hedge_ref == 0: 
-    return False 
-
+    
   # NEW GATE: Only panic if we have liabilities to worry about!
   open_spreads = [t for t in cycle.trades if t.role == config.ROLE_INCOME and t.status == config.STATUS_OPEN]
   if len(open_spreads) == 0:
@@ -89,13 +83,22 @@ def _check_panic_harvest(cycle: Cycle, market_data: MarketData) -> bool:
     if change_pct > -required_drop:
       # Market is not down enough to justify killing the hedge
       return False
-
+      
+  hedge_ref = cycle.daily_hedge_ref or 0.0
   hedge_current = market_data.get('hedge_last', 0.0)
   hedge_pnl = (hedge_current - hedge_ref) * config.DEFAULT_MULTIPLIER * cycle.hedge_trade_link.quantity
 
+  # 2. Realized Spread PnL Today (The 'Debt' from previous rolls)
+  # We sum the PnL of all Income trades closed TODAY
+  realized_today = sum([
+    (t.pnl or 0) * t.quantity * 100 
+    for t in cycle.trades 
+    if t.role == config.ROLE_INCOME and t.status == config.STATUS_CLOSED and _is_today(t.exit_time, dt.date.today())
+  ])
+  
   # 2. Calculate Spread PnL (Total Open)
   # Logic: (Entry Credit - Current Debit) * Multiplier * Qty
-  spread_pnl = 0.0
+  unrealized_today = 0.0
   marks = market_data.get('spread_marks', {})
 
   for trade in cycle.trades:
@@ -103,13 +106,13 @@ def _check_panic_harvest(cycle: Cycle, market_data: MarketData) -> bool:
       current_debit = marks.get(trade.id, 0.0)
       entry_credit = trade.entry_price or 0.0
       trade_pnl = (entry_credit - current_debit) * config.DEFAULT_MULTIPLIER * trade.quantity
-      spread_pnl += trade_pnl
+      unrealized_today += trade_pnl
 
   # 3. Check Threshold (Scaled by Rules)
-  net_unit_pnl = hedge_pnl + spread_pnl
+  net_unit_pnl = hedge_pnl + realized_today + unrealized_today
   threshold = cycle.rules['panic_threshold_dpu'] * cycle.hedge_trade_link.quantity
   if net_unit_pnl > threshold:
-    logger.log(f"Panic Threshold Breached: ${net_unit_pnl:.2f} > ${threshold:.2f} (Hedge: {hedge_pnl:.2f}, Spread: {spread_pnl:.2f})", 
+    logger.log(f"Panic Threshold Breached: ${net_unit_pnl:.2f} > ${threshold:.2f} (Hedge: {hedge_pnl:.2f}, Realized: {realized_today:.2f}, Open: {unrealized_today:.2f})", 
                level=config.LOG_INFO, 
                source=config.LOG_SOURCE_LIBS)
     return True
