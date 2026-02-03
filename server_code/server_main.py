@@ -61,7 +61,8 @@ def _execute_automation_loop():
   # 1. GLOBAL PRECONDITIONS
   # Check environment status (Market Open/Closed) and kill switch false BEFORE touching DB
   env_status = server_api.get_environment_status()
-
+  today = env_status['today']
+  print(f'today is: {today}')
   # This check is now purely for "Is the Market Open?" / "Is Bot Enabled globally?"
   if not server_libs.can_run_automation(env_status, system_settings):
     logger.log(f"Automation skipped. Market: {env_status.get('status_message')}", 
@@ -110,11 +111,11 @@ def _execute_automation_loop():
   print(f'market: {market_data}')
   # We only do this reset once per day (at the first heartbeat after open)
   current_h_px = market_data.get('hedge_last', 0.0)
-  today = dt.date.today()
-  if system_settings['last_reference_reset'] and system_settings['last_reference_reset'] != dt.date.today() and current_h_px > 0:
+  
+  if system_settings['last_reference_reset'] and system_settings['last_reference_reset'] != today and current_h_px > 0:
     cycle._row['daily_hedge_ref'] = current_h_px
-    system_settings['last_reference_reset'] = today
-    logger.log(f"Daily Sync: Hedge Reference reset to Morning Mark (${current_h_px})", level=config.LOG_INFO)
+    settings_row['last_reference_reset'] = today
+    logger.log(f"Daily Sync: Hedge Reference reset to Morning Mark (${current_h_px:.2f})", level=config.LOG_INFO)
     
   # 3. SYNC REALITY (Dirty)
   # Ensure DB matches Tradier before making decisions
@@ -644,7 +645,8 @@ def _find_best_roll_candidate(cycle: Cycle, old_trade: Trade, realized_debit: fl
       cost_to_close=realized_debit
     )
     if result:
-      logger.log(f"Roll Found: {candidate_date} (T+{days}) at ${result['new_credit']:.2f} credit", level=config.LOG_INFO)
+      offset = (candidate_date - dt.date.today()).days
+      logger.log(f"Roll Found: {candidate_date} (T+{offset}) at ${result['new_credit']:.2f} credit", level=config.LOG_INFO)
       return result, candidate_date
 
   return None, None

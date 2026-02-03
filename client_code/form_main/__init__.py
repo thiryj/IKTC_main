@@ -41,6 +41,7 @@ class form_main(form_mainTemplate):
       self.label_active_env.border = "1px solid green"
       
       self.check_box_automation.checked = state['automation_enabled']
+      self.check_pause_new_entries.checked = state.get('pause_new_entries', False)
       
       self.label_market_status.text = f"Market: {state.get('market_status', 'UNKNOWN')}"
       if state['market_status'] == 'OPEN':
@@ -200,4 +201,7 @@ class form_main(form_mainTemplate):
 
   @handle("check_pause_new_entries", "change")
   def check_pause_new_entries_change(self, **event_args):
-    anvil.server.call('toggle_forbid_entries', self.check_forbid_entry.checked)
+    enabled = self.check_pause_new_entries.checked
+    anvil.server.call('save_live_settings', {'pause_new_entries': enabled})
+    Notification(f"New Entries {'PAUSED' if enabled else 'RESUMED'}").show()
+    #anvil.server.call('toggle_forbid_entries', self.check_forbid_entry.checked)
