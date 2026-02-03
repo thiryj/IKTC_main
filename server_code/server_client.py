@@ -243,7 +243,34 @@ def get_dashboard_state():
     }
   
   # --- AGGREGATE ---
-  data['net_daily_pnl'] = round(hedge_pnl_day + spread_pnl_total,2)
+  today_date = env_status['today']
+
+  # --- 1. TOTAL REALIZED TODAY (The "Banked" money) ---
+  # Sum PnL for EVERY trade closed today (Income AND Hedge)
+  realized_today = sum([
+    (t.pnl or 0.0) * t.quantity * 100 
+    for t in cycle.trades 
+    if t.status == config.STATUS_CLOSED and _is_today(t.exit_time, today_date)
+  ])
+  # --- 2. TOTAL UNREALIZED TODAY (The "Floating" money) ---
+  unrealized_today = 0.0
+
+  # Check Open Hedge
+  hedge = cycle.hedge_trade_link
+  if hedge and hedge.status == config.STATUS_OPEN:
+    h_mark = market_data.get('hedge_last', 0.0)
+    h_ref = cycle.daily_hedge_ref or 0.0
+    if h_mark > 0 and h_ref > 0:
+      unrealized_today += (h_mark - h_ref) * 100 * hedge.quantity
+  
+      # Check Open Spreads
+      active_spreads = [t for t in cycle.trades if t.role == config.ROLE_INCOME and t.status == config.STATUS_OPEN]
+  for s in active_spreads:
+    s_mark = market_data.get('spread_marks', {}).get(s.id, 0.0)
+    s_entry = s.entry_price or 0.0
+    unrealized_today += (s_entry - s_mark) * 100 * s.quantity
+    
+  data['net_daily_pnl'] = round(realized_today + unrealized_today, 2)
 
   return data
 
