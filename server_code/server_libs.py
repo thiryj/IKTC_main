@@ -353,7 +353,8 @@ def calculate_roll_legs(
   chain: List[Dict],
   current_short_strike: float,
   width: float,
-  cost_to_close: float
+  cost_to_close: float,
+  rules: Dict
 ) -> Optional[Dict]:
   """
     Scans for a 'Down & Out' roll. Maximizes distance.
@@ -391,14 +392,16 @@ def calculate_roll_legs(
       continue # Skip this combination
 
     credit_new = get_price(short_candidate, 'bid') - get_price(long_candidate, 'ask')
-    if credit_new >= cost_to_close:
+    max_debit = float(rules.get('roll_max_debit', 0.0))
+    net_price = credit_new - cost_to_close
+    if net_price >= (-max_debit):
       # Valid candidate found. Store it.
       # We continue the loop to see if a LOWER strike (safer) also pays enough.
       best_candidate = {
         'short_leg': short_candidate,
         'long_leg': long_candidate,
         'new_credit': credit_new,
-        'net_price': credit_new - cost_to_close
+        'net_price': net_price
       }
     else:
       # Credit dropped too low. Since premiums drop as strikes drop,

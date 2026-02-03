@@ -642,7 +642,8 @@ def _find_best_roll_candidate(cycle: Cycle, old_trade: Trade, realized_debit: fl
       chain=chain,
       current_short_strike=strike_val,
       width=cycle.rules['spread_width'],
-      cost_to_close=realized_debit
+      cost_to_close=realized_debit,
+      rules=cycle.rules
     )
     if result:
       offset = (candidate_date - dt.date.today()).days
