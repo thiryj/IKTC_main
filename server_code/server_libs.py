@@ -357,12 +357,17 @@ def calculate_roll_legs(
   current_short_strike: float,
   width: float,
   cost_to_close: float,
-  rules: Dict
+  rules: Dict,
+  current_price: float
 ) -> Optional[Dict]:
   """
     Scans for a 'Down & Out' roll. Maximizes distance.
     Finds the lowest strike that still generates enough credit to pay for 'cost_to_close'.
     """
+  max_debit = float(rules.get('roll_max_debit', 0.0))
+  min_dist_pct = float(rules.get('roll_min_dist_pct', 0.005))
+  max_allowed_strike = current_price * (1 - min_dist_pct)
+  
   # 1. Filter and Sort
   puts = [o for o in chain if o.get('option_type') == 'put']
   if not puts: 
@@ -372,7 +377,7 @@ def calculate_roll_legs(
   puts.sort(key=lambda x: x['strike'], reverse=True)
 
   best_candidate = None
-
+  
   def get_price(opt, side):
     val = opt.get(side)
     if val is None or val == 0: 
@@ -382,9 +387,9 @@ def calculate_roll_legs(
     # 2. Scan
   for short_candidate in puts:
     short_strike = short_candidate['strike']
-    if short_strike >= current_short_strike: 
+    if short_strike >= current_short_strike or short_strike > max_allowed_strike: 
       continue
-
+  
     target_long = short_strike - width
     long_candidate = next((p for p in puts if abs(p['strike'] - target_long) < 0.05), None)
     if not long_candidate: 
@@ -395,9 +400,9 @@ def calculate_roll_legs(
       continue # Skip this combination
 
     credit_new = get_price(short_candidate, 'bid') - get_price(long_candidate, 'ask')
-    max_debit = float(rules.get('roll_max_debit', 0.0))
+    
     net_price = credit_new - cost_to_close
-    if net_price >= (-max_debit):
+    if net_price >= (-max_debit):          
       # Valid candidate found. Store it.
       # We continue the loop to see if a LOWER strike (safer) also pays enough.
       best_candidate = {
@@ -693,8 +698,8 @@ def evaluate_entry(
   short_strike, long_strike = strikes
 
   # 4. Data Extraction
-  short_leg = next(l for l in chain if l['strike'] == short_strike and l['option_type'] == 'put')
-  long_leg = next(l for l in chain if l['strike'] == long_strike and l['option_type'] == 'put')
+  short_leg = next(leg for leg in chain if leg['strike'] == short_strike and leg['option_type'] == 'put')
+  long_leg = next(leg for leg in chain if leg['strike'] == long_strike and leg['option_type'] == 'put')
 
   # 5. Validation
   is_valid_prem, credit, prem_msg = validate_premium_and_size(

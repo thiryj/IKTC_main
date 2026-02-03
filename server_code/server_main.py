@@ -250,8 +250,8 @@ def process_state_decision(cycle: Cycle, decision_state: str, market_data: dict,
                   level=config.LOG_WARNING, 
                   source=config.LOG_SOURCE_ORCHESTRATOR)
         return
-
-      roll_result, target_date = _find_best_roll_candidate(cycle, spread_trade, mark)
+      current_spx_px = market_data.get('price',0.0)
+      roll_result, target_date = _find_best_roll_candidate(cycle, spread_trade, mark, current_spx_px)
       if roll_result:
         # --- STEP 3: OPEN NEW (Asset) ---
         trade_data = {
@@ -284,8 +284,8 @@ def process_state_decision(cycle: Cycle, decision_state: str, market_data: dict,
     # 2. Safety & Strike Search
     # Note: We use the actual 'exit_price' of the closed trade as the 'Debt' to cover
     realized_debit = old_trade.exit_price or 0.0
-
-    roll_result, target_date = _find_best_roll_candidate(cycle, old_trade, realized_debit)
+    current_spx_px = market_data.get('price',0.0)
+    roll_result, target_date = _find_best_roll_candidate(cycle, old_trade, realized_debit, current_spx_px)
 
     if roll_result:
       # 3. Execute Entry (Reuse existing helper)
@@ -592,7 +592,11 @@ def _execute_entry_and_sync(cycle: Cycle,
   server_api.cancel_order(order_id)
   return False
 
-def _find_best_roll_candidate(cycle: Cycle, old_trade: Trade, realized_debit: float) -> Tuple[Optional[dict], Optional[dt.date]]:
+def _find_best_roll_candidate(cycle: Cycle, 
+                              old_trade: Trade, 
+                              realized_debit: float,
+                              current_px: float
+                             ) -> Tuple[Optional[dict], Optional[dt.date]]:
   """
     Hunts across expirations to find a roll that satisfies the credit requirement.
     Returns (roll_result_dict, target_date)
@@ -639,7 +643,8 @@ def _find_best_roll_candidate(cycle: Cycle, old_trade: Trade, realized_debit: fl
       current_short_strike=strike_val,
       width=cycle.rules['spread_width'],
       cost_to_close=realized_debit,
-      rules=cycle.rules
+      rules=cycle.rules,
+      current_price=current_px
     )
     if result:
       offset = (candidate_date - dt.date.today()).days
