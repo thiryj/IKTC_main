@@ -1,73 +1,119 @@
 components:
 - components:
-  - layout_properties: {col_xs: 0, row: BNTDYA, width_xs: 2}
-    name: label_1
-    properties: {text: Account Equity}
-    type: Label
-  - layout_properties: {col_xs: 2, row: BNTDYA, width_xs: 3}
-    name: text_equity
+  - components:
+    - layout_properties: {col_xs: 0, row: QBJZTN, width_xs: 2}
+      name: label_1
+      properties: {text: Account Equity}
+      type: Label
+    - layout_properties: {col_xs: 2, row: QBJZTN, width_xs: 3}
+      name: text_equity
+      properties: {}
+      type: TextBox
+    - layout_properties: {col_xs: 0, row: RHQNHB, width_xs: 2}
+      name: label_9
+      properties: {text: UI Refresh}
+      type: Label
+    - layout_properties: {col_xs: 2, row: RHQNHB, width_xs: 3}
+      name: text_ui_refresh
+      properties: {}
+      type: TextBox
+    - layout_properties: {col_xs: 0, row: RRDJHH, width_xs: 2}
+      name: label_10
+      properties: {text: Dry Run (no API)}
+      type: Label
+    - layout_properties: {col_xs: 2, row: RRDJHH, width_xs: 3}
+      name: check_dry_run
+      properties: {text: Dry Run On}
+      type: CheckBox
+    layout_properties: {grid_position: 'VTGJBB,ECEFEO'}
+    name: grid_panel_2
     properties: {}
-    type: TextBox
-  - layout_properties: {col_xs: 0, row: NFBLPT, width_xs: 2}
-    name: label_2
-    properties: {text: Order Time Out}
-    type: Label
-  - layout_properties: {col_xs: 2, row: NFBLPT, width_xs: 3}
-    name: text_timeout
+    type: GridPanel
+  layout_properties: {grid_position: 'IZDRJO,HABQQV'}
+  name: outlined_card_1
+  properties: {role: outlined-card}
+  type: ColumnPanel
+- components:
+  - components:
+    - layout_properties: {col_xs: 0, row: JKSQVU, width_xs: 3}
+      name: label_4
+      properties: {text: Only Market Hours}
+      type: Label
+    - layout_properties: {col_xs: 3, row: JKSQVU, width_xs: 3}
+      name: check_trading_hours
+      properties: {text: Enforce Hours On}
+      type: CheckBox
+    - layout_properties: {col_xs: 0, row: IATMCG, width_xs: 3}
+      name: label_5
+      properties: {text: Don't trade late opens}
+      type: Label
+    - layout_properties: {col_xs: 3, row: IATMCG, width_xs: 3}
+      name: check_late_open
+      properties: {text: Late Open Guard}
+      type: CheckBox
+    - layout_properties: {col_xs: 0, row: ATGEHU, width_xs: 2}
+      name: label_7
+      properties: {text: One per Day}
+      type: Label
+    - layout_properties: {col_xs: 3, row: ATGEHU, width_xs: 3}
+      name: check_frequency
+      properties: {text: Only 1 per Day}
+      type: CheckBox
+    - layout_properties: {col_xs: 0, row: OVMCQM, width_xs: 2}
+      name: label_6
+      properties: {text: Zombie Checks}
+      type: Label
+    - layout_properties: {col_xs: 3, row: OVMCQM, width_xs: 3}
+      name: check_zombies
+      properties: {text: Zombie Check On}
+      type: CheckBox
+    - layout_properties: {col_xs: 0, row: JFWPDT, width_xs: 3}
+      name: label_3
+      properties: {text: Enforce consistency with broker}
+      type: Label
+    - layout_properties: {col_xs: 3, row: JFWPDT, width_xs: 3}
+      name: check_consistency
+      properties: {text: Broker Consistency}
+      type: CheckBox
+    layout_properties: {grid_position: 'OWKREA,XOEZPX'}
+    name: grid_panel_3
     properties: {}
-    type: TextBox
-  - layout_properties: {col_xs: 0, row: JLHFSS, width_xs: 2}
-    name: label_3
-    properties: {text: Dry Run}
-    type: Label
-  - layout_properties: {col_xs: 2, row: JLHFSS, width_xs: 3}
-    name: check_dry_run
-    properties: {text: Dry Run On}
-    type: CheckBox
-  - layout_properties: {col_xs: 0, row: AXSHVE, width_xs: 2}
-    name: label_4
-    properties: {text: Enforce Hours}
-    type: Label
-  - layout_properties: {col_xs: 2, row: AXSHVE, width_xs: 3}
-    name: check_enforce_hours
-    properties: {text: Enforce Hours On}
-    type: CheckBox
-  - layout_properties: {col_xs: 0, row: UQGXSP, width_xs: 2}
-    name: label_5
-    properties: {text: Late Open}
-    type: Label
-  - layout_properties: {col_xs: 2, row: UQGXSP, width_xs: 3}
-    name: check_late_open
-    properties: {text: Late Open Guard}
-    type: CheckBox
+    type: GridPanel
+  layout_properties: {grid_position: 'ZJHVUZ,WITRFX'}
+  name: outlined_card_2
+  properties: {role: outlined-card}
+  type: ColumnPanel
+- components:
+  - components:
+    - layout_properties: {col_xs: 0, row: HJQSQV, width_xs: 3}
+      name: label_11
+      properties: {text: Pause new entry}
+      type: Label
+    - layout_properties: {col_xs: 3, row: HJQSQV, width_xs: 3}
+      name: check_pause_entries
+      properties: {text: Pause spread entry}
+      type: CheckBox
+    - layout_properties: {col_xs: 0, row: JFBHHW, width_xs: 2}
+      name: label_8
+      properties: {text: Harvest Hedge}
+      type: Label
+    - layout_properties: {col_xs: 3, row: JFBHHW, width_xs: 3}
+      name: check_naked_harvest
+      properties: {text: Harvest Naked Hedge On}
+      type: CheckBox
+    layout_properties: {grid_position: 'QZJIQY,MCJHIW'}
+    name: grid_panel_4
+    properties: {}
+    type: GridPanel
+  layout_properties: {grid_position: 'CHSZZR,PSJYEB'}
+  name: outlined_card_3
+  properties: {role: outlined-card}
+  type: ColumnPanel
+- components:
   - layout_properties: {col_xs: 10, row: UQGXSP, width_xs: 2}
     name: button_save
-    properties: {text: Save}
+    properties: {role: tonal-button, text: Save}
     type: Button
-  - layout_properties: {col_xs: 0, row: EFKDON, width_xs: 2}
-    name: label_6
-    properties: {text: Zombie Checks}
-    type: Label
-  - layout_properties: {col_xs: 2, row: EFKDON, width_xs: 3}
-    name: check_box_2
-    properties: {text: Zombie Check On}
-    type: CheckBox
-  - layout_properties: {col_xs: 0, row: JKGGXG, width_xs: 2}
-    name: label_7
-    properties: {text: One per Day}
-    type: Label
-  - layout_properties: {col_xs: 2, row: JKGGXG, width_xs: 3}
-    name: check_box_3
-    properties: {text: Only 1 per Day}
-    type: CheckBox
-  - layout_properties: {col_xs: 0, row: WVRMOH, width_xs: 2}
-    name: label_8
-    properties: {text: Harvest Hedge}
-    type: Label
-  - layout_properties: {col_xs: 2, row: WVRMOH, width_xs: 3}
-    name: check_box_4
-    properties: {text: Harvest Naked Hedge On}
-    type: CheckBox
   layout_properties: {grid_position: 'YVTHKA,KVGZIV'}
   name: grid_panel_1
   properties: {}

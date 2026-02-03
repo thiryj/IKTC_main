@@ -8,6 +8,7 @@ from anvil.tables import app_tables
 from ..form_main import form_main
 from ..form_trade_editor import form_trade_editor
 from ..form_stats import form_stats
+from ..form_settings import form_settings
 
 
 class form_shell(form_shellTemplate):
@@ -35,3 +36,9 @@ class form_shell(form_shellTemplate):
     """This method is called when the link is clicked"""
     self.content_panel.clear()
     self.content_panel.add_component(form_stats())
+
+  @handle("link_settings", "click")
+  def link_settings_click(self, **event_args):
+    """This method is called when the link is clicked"""
+    self.content_panel.clear()
+    self.content_panel.add_component(form_settings())
