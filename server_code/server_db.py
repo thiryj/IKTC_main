@@ -159,6 +159,11 @@ def record_new_trade(
       except ValueError:
         return None
     return None
+
+  width = abs(trade_dict['short_strike'] - trade_dict['long_strike'])
+  trigger_ceiling = width * config.ROLL_TRIGGER_CEILING # Hard ceiling at 50% of max loss
+  raw_trigger = fill_price * rules['roll_trigger_mult']
+  effective_trigger = min(raw_trigger, trigger_ceiling)
   
   # 1. Create the Trade Row
   trade_row = app_tables.trades.add_row(
@@ -174,7 +179,7 @@ def record_new_trade(
 
     # Strategy Logic: Set targets based on role
     target_harvest_price=_fmt(fill_price * rules['profit_target_pct']) if role == config.ROLE_INCOME else None,
-    roll_trigger_price=_fmt(fill_price * rules['roll_trigger_mult']) if role == config.ROLE_INCOME else None,
+    roll_trigger_price=_fmt(effective_trigger) if role == config.ROLE_INCOME else None,
 
     # Calculate capital required (Width * 100 * Qty)
     capital_required=(
