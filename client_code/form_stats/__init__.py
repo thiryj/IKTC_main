@@ -14,7 +14,7 @@ class form_stats(form_statsTemplate):
     if headlines.get('active'):
       self.label_total_pnl.text = f"Total Net: ${headlines['total_pnl']:,.2f}"
       self.label_roi_day.text = f"Daily ROI: {headlines['roi_day_pct']:.2f}%"
-      self.label_cagr.text = f"Proj CAGR: {headlines['projected_cagr']}%"
+      self.label_cagr.text = f"Proj CAGR: {headlines['projected_cagr']:.2f}%"
 
       # 2. Efficiency / EV
     eff = anvil.server.call('get_strategic_efficiency')

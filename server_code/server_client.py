@@ -473,8 +473,9 @@ def get_performance_headlines() -> dict:
 @anvil.server.callable
 def get_strategic_efficiency() -> dict:
   """Calculates tactical KPIs and the EV Forecast model."""
+  
   # 1. Fetch all cycles (Open and Closed) to get a full trade history
-  cycles = list(app_tables.cycles.search(account=config.ACTIVE_ENV))
+  cycle = server_db.get_active_cycle(current_env_account)
   if not cycles:
     return {'active': False, 'trade_count': 0}
 
@@ -511,7 +512,7 @@ def get_strategic_efficiency() -> dict:
   theory_win_rate = 0.85
   theory_win = 50.0   
   theory_loss = -200.0 
-  theoretical_ev = (theory_win_rate * theory_win) + ((1 - theory_win_rate) * theory_loss)
+  theoretical_ev = cycle.rules.get('vix_min', 13.0)
 
   return {
     'active': True,

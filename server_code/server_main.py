@@ -293,7 +293,7 @@ def process_state_decision(cycle: Cycle, decision_state: str, env_status, market
     width = abs(short_leg['strike'] - long_leg['strike'])
     payout = 0.0
 
-    if long_leg['option_type'] == 'call':
+    if long_leg['option_type'] == config.TRADIER_OPTION_TYPE_CALL:
       payout = max(0, min(width, final_px - long_leg['strike']))
     else:
       payout = max(0, min(width, long_leg['strike'] - final_px))

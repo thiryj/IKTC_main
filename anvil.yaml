@@ -140,8 +140,11 @@ db_schema:
     - admin_ui: {order: 23, width: 76}
       name: vix_min
       type: number
-    - admin_ui: {order: 24, width: 200}
+    - admin_ui: {order: 24, width: 122}
       name: entry_time_est
+      type: number
+    - admin_ui: {order: 25, width: 200}
+      name: theo_ev
       type: number
     server: full
     title: rule_sets
