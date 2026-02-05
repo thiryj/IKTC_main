@@ -40,7 +40,7 @@ def _get_client() -> TradierAPI:
 def get_scalpel_environment() -> dict:
   """Fetches VIX and calculates today's 1-minute VWAP for SPX."""
   t = _get_client()
-  symbol = 'SPY'
+  symbol = config.TARGET_UNDERLYING[config.ACTIVE_ENV]
 
   # 1. Fetch VIX (Standard Quote)
   vix_quote = _get_quote_direct(t, "VIX")
@@ -373,13 +373,12 @@ def get_expirations(symbol: str = None) -> List[dt.date]:
 
 # --- EXECUTION ---
 
-def open_spread_position(trade_data: Dict, preview: bool=False) -> Dict:
+def open_spread_position(trade_data: Dict, is_debit: bool=True, preview: bool=False) -> Dict:
   """
     Submits a multileg order (Vertical Spread).
     Uses your 'build_multileg_payload' logic.
     """
   t = _get_client()
-  #short_occ = trade_data['short_leg_data']['symbol']
   underlying = config.TARGET_UNDERLYING[config.ACTIVE_ENV]
   
   # 1. Construct Payload
@@ -404,8 +403,8 @@ def open_spread_position(trade_data: Dict, preview: bool=False) -> Dict:
     'class': 'multileg',
     'symbol': underlying, # Underlying
     'duration': 'day',
-    'type': 'credit', # Credit Spread
-    'price': f"{trade_data['net_credit']:.2f}"
+    'type': 'debit' if is_debit else 'credit',
+    'price': f"{trade_data['debit']:.2f}"
   }
   # Inject Preview Flag
   if preview:
@@ -504,7 +503,7 @@ def execute_roll(old_trade, new_short, new_long, net_price: float) -> dict:
 
   return _submit_order(t, payload)
 
-def close_position(trade, order_type: str = 'limit') -> Dict:
+def close_position(trade, order_type: str = 'limit', limit_price: float = 3.5) -> Dict:
   """
     Closes a position (Spread or Hedge).
     Dynamically switches between 'option' and 'multileg' endpoints.
@@ -514,6 +513,7 @@ def close_position(trade, order_type: str = 'limit') -> Dict:
 
   # 1. Identify Legs
   legs = getattr(trade, 'legs', [])
+  
   short_leg = next((leg for leg in legs if leg.side == config.LEG_SIDE_SHORT), None)
   long_leg = next((leg for leg in legs if leg.side == config.LEG_SIDE_LONG), None)
 
@@ -562,16 +562,11 @@ def close_position(trade, order_type: str = 'limit') -> Dict:
     payload = {
       'class': 'multileg',
       'symbol': root,
-      'duration': 'day'
+      'duration': 'day',
+      'type': 'credit' if order_type == 'limit' else 'market' # Sell vertical for credit
     }
-    if order_type == 'market':
-      payload['type'] = 'market'
-    else:
-    # Determine pricing direction (Debit/Credit) NOT used for Market orders but good practice
-      side = 'debit' if trade.role == config.ROLE_INCOME else 'credit'
-      payload['type'] = side
-      price_val = trade.target_harvest_price if trade.target_harvest_price is not None else 0.00
-      payload['price'] = f"{price_val:.2f}" 
+    if order_type == 'limit' and limit_price:
+      payload['price'] = f"{limit_price:.2f}"
         
     # Sandbox Stability
     if 'sandbox' in t.endpoint:
@@ -604,6 +599,8 @@ def wait_for_order_fill(order_id: str, timeout_seconds: int = 15, fill_px_fallba
       logger.log(f"SIMULATION: Auto-filling simulated order {order_id}", 
                 level=config.LOG_INFO, 
                 source=config.LOG_SOURCE_API)
+      if fill_px_fallback == 0.0:
+        fill_px_fallback = 3.50
     return 'filled', fill_px_fallback  # Or pass the price back if you want to test PnL math
     
   url = f"{t.endpoint}/accounts/{t.default_account_id}/orders/{order_id}"
@@ -676,11 +673,14 @@ def _submit_order(t: TradierAPI, payload: Dict) -> Dict:
     logger.log(f"DRY RUN: Order Suppressed -> {payload}", 
                level=config.LOG_WARNING, 
                source=config.LOG_SOURCE_API)
+    # If it's a LIMIT order, we simulate the 'Open' status
+    # If it's a MARKET order, we simulate 'Filled'
+    status = 'ok' if payload.get('type') == 'limit' else 'filled'
     return {
       'id': f"DRY_{dt.datetime.now().strftime('%H%M%S')}",
-      'status': 'filled',
+      'status': status,
       'price': float(payload.get('price', 0) or 0),
-      'time': dt.datetime.now()
+      'time': dt.datetime.now(dt.timezone.utc)
     }
     
   url = f"{t.endpoint}/accounts/{t.default_account_id}/orders"

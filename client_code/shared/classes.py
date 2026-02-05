@@ -15,17 +15,13 @@ class Cycle:
     self.status = row['status']
     self.start_date = row['start_date']
     self.end_date = row['end_date']
-    self.daily_hedge_ref = row['daily_hedge_ref']
     self.total_pnl = row['total_pnl']
     self.last_panic_date = row['last_panic_date']
     self.notes = row['notes']
 
     # Link Wrappers (Data Navigation Only)
     self.rule_set = RuleSet(row['rule_set']) if row['rule_set'] else None
-    self.hedge_trade = Trade(row['hedge_trade']) if row['hedge_trade'] else None
     self.trades = []
-    self.hedge_trade_link = None 
-
     self._effective_rules = self._calculate_effective_rules(row['rule_set'])
 
   def _calculate_effective_rules(self, rules_row):

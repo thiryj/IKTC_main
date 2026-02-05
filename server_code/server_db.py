@@ -147,12 +147,14 @@ def record_new_trade(
   Persists a fully executed trade to the database.
   Creates: Trade -> Transaction -> Legs (1 or 2 depending on role).
   """
-  rules = cycle_row['rule_set']  #needed for exit strat calcs
-  
+    
   def _parse_date(val):
-    if not val: return None
-    if isinstance(val, dt.date): return val
-    if isinstance(val, dt.datetime): return val.date()
+    if not val: 
+      return None
+    if isinstance(val, dt.date): 
+      return val
+    if isinstance(val, dt.datetime): 
+      return val.date()
     if isinstance(val, str):
       try:
         return dt.datetime.strptime(val, "%Y-%m-%d").date()
@@ -160,11 +162,6 @@ def record_new_trade(
         return None
     return None
 
-  width = abs(trade_dict['short_strike'] - trade_dict['long_strike'])
-  trigger_ceiling = width * config.ROLL_TRIGGER_CEILING # Hard ceiling at 50% of max loss
-  raw_trigger = fill_price * rules['roll_trigger_mult']
-  effective_trigger = min(raw_trigger, trigger_ceiling)
-  
   # 1. Create the Trade Row
   trade_row = app_tables.trades.add_row(
     cycle=cycle_row,
@@ -176,10 +173,6 @@ def record_new_trade(
     entry_time=fill_time,
     order_id_external=order_id,
     pnl=0.0,
-
-    # Strategy Logic: Set targets based on role
-    target_harvest_price=_fmt(fill_price * rules['profit_target_pct']) if role == config.ROLE_INCOME else None,
-    roll_trigger_price=_fmt(effective_trigger) if role == config.ROLE_INCOME else None,
 
     # Calculate capital required (Width * 100 * Qty)
     capital_required=(
@@ -264,7 +257,7 @@ def close_trade(trade_row, fill_price: float, fill_time: dt.datetime, order_id: 
   # Calculate PnL based on Role
   if trade_row['role'] == config.ROLE_INCOME:
     # Credit Spread: Profit = Entry Credit - Exit Debit
-    pnl = entry_price - fill_price
+    pnl = fill_price - entry_price
   else:
     # Long Hedge: Profit = Exit Credit - Entry Debit
     pnl = fill_price - entry_price

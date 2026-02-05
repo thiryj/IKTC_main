@@ -13,6 +13,9 @@ from . import server_logging as logger
 
 def can_run_automation(env_status: dict, settings:dict) -> bool:
   """Checks if the bot is allowed to run based on Market Status and Settings"""
+  if config.IGNORE_SCHEDULUED_TASKS:
+    return False
+    
   if not settings or not settings.get('automation_enabled'): 
     return False
     
@@ -24,6 +27,53 @@ def is_db_consistent(cycle: Optional[Cycle], positions: List[dict]) -> bool:
   # TODO: Implement reconciliation logic.
   # Compare cycle.trades vs Tradier positions. Return False if mismatch found.
   return True
+
+# In server_libs.py
+
+def determine_scalpel_state(cycle: Cycle, env_status: EnvStatus) -> str:
+  """
+    Determines the operational phase based on Time and Position status.
+      Priorities:
+  1. Market Closed? -> Cleanup
+  2. Active Position? -> Hunt for $3.50
+  3. 3:00 PM - 3:10 PM? -> Entry Window
+  4. Before 3:00 PM? -> Waiting
+  5. Default -> Idle (e.g. 3:15 PM and flat)
+    """
+  # 1. Prepare Time Variables
+  # Converts 3:05 PM to integer 1505
+  now_time = int(env_status['now'].strftime('%H%M'))
+  entry_start = int(cycle.rules.get('entry_time_est', 1500))
+  entry_end = entry_start + 10 # 10-minute window (e.g., 1510)
+  market_close = 1600
+
+  # 2. Check Database for Open Trades
+  open_trades = [t for t in cycle.trades if t.role == config.ROLE_INCOME and t.status == config.STATUS_OPEN]
+  has_active_trade = len(open_trades) > 0
+
+  # --- PRIORITY 1: End of Day Cleanup ---
+  if now_time >= market_close:
+    return config.STATE_EOD_CLEANUP
+
+  # --- PRIORITY 2: Active Monitoring ---
+  if has_active_trade:
+    return config.STATE_ACTIVE_HUNT
+
+  # --- PRIORITY 3: Entry Window ---
+  # If we are in the window AND haven't traded yet today
+  if entry_start <= now_time < entry_end:
+    # Safety: Check if we already traded today to avoid double-entry
+    if not _has_traded_today(cycle, env_status):
+      return config.STATE_ENTRY_WINDOW
+    else:
+      return config.STATE_IDLE
+
+  # --- PRIORITY 4: Pre-Game Waiting ---
+  if now_time < entry_start:
+    return config.STATE_WAITING
+
+    # Default Catch-all
+  return config.STATE_IDLE
 
 def determine_cycle_state(cycle: Cycle, market_data: MarketData, env_status: EnvStatus, settings:dict=None) -> str:
   """The "Policy Manager". Checks conditions in priority order"""
@@ -132,7 +182,75 @@ def get_scalpel_quantity(account_equity: float, debit_paid: float) -> int:
     return 0
 
   qty = int(max_risk_dollars // risk_per_contract)
-  return max(1, qty)
+  print(f'calculated qty: {qty}')
+  if config.QTY_OVERIDE:
+    qty = config.QTY_OVERIDE
+  qty_effective = qty
+  print(f'effective qty: {qty_effective}')
+  return max(1, qty_effective)
+
+def calculate_scalpel_strikes(
+  chain: List[Dict], 
+  rules: Dict, 
+  current_price: float, 
+  is_bullish: bool
+) -> Optional[Dict]:
+  """
+  Finds the $5-wide OTM spread closest to the money that costs $1.20-$1.35.
+  """
+  option_type = config.TRADIER_OPTION_TYPE_CALL if is_bullish else config.TRADIER_OPTION_TYPE_PUT
+
+  # 1. Filter for correct side
+  side_chain = [opt for opt in chain if opt['option_type'] == option_type]
+  if not side_chain: 
+    return None
+
+  # 2. Sort by Strike 
+  # Calls: Ascending (Lowest strike first = closest to money)
+  # Puts: Descending (Highest strike first = closest to money)
+  side_chain.sort(key=lambda x: x['strike'], reverse=not is_bullish)
+
+  width = float(rules.get('spread_width', 5.0))
+  min_debit = float(rules.get('target_debit_min', 1.20))
+  max_debit = float(rules.get('target_debit_max', 1.35))
+
+  # Helper to get the price we actually pay (Ask on Long, Bid on Short)
+  def get_debit(long_leg, short_leg):
+    l_ask = float(long_leg.get('ask') or long_leg.get('last') or 0)
+    s_bid = float(short_leg.get('bid') or short_leg.get('last') or 0)
+    return l_ask - s_bid
+
+  # 3. Iterate through strikes to find the pair
+  for long_leg in side_chain:
+    strike = long_leg['strike']
+
+    # Must be OTM
+    if is_bullish and strike <= current_price: continue # Call must be above price
+    if not is_bullish and strike >= current_price: continue # Put must be below price
+
+    # Find matching Short Leg ($5 wider)
+    target_short_strike = (strike + width) if is_bullish else (strike - width)
+    short_leg = next((opt for opt in side_chain if abs(opt['strike'] - target_short_strike) < 0.01), None)
+
+    if not short_leg: continue
+
+    # 4. Check if the price is in our 'Scalpel' window
+    debit = get_debit(long_leg, short_leg)
+
+    if min_debit <= debit <= max_debit:
+      # FOUND: This is the pair closest to the money that fits our budget
+      logger.log(f"Scalpel Pair Found: {long_leg['symbol']}/{short_leg['symbol']} at ${debit:.2f} debit", 
+                 level=config.LOG_INFO)
+      return {
+        'long_leg_data': long_leg,
+        'short_leg_data': short_leg,
+        'short_strike': short_leg['strike'],
+        'long_strike': long_leg['strike'],
+        'debit': debit,
+        'is_bullish': is_bullish
+      }
+
+  return None
   
 def find_closest_expiration(valid_dates: List[dt.date], target_dte: int) -> Optional[dt.date]:
   """Given a list of valid dates, finds the one closest to Today + Target DTE"""

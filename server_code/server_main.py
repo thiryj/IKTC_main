@@ -7,7 +7,7 @@ import pytz
 from typing import Optional, Tuple, Dict, List
 
 from shared import config
-from shared.classes import Cycle, Trade
+from shared.classes import Cycle, Trade, Leg
 from . import server_libs  # The Brains (Clean Stubs)
 from . import server_api  # The Hands (Dirty Stubs)
 from . import server_db, server_logging as logger
@@ -53,6 +53,76 @@ def _set_processing_lock(value: bool) -> bool:
     settings['last_bot_heartbeat'] = dt.datetime.now(dt.timezone.utc)
 
   return current_state
+
+def _execute_scalpel_entry(cycle: Cycle, candidate: dict) -> bool:
+  """
+    Quarter Kelly Sizing -> Buy Spread -> Record DB -> Place $3.50 Limit Sell.
+    """
+  # 1. SIZING (Quarter Kelly)
+  settings = app_tables.settings.get()
+  account_equity = float(settings['total_account_equity'] or 50000)
+
+  qty = server_libs.get_scalpel_quantity(account_equity, candidate['debit'])
+  candidate['quantity'] = qty
+
+  logger.log(f"SCALPEL START: Sizing {qty} contracts for ${candidate['debit']:.2f} debit.", 
+             level=config.LOG_INFO)
+
+  # 2. BUY ENTRY
+  order_res = server_api.open_spread_position(candidate, is_debit=True)
+
+  # Reuse our 'Entry and Sync' logic (Mechanical Verification)
+  # Note: Pass the debit as the fallback price
+  new_trade = _execute_entry_and_sync(
+    cycle, order_res, candidate, config.ROLE_INCOME, "Scalpel Entry", 
+    fill_px_fallback=candidate['debit']
+  )
+
+  if new_trade:
+    # 3. MONETIZE THE TOUCH (Immediate Limit Sell)
+    leg_rows = app_tables.legs.search(trade=new_trade._row)
+
+    # Attach them to the object so server_api.close_position can find them
+    new_trade.legs = [Leg(l_row) for l_row in leg_rows]
+    
+    harvest_target = float(cycle.rules.get('harvest_target', 3.50))
+
+    logger.log(f"ENTRY CONFIRMED. Placing monetization limit sell at ${harvest_target:.2f}", 
+               level=config.LOG_INFO)
+
+    # Place the $3.50 Limit Order immediately
+    # We'll use a modified close_position that accepts a limit price
+    exit_res = server_api.close_position(new_trade, order_type='limit', limit_price=harvest_target)
+
+    if exit_res.get('id'):
+      # Update the trade row with the active Order ID so we can track it
+      new_trade._row['order_id_external'] = exit_res['id']
+      new_trade._row['target_harvest_price'] = harvest_target
+      return True
+    else:
+      logger.log("CRITICAL: Failed to place monetization sell order!", level=config.LOG_CRITICAL)
+
+  return False
+
+def process_scalpel_entry_logic(cycle: Cycle, market_env: dict, env_status: dict) -> None:
+  """Standalone logic to handle the entry phase. Reachable by bot and tests."""
+
+  # 1. VIX Check
+  if market_env['vix'] < cycle.rules.get('vix_min', 13.0):
+    logger.log(f"VIX too low ({market_env['vix']}). Skipping.", level=config.LOG_INFO)
+    return
+
+    # 2. Get Option Chain
+  chain = server_api.get_option_chain(date=env_status['today'])
+
+  # 3. Select Strikes
+  candidate = server_libs.calculate_scalpel_strikes(
+    chain, cycle.rules, market_env['price'], market_env['is_bullish']
+  )
+
+  if candidate:
+    # This will call our DRY_RUN interceptor automatically
+    _execute_scalpel_entry(cycle, candidate)
 
 def _execute_automation_loop():
   settings_row = app_tables.settings.get()  
@@ -109,13 +179,6 @@ def _execute_automation_loop():
   
   market_data = server_api.get_market_data_snapshot(cycle)
   print(f'market: {market_data}')
-  # We only do this reset once per day (at the first heartbeat after open)
-  current_h_px = market_data.get('hedge_last', 0.0)
-  
-  if system_settings['last_reference_reset'] and system_settings['last_reference_reset'] != today and current_h_px > 0:
-    cycle._row['daily_hedge_ref'] = current_h_px
-    settings_row['last_reference_reset'] = today
-    logger.log(f"Daily Sync: Hedge Reference reset to Morning Mark (${current_h_px:.2f})", level=config.LOG_INFO)
     
   # 3. SYNC REALITY (Dirty)
   # Ensure DB matches Tradier before making decisions
@@ -156,31 +219,89 @@ def _execute_automation_loop():
                 level=config.LOG_CRITICAL, 
                 source=config.LOG_SOURCE_ORCHESTRATOR)
       return
+      
+  # 1. Get the state from our new library function
+  state = server_libs.determine_scalpel_state(cycle, env_status)  
+  process_state_decision(cycle, state, env_status)
 
-  # 4. DETERMINE STATE
-  # The brain analyzes the cycle + market data and returns ONE state constant
-  decision_state = server_libs.determine_cycle_state(cycle, market_data, env_status, system_settings)
-  if decision_state != config.STATE_IDLE:
-    logger.log(f"Decision State -> {decision_state}", 
-              level=config.LOG_INFO, 
-              source=config.LOG_SOURCE_ORCHESTRATOR, 
-              context={'cycle_id': cycle.id})
+ 
 
-    process_state_decision(cycle, decision_state, market_data, env_status)
+def process_state_decision(cycle: Cycle, decision_state: str, env_status, market_data: dict=None) -> None:
+  # 2. Execute
+  if decision_state == config.STATE_WAITING:
+    # We don't even fetch environment data here. Save API credits.
+    return
 
-def process_state_decision(cycle: Cycle, decision_state: str, market_data: dict, env_status: dict) -> None:
-  # 5. EXECUTE
-  if True:
-    pass
-  elif decision_state == config.STATE_IDLE:
-     logger.log("No action required.", 
-                level=config.LOG_DEBUG, 
-                source=config.LOG_SOURCE_ORCHESTRATOR)
+  if decision_state == config.STATE_ENTRY_WINDOW:
+    logger.log("Entering Scalpel Entry Window. Checking Filters...", level=config.LOG_INFO)
 
-  else:
-    logger.log(f"Unhandled State: {decision_state}", 
-               level=config.LOG_WARNING, 
-               source=config.LOG_SOURCE_ORCHESTRATOR)
+    # A. Fetch Market Environment (VIX/VWAP)
+    mkt = server_api.get_scalpel_environment()
+
+    # B. Filter: VIX
+    if mkt['vix'] < cycle.rules.get('vix_min', 13.0):
+      return # Too quiet
+
+      # C. Filter: Directional Selection
+    chain = server_api.get_option_chain(date=env_status['today'])
+    candidate = server_libs.calculate_scalpel_strikes(
+      chain, cycle.rules, mkt['price'], mkt['is_bullish']
+    )
+
+    if candidate:
+      _execute_scalpel_entry(cycle, candidate)
+
+  elif decision_state == config.STATE_ACTIVE_HUNT:
+    # Logic: We have an open trade, check if our $3.50 limit hit
+    active_trades = [t for t in cycle.trades if t.status == config.STATUS_OPEN]
+    if not active_trades: 
+      return
+    trade = active_trades[0]
+
+    # Verify order status at broker
+    status, fill_px = server_api.wait_for_order_fill(trade.order_id_external, timeout_seconds=1)
+
+    if status == 'filled':
+      server_db.close_trade(trade._row, fill_px, dt.datetime.now(dt.timezone.utc), trade.order_id_external)
+      logger.log(f"SCALPEL HARVESTED: ${fill_px}", level=config.LOG_CRITICAL)
+
+  elif decision_state == config.STATE_EOD_CLEANUP:
+    active_trades = [t for t in cycle.trades if t.status == config.STATUS_OPEN]
+    if not active_trades: return
+    trade = active_trades[0]
+
+    logger.log("Market Closed. Executing EOD Settlement...", level=config.LOG_INFO)
+
+    # 1. Cancel the pending monetization order
+    server_api.cancel_order(trade.order_id_external)
+
+    # 2. Calculate Terminal Value
+    # Fetch final price of SPX
+    mkt = server_api.get_scalpel_environment()
+    final_px = mkt['price']
+
+    # We need the strike to calculate payout
+    # For a Bullish Call Spread: max(0, min(Width, SPX - Long_Strike))
+    legs = app_tables.legs.search(trade=trade._row)
+    long_leg = next(l for l in legs if l['side'] == config.LEG_SIDE_LONG)
+    short_leg = next(l for l in legs if l['side'] == config.LEG_SIDE_SHORT)
+
+    width = abs(short_leg['strike'] - long_leg['strike'])
+
+    if trade.entry_reason == "BULLISH": # Assuming you store direction or can infer from strikes
+      payout = max(0, min(width, final_px - long_leg['strike']))
+    else:
+      payout = max(0, min(width, long_leg['strike'] - final_px))
+
+    # 3. Settle in DB
+    server_db.close_trade(
+      trade_row=trade._row,
+      fill_price=payout,
+      fill_time=dt.datetime.now(dt.timezone.utc),
+      order_id="CASH_SETTLEMENT"
+    )
+
+    logger.log(f"EOD Settlement Complete. Final Payout: ${payout:.2f}", level=config.LOG_INFO)
 
 
 # In server_main.py (Private helper)
@@ -246,18 +367,13 @@ def _execute_entry_and_sync(cycle: Cycle,
       fill_price=final_px,
       fill_time=dt.datetime.now(dt.timezone.utc)
     )
-
-    # Link hedge specifically
-    if role == config.ROLE_HEDGE:
-      cycle._row['hedge_trade'] = new_trade._row
-      cycle._row['daily_hedge_ref'] = final_px
       
     logger.log(f"SUCCESS: {action_desc} filled at ${final_px}", level=config.LOG_INFO)
-    return True
+    return new_trade
 
     # 3. SAFETY: If entry didn't fill, we MUST cancel it on broker 
     # so we don't accidentally fill later and desync.
   logger.log(f"TIMEOUT: {action_desc} failed. Canceling order...", level=config.LOG_WARNING)
   server_api.cancel_order(order_id)
-  return False
+  return None
 
