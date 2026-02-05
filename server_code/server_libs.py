@@ -28,30 +28,11 @@ def is_db_consistent(cycle: Optional[Cycle], positions: List[dict]) -> bool:
 def determine_cycle_state(cycle: Cycle, market_data: MarketData, env_status: EnvStatus, settings:dict=None) -> str:
   """The "Policy Manager". Checks conditions in priority order"""
   
-  if _check_panic_harvest(cycle, market_data):
-    return config.STATE_PANIC_HARVEST
-
   if cycle.last_panic_date == env_status['today']:
     return config.STATE_IDLE # Stay idle until tomorrow
 
-  if _check_roll_needed(cycle, market_data):
-    return config.STATE_ROLL_REQUIRED
-
-  # 3. NEW: Trade was rolled out, but re-entry is missing
-  if _check_roll_reentry_needed(cycle, env_status): 
-    return config.STATE_ROLL_REENTRY_NEEDED
-
-  if _check_naked_hedge_harvest(cycle, market_data):
-    return config.STATE_NAKED_HEDGE_HARVEST
-
-  if _check_hedge_maintenance(cycle, market_data):
-    return config.STATE_HEDGE_ADJUSTMENT_NEEDED
-
   if _check_profit_target(cycle, market_data):
     return config.STATE_HARVEST_TARGET_HIT
-
-  if _check_hedge_missing(cycle):
-    return config.STATE_HEDGE_MISSING
 
   if _check_spread_missing(cycle, env_status, settings):
     return config.STATE_SPREAD_MISSING
@@ -59,149 +40,6 @@ def determine_cycle_state(cycle: Cycle, market_data: MarketData, env_status: Env
   return config.STATE_IDLE
   
 # --- STATE CHECK FUNCTIONS ---
-
-def _check_panic_harvest(cycle: Cycle, market_data: MarketData) -> bool:
-  """Rule: Net Unit PnL (Hedge Gain + Spread PnL) > Panic Threshold"""
-  hedge = cycle.hedge_trade_link 
-  if not hedge or hedge.status != config.STATUS_OPEN: 
-    return False
-    
-  # NEW GATE: Only panic if we have liabilities to worry about!
-  open_spreads = [t for t in cycle.trades if t.role == config.ROLE_INCOME and t.status == config.STATUS_OPEN]
-  if len(open_spreads) == 0:
-    return False # Let the 'Windfall' rule handle hedge-only profits
-    
-  # Guardrail: Only trigger Panic Harvest if the market is actually under stress.
-  # If market is Green or Flat, we let the Standard Harvest logic handle profits.
-  current_price = market_data.get('price', 0.0)
-  open_price = market_data.get('open', 0.0)
-  if open_price > 0:
-    required_drop = cycle.rules.get('panic_min_drop_pct', 0.01) 
-    change_pct = (current_price - open_price) / open_price
-    # Note: We check if change is GREATER than negative drop (i.e., not negative enough)
-    # e.g., Change -0.1% vs Required -0.3%.  -0.001 > -0.003 -> True -> Return False
-    if change_pct > -required_drop:
-      # Market is not down enough to justify killing the hedge
-      return False
-      
-  hedge_ref = cycle.daily_hedge_ref or 0.0
-  hedge_current = market_data.get('hedge_last', 0.0)
-  hedge_pnl = (hedge_current - hedge_ref) * config.DEFAULT_MULTIPLIER * cycle.hedge_trade_link.quantity
-
-  # 2. Realized Spread PnL Today (The 'Debt' from previous rolls)
-  # We sum the PnL of all Income trades closed TODAY
-  realized_today = sum([
-    (t.pnl or 0) * t.quantity * 100 
-    for t in cycle.trades 
-    if t.role == config.ROLE_INCOME and t.status == config.STATUS_CLOSED and _is_today(t.exit_time, dt.date.today())
-  ])
-  
-  # 2. Calculate Spread PnL (Total Open)
-  # Logic: (Entry Credit - Current Debit) * Multiplier * Qty
-  unrealized_today = 0.0
-  marks = market_data.get('spread_marks', {})
-
-  for trade in cycle.trades:
-    if trade.role == config.ROLE_INCOME and trade.status == config.STATUS_OPEN:
-      current_debit = marks.get(trade.id, 0.0)
-      entry_credit = trade.entry_price or 0.0
-      trade_pnl = (entry_credit - current_debit) * config.DEFAULT_MULTIPLIER * trade.quantity
-      unrealized_today += trade_pnl
-
-  # 3. Check Threshold (Scaled by Rules)
-  net_unit_pnl = hedge_pnl + realized_today + unrealized_today
-  threshold = cycle.rules['panic_threshold_dpu'] * cycle.hedge_trade_link.quantity
-  if net_unit_pnl > threshold:
-    logger.log(f"Panic Threshold Breached: ${net_unit_pnl:.2f} > ${threshold:.2f} (Hedge: {hedge_pnl:.2f}, Realized: {realized_today:.2f}, Open: {unrealized_today:.2f})", 
-               level=config.LOG_INFO, 
-               source=config.LOG_SOURCE_LIBS)
-    return True
-
-  return False
-
-def _check_roll_needed(cycle: Cycle, market_data: MarketData) -> bool:
-  """Rule: Spread Ask Price > Roll Trigger Price (3x Credit)"""
-  marks = market_data.get('spread_marks', {})
-
-  for trade in cycle.trades:
-    if trade.role == config.ROLE_INCOME and trade.status == config.STATUS_OPEN:
-      current_cost = marks.get(trade.id)
-      trigger = trade.roll_trigger_price
-      if current_cost and trigger and current_cost >= trigger:
-        logger.log(f"Roll Triggered for Trade {trade.id}: Cost {current_cost} >= Trigger {trigger}", 
-                   level=config.LOG_INFO, source=config.LOG_SOURCE_LIBS)
-        return True
-  return False
-
-# In server_libs.py
-
-def _check_roll_reentry_needed(cycle: Cycle, env_status: EnvStatus) -> Optional[Trade]:
-  """
-    Checks if we are flat because of a recent Roll Exit and need to re-enter.
-    Returns the closed Trade object if we need to recover from it.
-    """
-  # 1. If we have an open spread, we don't need re-entry
-  open_spreads = [t for t in cycle.trades if t.role == config.ROLE_INCOME and t.status == config.STATUS_OPEN]
-  if open_spreads: 
-    return None
-
-    # 2. Look for Income trades closed TODAY
-  today_date = env_status['today']
-  income_closed_today = [
-    t for t in cycle.trades 
-    if t.role == config.ROLE_INCOME 
-    and t.status == config.STATUS_CLOSED 
-    and _is_today(t.exit_time, today_date)
-  ]
-
-  if not income_closed_today: 
-    return None
-
-    # 3. Sort by exit time to find the MOST RECENT one
-  income_closed_today.sort(key=lambda x: x.exit_time, reverse=True)
-  latest_exit = income_closed_today[0]
-
-  # 4. If the latest exit was a Roll (and not a Harvest), we are eligible for recovery
-  # We check the notes we set in our helper: "[AUTO] Roll Exit"
-  if "Roll Exit" in (latest_exit.notes or ""):
-    return latest_exit
-
-  return None
-
-def _check_hedge_maintenance(cycle: Cycle, market_data: MarketData) -> bool:
-  """Rule: If Hedge Delta is outside of guardrails, OR DTE < 60"""
-  if not cycle.hedge_trade_link:
-    return False
-    
-  if cycle.hedge_trade_link.status != config.STATUS_OPEN:
-    return False
-    
-  # 1. Check Time (DTE)
-  current_dte = market_data.get('hedge_dte', 999)
-  min_dte = cycle.rules.get('hedge_min_dte', 60)
-  if current_dte < min_dte:
-    logger.log(f"Hedge Maintenance: DTE {current_dte} < Limit {min_dte}", 
-               level=config.LOG_INFO, 
-               source=config.LOG_SOURCE_LIBS)
-    return True
-
-  # 2. Check Delta
-  # Puts have negative delta, use ABS
-  # Handle Sandbox/Data Glitch where delta is exactly 0.0
-  raw_delta = market_data.get('hedge_delta')
-  # FIX: If delta is 0 or None, assume data is stale and DO NOT roll.
-  if not raw_delta: 
-    return False
-  current_delta = abs(raw_delta)
-  min_delta = cycle.rules.get('hedge_min_delta', 0.15)
-  max_delta = cycle.rules.get('hedge_max_delta', 0.40)
-  if current_delta < min_delta or current_delta > max_delta:
-    logger.log(f"Hedge Maintenance: Delta {current_delta} out of bounds ({min_delta}-{max_delta})",
-               level=config.LOG_INFO, 
-               source=config.LOG_SOURCE_LIBS)
-    return True
-
-  return False
 
 def _check_profit_target(cycle: Cycle, market_data: MarketData) -> bool:
   """Rule: Spread Cost <= Target Harvest Price (50% of credit)"""
@@ -214,21 +52,6 @@ def _check_profit_target(cycle: Cycle, market_data: MarketData) -> bool:
       if current_cost is not None and target and current_cost <= target:
         return True
   return False
-
-def _check_hedge_missing(cycle: Cycle) -> bool:
-  """Rule: Cycle is OPEN but has no *ACTIVE* Hedge Trade linked"""
-  # 1. Primary Check: Is the link on the cycle row valid?
-  if cycle.hedge_trade_link and cycle.hedge_trade_link.status == config.STATUS_OPEN:
-    return False
-  
-  # 2. Deep Search for an 'unlinked' open hedge
-  orphans = list(app_tables.trades.search(cycle=cycle._row, role=config.ROLE_HEDGE, status=config.STATUS_OPEN))
-  if orphans:
-    cycle._row['hedge_trade'] = orphans[0]
-    logger.log(f"Self-Healing: Re-linked orphaned hedge {orphans[0].get_id()} to Cycle", level=config.LOG_WARNING)
-    return False
-
-  return True
 
 def _check_spread_missing(cycle: Cycle, env_status: EnvStatus, settings:dict=None) -> bool:
 
@@ -247,39 +70,6 @@ def _check_spread_missing(cycle: Cycle, env_status: EnvStatus, settings:dict=Non
     return False
 
   return True
-
-def _check_naked_hedge_harvest(cycle: Cycle, market_data: MarketData) -> bool:
-  """Rule: No spreads open AND hedge profit > (Factor * Theta)"""
-  if not config.HARVEST_NAKED_HEDGE: 
-    return False
-
-  hedge = cycle.hedge_trade_link
-  if not hedge or hedge.status != config.STATUS_OPEN: 
-    return False
-
-    # 1. "Naked" Check: Are there any open income spreads?
-  open_spreads = [t for t in cycle.trades if t.role == config.ROLE_INCOME and t.status == config.STATUS_OPEN]
-  if len(open_spreads) > 0:
-    return False
-
-  # 2. Profit Calculation (Total Unrealized)
-  # Math: (Current - Entry) > Factor * abs(Theta)
-  theta_per_share = abs(market_data.get('hedge_theta', 0.0))
-  if theta_per_share <= 0: 
-    return False
-  profit_per_share = market_data.get('hedge_last', 0.0) - (hedge.entry_price or 0.0)
-  factor = cycle.rules.get('naked_hedge_theta_factor', 10.0)
-
-  threshold = factor * theta_per_share
-  #print(f"theta_per_share: {theta_per_share}, profit_per_share: {profit_per_share}, threshold: {threshold}")
-
-  if profit_per_share > threshold and profit_per_share > 0:
-    logger.log(f"NAKED WINDFALL: Profit ${profit_per_share:.2f}/sh > Threshold ${threshold:.2f}/sh ({factor}x Theta)", 
-               level=config.LOG_INFO, 
-               source=config.LOG_SOURCE_LIBS)
-    return True
-
-  return False
 
 def _has_traded_today(cycle: Cycle, env_status: EnvStatus) -> bool:
   """Checks if an INCOME trade has already occurred today."""
@@ -490,23 +280,6 @@ def check_entry_conditions(
 
   return True, "Entry valid"
 
-def get_target_hedge_date(cycle: Cycle, current_date: Optional[dt.date] = None) -> dt.date:
-  if not current_date: 
-    current_date = dt.datetime.now().date()
-  target_days = cycle.rules['hedge_target_dte']
-  return current_date + dt.timedelta(days=target_days)
-
-def select_hedge_strike(chain: List[Dict], target_delta: float = 0.25) -> Optional[Dict]:
-  puts = [opt for opt in chain if opt['option_type'] == config.TRADIER_OPTION_TYPE_PUT]
-  if not puts: 
-    return None
-
-  def get_delta(opt):
-    greeks = opt.get('greeks')
-    return abs(greeks.get('delta', 0.0)) if greeks else 0.0
-
-    # Logic: Minimize distance to target delta
-  return min(puts, key=lambda x: abs(get_delta(x) - target_delta))
 
 def calculate_spread_strikes(
   chain: List[Dict],
