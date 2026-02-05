@@ -97,7 +97,6 @@ def _is_entry_window_open(env_status: dict, rules: dict) -> bool:
   return minutes_since_open >= rules.get('trade_start_delay', 15)
 
 # --- OBJECT RETRIEVAL HELPERS ---
-
 def get_threatened_spread(cycle: Cycle, market_data: MarketData) -> Optional[Trade]:
   marks = market_data.get('spread_marks', {})
   for trade in cycle.trades:
@@ -119,6 +118,22 @@ def get_winning_spread(cycle: Cycle, market_data: MarketData) -> Optional[Trade]
   return None
 
 # --- CALCULATION LOGIC (ROLLS & ENTRY) ---
+def get_scalpel_quantity(account_equity: float, debit_paid: float) -> int:
+  """Calculates quantity based on 11.7% Quarter Kelly risk cap."""
+  # Max dollars allowed to lose (Define Risk spread)
+  # 11.7% of $50,000 = $5,850
+  max_risk_dollars = account_equity * config.KELLY_QTR
+
+  # Risk per contract is the debit paid * 100
+  # e.g. $1.25 * 100 = $125
+  risk_per_contract = debit_paid * 100
+
+  if risk_per_contract <= 0: 
+    return 0
+
+  qty = int(max_risk_dollars // risk_per_contract)
+  return max(1, qty)
+  
 def find_closest_expiration(valid_dates: List[dt.date], target_dte: int) -> Optional[dt.date]:
   """Given a list of valid dates, finds the one closest to Today + Target DTE"""
   if not valid_dates: 

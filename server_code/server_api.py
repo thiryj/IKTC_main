@@ -36,6 +36,65 @@ def _get_client() -> TradierAPI:
   return TradierAPI(token=api_key, default_account_id=account_id, endpoint=endpoint_url)
 
 # --- ENVIRONMENT & MARKET STATUS ---
+@anvil.server.callable
+def get_scalpel_environment() -> dict:
+  """Fetches VIX and calculates today's 1-minute VWAP for SPX."""
+  t = _get_client()
+  symbol = 'SPY'
+
+  # 1. Fetch VIX (Standard Quote)
+  vix_quote = _get_quote_direct(t, "VIX")
+  vix_price = float(vix_quote.get('last') or 0)
+  today_str = dt.date.today().strftime('%Y-%m-%d')
+  params = {
+    'symbol': symbol,
+    'interval': '1min',
+    'start': f"{today_str} 09:30",
+    'end': f"{today_str} 16:00",
+    'session_filter': 'open'
+  }
+
+  vwap = 0.0
+  current_price = 0.0
+
+  try:
+    # Endpoint: /v1/markets/history
+    resp = t.session.get(f"{t.endpoint}/markets/timesales", params=params, headers={'Accept': 'application/json'})
+    history = resp.json().get('series', {}).get('data', [])
+  
+    if isinstance(history, dict): 
+      history = [history]
+
+    if history:
+      cum_pv = 0.0
+      cum_vol = 0.0
+      for bar in history:
+        # VWAP = Sum(Typical Price * Volume) / Sum(Volume)
+        high = float(bar['high'])
+        low = float(bar['low'])
+        close = float(bar['close'])
+        vol = float(bar['volume'])
+
+        typical_price = (high + low + close) / 3.0
+        cum_pv += (typical_price * vol)
+        cum_vol += vol
+        current_price = close # Most recent bar is current price
+
+      if cum_vol > 0:
+        vwap = cum_pv / cum_vol
+
+  except Exception as e:
+    logger.log(f"Error calculating VWAP: {e}", level=config.LOG_WARNING)
+
+  return_dict = {
+    'vix': vix_price,
+    'vwap': round(vwap, 2),
+    'price': current_price,
+    'is_bullish': current_price > vwap if vwap > 0 else True
+  }
+  print(f'vwap: {return_dict}')
+
+  return return_dict
 
 def get_environment_status() -> EnvStatus:
   """Checks market clock and returns operational status"""
@@ -161,13 +220,15 @@ def get_market_data_snapshot(cycle) -> Dict:
 
   # 3. Map Results
   raw_quotes = resp.json().get('quotes', {}).get('quote', [])
-  if isinstance(raw_quotes, dict): raw_quotes = [raw_quotes]
+  if isinstance(raw_quotes, dict): 
+    raw_quotes = [raw_quotes]
 
   quote_map = {q['symbol']: q for q in raw_quotes}
 
   def safe_float(val, default=0.0) -> float:
     try:
-      if val is None: return default
+      if val is None: 
+        return default
       return float(val)
     except (ValueError, TypeError):
       return default
@@ -202,8 +263,8 @@ def get_market_data_snapshot(cycle) -> Dict:
 
   # 6. Extract Spreads
   for trade in income_trades:
-    short_leg = next((l for l in trade.legs if l.side == config.LEG_SIDE_SHORT), None)
-    long_leg = next((l for l in trade.legs if l.side == config.LEG_SIDE_LONG), None)
+    short_leg = next((leg for leg in trade.legs if leg.side == config.LEG_SIDE_SHORT), None)
+    long_leg = next((leg for leg in trade.legs if leg.side == config.LEG_SIDE_LONG), None)
     if short_leg and long_leg:
       s_q = quote_map.get(short_leg.occ_symbol)
       l_q = quote_map.get(long_leg.occ_symbol)
@@ -248,9 +309,10 @@ def get_option_chain(date: dt.date, symbol: str = None) -> List[Dict]:
         # Basic validation (Price > 0, Strike Exists)
 
         # only trade SPXW, not SPX
-        root = opt.get('root_symbol')
+        #root = opt.get('root_symbol')
         #if symbol == 'SPX' and root != 'SPXW': continue 
-        if not opt.get('strike') or not opt.get('bid'): continue
+        if not opt.get('strike') or not opt.get('bid'): 
+          continue
 
           # Ensure floats
         opt['strike'] = float(opt['strike'])
@@ -277,7 +339,8 @@ def get_option_chain(date: dt.date, symbol: str = None) -> List[Dict]:
 def get_expirations(symbol: str = None) -> List[dt.date]:
   """Fetches ALL valid expiration dates for a symbol"""
   t = _get_client()
-  if symbol is None: symbol = config.TARGET_UNDERLYING[config.ACTIVE_ENV]
+  if symbol is None: 
+    symbol = config.TARGET_UNDERLYING[config.ACTIVE_ENV]
 
   try:
     # Endpoint: /v1/markets/options/expirations
@@ -292,7 +355,8 @@ def get_expirations(symbol: str = None) -> List[dt.date]:
     dates_raw = data['expirations'].get('date', [])
 
     # Normalize to list
-    if isinstance(dates_raw, str): dates_raw = [dates_raw]
+    if isinstance(dates_raw, str): 
+      dates_raw = [dates_raw]
 
     valid_dates = []
     for d_str in dates_raw:
@@ -384,8 +448,8 @@ def execute_roll(old_trade, new_short, new_long, net_price: float) -> dict:
   t = _get_client()
 
   # 1. Identify Old Legs
-  old_short = next(l for l in old_trade.legs if l.side == config.LEG_SIDE_SHORT)
-  old_long = next(l for l in old_trade.legs if l.side == config.LEG_SIDE_LONG)
+  old_short = next(leg for leg in old_trade.legs if leg.side == config.LEG_SIDE_SHORT)
+  old_long = next(leg for leg in old_trade.legs if leg.side == config.LEG_SIDE_LONG)
 
   legs_list = []
 
@@ -450,8 +514,8 @@ def close_position(trade, order_type: str = 'limit') -> Dict:
 
   # 1. Identify Legs
   legs = getattr(trade, 'legs', [])
-  short_leg = next((l for l in legs if l.side == config.LEG_SIDE_SHORT), None)
-  long_leg = next((l for l in legs if l.side == config.LEG_SIDE_LONG), None)
+  short_leg = next((leg for leg in legs if leg.side == config.LEG_SIDE_SHORT), None)
+  long_leg = next((leg for leg in legs if leg.side == config.LEG_SIDE_LONG), None)
 
   legs_list = []
 
@@ -473,8 +537,10 @@ def close_position(trade, order_type: str = 'limit') -> Dict:
   root = config.TARGET_UNDERLYING[config.ACTIVE_ENV]
   check_leg = short_leg or long_leg
   if check_leg:
-    if 'SPX' in check_leg.occ_symbol: root = 'SPX'
-    if 'SPY' in check_leg.occ_symbol: root = 'SPY'
+    if 'SPX' in check_leg.occ_symbol: 
+      root = 'SPX'
+    if 'SPY' in check_leg.occ_symbol: 
+      root = 'SPY'
 
     # 3. Build Payload
   num_legs = len(legs_list)
@@ -510,7 +576,8 @@ def close_position(trade, order_type: str = 'limit') -> Dict:
     # Sandbox Stability
     if 'sandbox' in t.endpoint:
       payload['type'] = 'market'
-      if 'price' in payload: del payload['price']
+      if 'price' in payload: 
+        del payload['price']
 
     for i, leg in enumerate(legs_list):
       payload[f'option_symbol[{i}]'] = leg['symbol']

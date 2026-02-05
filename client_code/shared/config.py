@@ -25,6 +25,8 @@ HARVEST_NAKED_HEDGE = True
 # Example: 1 Hedge -> Max 6 Spreads. 5 Hedges -> Max 30 Spreads.
 MAX_SPREAD_TO_HEDGE_RATIO = 6
 ROLL_TRIGGER_CEILING = 0.5  #applies to rolled spreads - can't wait until 3x entry price, too high
+KELLY_QTR = 0.117
+
 
 # Order Execution Limits
 ORDER_TIMEOUT_SECONDS = 15
