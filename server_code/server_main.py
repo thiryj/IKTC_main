@@ -128,13 +128,19 @@ def _execute_automation_loop():
   settings_row = app_tables.settings.get()  
   system_settings = dict(settings_row) if settings_row else {} # <--- Force conversion
   current_env_account = config.ACTIVE_ENV # e.g., 'PROD' or 'SANDBOX'
-  # 1. GLOBAL PRECONDITIONS
-  # Check environment status (Market Open/Closed) and kill switch false BEFORE touching DB
   env_status = server_api.get_environment_status()
   today = env_status['today']
   print(f'today is: {today}')
+
+  cycle = server_db.get_active_cycle(current_env_account)
+  has_trade = False
+  if cycle:
+    has_trade = any(t for t in cycle.trades if t.status == config.STATUS_OPEN)
+  
+  # 1. GLOBAL PRECONDITIONS
+  # Check environment status (Market Open/Closed) and kill switch false BEFORE touching DB
   # This check is now purely for "Is the Market Open?" / "Is Bot Enabled globally?"
-  if not server_libs.can_run_automation(env_status, system_settings):
+  if not server_libs.can_run_automation(env_status, system_settings,EOD_overide=has_trade):
     logger.log(f"Automation skipped. Market: {env_status.get('status_message')}", 
                level=config.LOG_DEBUG, 
                source=config.LOG_SOURCE_ORCHESTRATOR)
@@ -267,13 +273,11 @@ def process_state_decision(cycle: Cycle, decision_state: str, env_status, market
 
   elif decision_state == config.STATE_EOD_CLEANUP:
     active_trades = [t for t in cycle.trades if t.status == config.STATUS_OPEN]
-    if not active_trades: return
+    if not active_trades: 
+      return
     trade = active_trades[0]
 
     logger.log("Market Closed. Executing EOD Settlement...", level=config.LOG_INFO)
-
-    # 1. Cancel the pending monetization order
-    server_api.cancel_order(trade.order_id_external)
 
     # 2. Calculate Terminal Value
     # Fetch final price of SPX
@@ -283,12 +287,13 @@ def process_state_decision(cycle: Cycle, decision_state: str, env_status, market
     # We need the strike to calculate payout
     # For a Bullish Call Spread: max(0, min(Width, SPX - Long_Strike))
     legs = app_tables.legs.search(trade=trade._row)
-    long_leg = next(l for l in legs if l['side'] == config.LEG_SIDE_LONG)
-    short_leg = next(l for l in legs if l['side'] == config.LEG_SIDE_SHORT)
+    long_leg = next(leg for leg in legs if leg['side'] == config.LEG_SIDE_LONG)
+    short_leg = next(leg for leg in legs if leg['side'] == config.LEG_SIDE_SHORT)
 
     width = abs(short_leg['strike'] - long_leg['strike'])
+    payout = 0.0
 
-    if trade.entry_reason == "BULLISH": # Assuming you store direction or can infer from strikes
+    if long_leg['option_type'] == 'call':
       payout = max(0, min(width, final_px - long_leg['strike']))
     else:
       payout = max(0, min(width, long_leg['strike'] - final_px))

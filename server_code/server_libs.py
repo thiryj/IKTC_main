@@ -11,16 +11,20 @@ from . import server_logging as logger
 
 # --- ORCHESTRATION HELPERS ---
 
-def can_run_automation(env_status: dict, settings:dict) -> bool:
+def can_run_automation(env_status: dict, settings:dict, EOD_overide: bool = False) -> bool:
   """Checks if the bot is allowed to run based on Market Status and Settings"""
   if config.IGNORE_SCHEDULUED_TASKS:
     return False
     
   if not settings or not settings.get('automation_enabled'): 
     return False
+
+  if EOD_overide:
+    return True
     
   if config.ENFORCE_TRADING_HOURS and env_status.get('status') != 'OPEN':
       return False
+    
   return True
 
 def is_db_consistent(cycle: Optional[Cycle], positions: List[dict]) -> bool:
