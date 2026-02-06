@@ -6,6 +6,7 @@ import datetime as dt
 import pytz
 
 from shared import config
+from shared.classes import Cycle
 from . import server_db
 from . import server_api
 from . import server_libs
@@ -56,7 +57,7 @@ def get_dashboard_state():
       }
     }
   market_data = server_api.get_market_data_snapshot(cycle)
-  status_meta = _get_bot_status_metadata(settings, env_status, cycle, market_data)
+  status_meta = _get_bot_status_metadata(settings, env_status, cycle)
 
   last_hb = settings['last_bot_heartbeat']
   is_stale = False
@@ -252,44 +253,49 @@ def get_log_stream(level_filter=None, limit=50):
   )
 
 # ---Private helpers ---
-def _get_bot_status_metadata(settings, env_status, cycle, market_data):
-  """Determines the text and color for the main status indicator"""
-  # 1. Check Global Switch
+def _get_bot_status_metadata(settings: dict, env_status: dict, cycle: Cycle) -> dict:
+  """Determines the dashboard status text and color for the Scalpel strategy."""
+
+  # 1. Global Kill Switch
   if not settings.get('automation_enabled'):
     return {'text': "DISABLED", 'color': "#FF0000"}
 
-    # 2. Check Market Hours
-  if env_status.get('status') != 'OPEN':
+  # 2. Market Status (Respecting EOD Override)
+  # We check if there's an active trade so we don't show 'SLEEPING' during EOD_CLEANUP
+  has_active_trade = any(t for t in cycle.trades if t.status == config.STATUS_OPEN) if cycle else False
+
+  if env_status.get('status') != 'OPEN' and not has_active_trade:
     return {'text': "SLEEPING (MARKET CLOSED)", 'color': "gray"}
 
-    # 3. Check Cycle Existence
+  # 3. Campaign Check
   if not cycle:
-    return {'text': "NO CYCLE", 'color': "#FFC107"} # Amber
+    return {'text': "NO CAMPAIGN", 'color': "orange"}
 
-    # 4. Check Logic State
-  current_state = server_libs.determine_cycle_state(cycle, market_data, env_status)
+  # 4. SCALPEL STATE MAPPING
+  # Ask the library for the current tactical state
+  current_state = server_libs.determine_scalpel_state(cycle, env_status)
 
-  if current_state == config.STATE_IDLE:
-    open_spreads = [t for t in cycle.trades if t.role == config.ROLE_INCOME and t.status == config.STATUS_OPEN]
-    if open_spreads:
-      return {'text': "MONITORING", 'color': "blue"}
-      
-    # we are flat.  did we already trade (open then close)?
+  if current_state == config.STATE_WAITING:
+    return {'text': "WAITING FOR 3:00 PM", 'color': "#5bc0de"} # Light Blue
+
+  elif current_state == config.STATE_ENTRY_WINDOW:
+    return {'text': "SCANNING FOR ENTRY", 'color': "#f0ad4e"} # Orange (Alert)
+
+  elif current_state == config.STATE_ACTIVE_HUNT:
+    return {'text': "HUNTING FOR $3.50", 'color': "#2ecc71"} # Bright Green
+
+  elif current_state == config.STATE_EOD_CLEANUP:
+    return {'text': "MARKET CLOSED: SETTLING", 'color': "#f0ad4e"} # Orange
+
+  elif current_state == config.STATE_IDLE:
+    # Logic: Why are we idle? Usually because we already traded or VIX was too low.
     if server_libs._has_traded_today(cycle, env_status):
-      return {'text': "DONE FOR DAY", 'color': "#00CC00"} # Bright Green
+      return {'text': "DONE FOR DAY (TRADE COMPLETE)", 'color': "#9b59b6"} # Purple
     else:
-      return {'text': "WATCHING (IDLE)", 'color': "green"}
-  else:
-    # Active State Coloring
-    text = current_state
-    color = "blue"
+      return {'text': "IDLE / FLAT", 'color': "gray"}
 
-    if "PANIC" in current_state or "ROLL" in current_state:
-      color = "#FF0000" # Red (Action)
-    elif "HARVEST" in current_state:
-      color = "#00CC00" # Green (Profit)
-
-    return {'text': text, 'color': color}
+  # Default Catch-all
+  return {'text': "MONITORING", 'color': "blue"}
 
 @anvil.server.callable
 def get_trades_crud_list() -> list:
