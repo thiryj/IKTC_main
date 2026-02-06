@@ -62,12 +62,6 @@ class form_main(form_mainTemplate):
       self.label_pnl_day.text = f"Day PnL: ${pnl:,.2f}"
       self.label_pnl_day.foreground = "green" if pnl >= 0 else "red"
 
-      # --- Hedge Card ---
-      h = state['hedge']
-      self.label_hedge_status.text = h['symbol']
-      self.label_hedge_status.foreground = h['status_color']
-      self.label_hedge_details.text = h['details']
-
       # --- Spread Card ---
       s = state['spread']
       self.label_spread_status.text = s['symbol']

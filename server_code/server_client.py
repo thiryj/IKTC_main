@@ -42,12 +42,6 @@ def get_dashboard_state():
       'net_daily_pnl': 0.0,
       'bot_status_text': "IDLE (NO CYCLE)",
       'bot_status_color': "gray",
-      'hedge': {
-        'active': False, 
-        'symbol': 'No Active Hedge', 
-        'status_color': 'gray',
-        'details': '-'
-      },
       'spread': {
         'active': False, 
         'symbol': 'No Active Spread', 
@@ -86,7 +80,6 @@ def get_dashboard_state():
     'bot_status_text': status_meta['text'],
     'bot_status_color': status_meta['color'],
     # Components
-    'hedge': {'active': False, 'status_color': 'gray', 'symbol': 'No Hedge', 'details': '-'},
     'spread': {'active': False, 'status_color': 'gray', 'symbol': 'No Spread', 'details': '-'},
     'log_summary': [], # Can populate later
     'closed_session': {
@@ -103,39 +96,7 @@ def get_dashboard_state():
   data['cycle_active'] = True
   data['cycle_id'] = cycle.id
   
-  # --- HEDGE COMPONENT ---
-  hedge = cycle.hedge_trade_link
-  hedge_pnl_day = 0.0
-  if hedge and hedge.status == config.STATUS_OPEN:
-    # PnL Calc
-    current_price = market_data.get('hedge_last', 0.0)
-    ref_price = cycle.daily_hedge_ref or 0.0
-    if ref_price == 0: 
-      ref_price = hedge.entry_price or 0.0
-
-    hedge_pnl_day = (current_price - ref_price) * config.DEFAULT_MULTIPLIER * hedge.quantity
-
-    needs_maint = server_libs._check_hedge_maintenance(cycle, market_data)
-
-    current_delta = market_data.get('hedge_delta', 0.0)
-    current_dte = market_data.get('hedge_dte', 0)
-    status_color = "green"
-    status_text = f"{hedge.quantity}x {hedge.legs[0].occ_symbol if hedge.legs else 'Hedge'}"
-    sub_text = f"PnL: ${hedge_pnl_day:+.0f} | Delta: {current_delta:.2f} | {current_dte} DTE"
-    if needs_maint:
-      status_color = "#FFC107" # Amber/Yellow
-      status_text += " (Roll Needed)"
-
-    data['hedge'] = {
-      'active': True,
-      'status_color': status_color,
-      'symbol': status_text,
-      'details': sub_text,
-      'pnl': hedge_pnl_day,
-      'price': current_price
-    }
-
-    # --- SPREAD COMPONENT ---
+  # --- SPREAD COMPONENT ---
   spread_pnl_total = 0.0
   closed_spreads = [t for t in cycle.trades if t.role == config.ROLE_INCOME and t.status == config.STATUS_CLOSED]
   today_date = env_status['today']
@@ -246,7 +207,7 @@ def get_dashboard_state():
   today_date = env_status['today']
 
   # --- 1. TOTAL REALIZED TODAY (The "Banked" money) ---
-  # Sum PnL for EVERY trade closed today (Income AND Hedge)
+  # Sum PnL for EVERY trade closed today 
   realized_today = sum([
     (t.pnl or 0.0) * t.quantity * 100 
     for t in cycle.trades 
@@ -255,16 +216,8 @@ def get_dashboard_state():
   # --- 2. TOTAL UNREALIZED TODAY (The "Floating" money) ---
   unrealized_today = 0.0
 
-  # Check Open Hedge
-  hedge = cycle.hedge_trade_link
-  if hedge and hedge.status == config.STATUS_OPEN:
-    h_mark = market_data.get('hedge_last', 0.0)
-    h_ref = cycle.daily_hedge_ref or 0.0
-    if h_mark > 0 and h_ref > 0:
-      unrealized_today += (h_mark - h_ref) * 100 * hedge.quantity
-  
-      # Check Open Spreads
-      active_spreads = [t for t in cycle.trades if t.role == config.ROLE_INCOME and t.status == config.STATUS_OPEN]
+  # Check Open Spreads
+  active_spreads = [t for t in cycle.trades if t.role == config.ROLE_INCOME and t.status == config.STATUS_OPEN]
   for s in active_spreads:
     s_mark = market_data.get('spread_marks', {}).get(s.id, 0.0)
     s_entry = s.entry_price or 0.0
@@ -475,7 +428,7 @@ def get_strategic_efficiency() -> dict:
   """Calculates tactical KPIs and the EV Forecast model."""
   
   # 1. Fetch all cycles (Open and Closed) to get a full trade history
-  cycle = server_db.get_active_cycle(current_env_account)
+  cycles = list(app_tables.cycles.search(account=config.ACTIVE_ENV))
   if not cycles:
     return {'active': False, 'trade_count': 0}
 
@@ -509,10 +462,8 @@ def get_strategic_efficiency() -> dict:
   actual_ev = (harvest_rate * avg_win_val) + ((1 - harvest_rate) * avg_loss_val)
 
   # Theoretical Baseline (15 Delta)
-  theory_win_rate = 0.85
-  theory_win = 50.0   
-  theory_loss = -200.0 
-  theoretical_ev = cycle.rules.get('vix_min', 13.0)
+  cycle = server_db.get_active_cycle(config.ACTIVE_ENV)
+  theoretical_ev = cycle.rules.get('theo_ev', 50)
 
   return {
     'active': True,
@@ -590,13 +541,6 @@ def get_continuous_pulse_stats() -> dict:
   if active_cycle:
     market_data = server_api.get_market_data_snapshot(active_cycle)
 
-    # Hedge Unrealized
-    hedge = active_cycle.hedge_trade_link
-    if hedge and hedge.status == config.STATUS_OPEN:
-      h_mark = market_data.get('hedge_last', 0.0)
-      h_entry = hedge.entry_price or 0.0
-      unrealized_pnl += (h_mark - h_entry) * 100 * hedge.quantity
-
     # Spread Unrealized (If any are currently mid-trade)
     active_spreads = [t for t in active_cycle.trades if t.role == config.ROLE_INCOME and t.status == config.STATUS_OPEN]
     for s in active_spreads:
@@ -609,4 +553,47 @@ def get_continuous_pulse_stats() -> dict:
     'unrealized_pnl': round(unrealized_pnl, 2),
     'realized_pnl': round(realized_pnl, 2),
     'is_active': active_cycle is not None
+  }
+
+@anvil.server.callable
+def get_kpi_benchmarks() -> dict:
+  """Calculates specific KPIs for the Confidence Dashboard."""
+  cycles = list(app_tables.cycles.search(account=config.ACTIVE_ENV))
+  all_income = list(app_tables.trades.search(
+    role=config.ROLE_INCOME, status=config.STATUS_CLOSED,
+    exclude_from_stats=False,
+    cycle=anvil.tables.query.any_of(*cycles)
+  ))
+
+  if not all_income: return {}
+
+  # 1. Basic Stats
+  wins = [t for t in all_income if (t['pnl'] or 0) > 0]
+  losses = [t for t in all_income if (t['pnl'] or 0) < 0]
+
+  win_rate = (len(wins) / len(all_income)) * 100
+
+  # 2. Profit Factor (Gross Wins / abs(Gross Losses))
+  gross_wins = sum([t['pnl'] for t in wins]) * 100
+  gross_losses = abs(sum([t['pnl'] for t in losses]) * 100)
+  profit_factor = gross_wins / gross_losses if gross_losses > 0 else gross_wins
+
+  # 3. Avg Winner ($)
+  avg_win = (sum([t['pnl'] for t in wins]) / len(wins)) * 100 if wins else 0
+
+  # 4. Current Consecutive Losses
+  # Sort by exit_time descending to get most recent first
+  sorted_trades = sorted(all_income, key=lambda x: x['exit_time'], reverse=True)
+  consec_losses = 0
+  for t in sorted_trades:
+    if (t['pnl'] or 0) < 0:
+      consec_losses += 1
+    else:
+      break # Stop at the first win
+
+  return {
+    'win_rate': round(win_rate, 1),
+    'profit_factor': round(profit_factor, 2),
+    'avg_winner': round(avg_win, 2),
+    'consec_losses': consec_losses
   }

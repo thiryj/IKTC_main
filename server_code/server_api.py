@@ -373,7 +373,7 @@ def get_expirations(symbol: str = None) -> List[dt.date]:
 
 # --- EXECUTION ---
 
-def open_spread_position(trade_data: Dict, is_debit: bool=True, preview: bool=False) -> Dict:
+def open_spread_position(trade_data: Dict, is_debit: bool=True, preview: bool=False, is_dry_run: bool=False) -> Dict:
   """
     Submits a multileg order (Vertical Spread).
     Uses your 'build_multileg_payload' logic.
@@ -415,95 +415,9 @@ def open_spread_position(trade_data: Dict, is_debit: bool=True, preview: bool=Fa
     payload[f'side[{i}]'] = leg['side']
     payload[f'quantity[{i}]'] = leg['quantity']
 
-  return _submit_order(t, payload)
+  return _submit_order(t, payload, is_dry_run)
 
-def buy_option(leg_data: Dict) -> Dict:
-  """Submits a single leg buy order (Long Put Hedge)"""
-  t = _get_client()
-  underlying = config.TARGET_UNDERLYING[config.ACTIVE_ENV]
-  limit_price = float(leg_data.get('ask') or leg_data.get('last') or 0)
-
-  if limit_price == 0:
-    raise ValueError(f"Cannot buy {leg_data['symbol']} - No Ask price available.")
-    
-  payload = {
-    'class': 'option',
-    'symbol': underlying,
-    'option_symbol': leg_data['symbol'],
-    'side': 'buy_to_open',
-    'quantity': '1', # TODO: Hardcoded for now, or pass in args
-    'type': 'limit', # Hedges usually bought at market or slight limit
-    'price': f"{limit_price:.2f}",
-    'duration': 'day'
-  }
-
-  return _submit_order(t, payload)
-
-def execute_roll(old_trade, new_short, new_long, net_price: float) -> dict:
-  """
-    Submits a 4-Leg Order (Iron Condor style logic, effectively).
-    Closes Old, Opens New.
-    """
-  t = _get_client()
-
-  # 1. Identify Old Legs
-  old_short = next(leg for leg in old_trade.legs if leg.side == config.LEG_SIDE_SHORT)
-  old_long = next(leg for leg in old_trade.legs if leg.side == config.LEG_SIDE_LONG)
-
-  legs_list = []
-
-  # LEG 1: Buy to Close Old Short
-  legs_list.append({
-    'symbol': old_short.occ_symbol,
-    'side': 'buy_to_close',
-    'quantity': str(old_trade.quantity)
-  })
-
-  # LEG 2: Sell to Close Old Long
-  legs_list.append({
-    'symbol': old_long.occ_symbol,
-    'side': 'sell_to_close',
-    'quantity': str(old_trade.quantity)
-  })
-
-  # LEG 3: Sell to Open New Short
-  legs_list.append({
-    'symbol': new_short['symbol'],
-    'side': 'sell_to_open',
-    'quantity': str(old_trade.quantity)
-  })
-
-  # LEG 4: Buy to Open New Long
-  legs_list.append({
-    'symbol': new_long['symbol'],
-    'side': 'buy_to_open',
-    'quantity': str(old_trade.quantity)
-  })
-
-  # 2. Build Payload
-  root = config.TARGET_UNDERLYING[config.ACTIVE_ENV]
-
-  payload = {
-    'class': 'multileg',
-    'symbol': root,
-    'duration': 'day',
-    # Net Price: If Positive, we collect credit. If 0.00, it's "even".
-    'type': 'credit' if net_price >= 0 else 'debit',
-    'price': f"{abs(net_price):.2f}"
-  }
-
-  # Sandbox Stability
-  if 'sandbox' in t.endpoint:
-    payload['type'] = 'market'
-
-  for i, leg in enumerate(legs_list):
-    payload[f'option_symbol[{i}]'] = leg['symbol']
-    payload[f'side[{i}]'] = leg['side']
-    payload[f'quantity[{i}]'] = leg['quantity']
-
-  return _submit_order(t, payload)
-
-def close_position(trade, order_type: str = 'limit', limit_price: float = 3.5) -> Dict:
+def close_position(trade, order_type: str = 'limit', limit_price: float = 3.5, is_dry_run: bool=False) -> Dict:
   """
     Closes a position (Spread or Hedge).
     Dynamically switches between 'option' and 'multileg' endpoints.
@@ -580,7 +494,7 @@ def close_position(trade, order_type: str = 'limit', limit_price: float = 3.5) -
       payload[f'quantity[{i}]'] = leg['quantity']
 
   # 4. Submit
-  result = _submit_order(t, payload)
+  result = _submit_order(t, payload, is_dry_run)
   return result
 
 def wait_for_order_fill(order_id: str, timeout_seconds: int = 15, fill_px_fallback: float=0.0) -> Tuple[str, float]:
@@ -635,7 +549,7 @@ def wait_for_order_fill(order_id: str, timeout_seconds: int = 15, fill_px_fallba
       logger.log(f"API Polling Error: {e}", level=config.LOG_WARNING, source=config.LOG_SOURCE_API)
       time.sleep(1.0)
       
-  logger.log(f"Order {order_id} timed out (not filled)", level=config.LOG_WARNING, source=config.LOG_SOURCE_API)
+  #logger.log(f"Order {order_id} timed out (not filled)", level=config.LOG_WARNING, source=config.LOG_SOURCE_API)
   return False, 0.0
 
 def cancel_order(order_id: str) -> bool:
@@ -664,12 +578,12 @@ def cancel_order(order_id: str) -> bool:
     
 # --- PRIVATE HELPERS ---
 
-def _submit_order(t: TradierAPI, payload: Dict) -> Dict:
+def _submit_order(t: TradierAPI, payload: Dict, is_dry_run:bool=False) -> Dict:
   """
     Raw POST to /accounts/{id}/orders
     Returns normalized execution report.
     """
-  if config.DRY_RUN:
+  if is_dry_run:
     logger.log(f"DRY RUN: Order Suppressed -> {payload}", 
                level=config.LOG_WARNING, 
                source=config.LOG_SOURCE_API)

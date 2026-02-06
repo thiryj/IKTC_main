@@ -26,7 +26,6 @@ def run_automation_routine():
   #print('run_automation_routine: after _set_processing_lock, executing loop')
   try:
     _execute_automation_loop()
-    print('run_automation_routine: after executing loop')
     
   except Exception as e:
     logger.log(f"CRITICAL: Automation loop crashed: {e}", level=config.LOG_CRITICAL)
@@ -54,7 +53,7 @@ def _set_processing_lock(value: bool) -> bool:
 
   return current_state
 
-def _execute_scalpel_entry(cycle: Cycle, candidate: dict) -> bool:
+def _execute_scalpel_entry(cycle: Cycle, candidate: dict, is_dry_run:bool=False) -> bool:
   """
     Quarter Kelly Sizing -> Buy Spread -> Record DB -> Place $3.50 Limit Sell.
     """
@@ -69,7 +68,7 @@ def _execute_scalpel_entry(cycle: Cycle, candidate: dict) -> bool:
              level=config.LOG_INFO)
 
   # 2. BUY ENTRY
-  order_res = server_api.open_spread_position(candidate, is_debit=True)
+  order_res = server_api.open_spread_position(candidate, is_debit=True, is_dry_run=is_dry_run)
 
   # Reuse our 'Entry and Sync' logic (Mechanical Verification)
   # Note: Pass the debit as the fallback price
@@ -126,6 +125,7 @@ def process_scalpel_entry_logic(cycle: Cycle, market_env: dict, env_status: dict
 
 def _execute_automation_loop():
   settings_row = app_tables.settings.get()  
+  is_dry_run = settings_row['dry_run']
   system_settings = dict(settings_row) if settings_row else {} # <--- Force conversion
   current_env_account = config.ACTIVE_ENV # e.g., 'PROD' or 'SANDBOX'
   env_status = server_api.get_environment_status()
@@ -147,6 +147,7 @@ def _execute_automation_loop():
     return
     
   # 2. LOAD CONTEXT (or auto seed)
+  print('before get_active_cycle')
   cycle = server_db.get_active_cycle(current_env_account)
   if not cycle:
     if server_db.check_cycle_closed_today(config.ACTIVE_ENV):
@@ -182,7 +183,7 @@ def _execute_automation_loop():
     logger.log(f"Cycle {cycle.id} created and hydrated. Proceeding immediately.", 
                level=config.LOG_INFO, 
                source=config.LOG_SOURCE_ORCHESTRATOR)
-  
+  print('before market data snapshot')
   market_data = server_api.get_market_data_snapshot(cycle)
   print(f'market: {market_data}')
     
@@ -228,11 +229,13 @@ def _execute_automation_loop():
       
   # 1. Get the state from our new library function
   state = server_libs.determine_scalpel_state(cycle, env_status)  
-  process_state_decision(cycle, state, env_status)
+  process_state_decision(cycle, state, env_status, is_dry_run)
 
- 
-
-def process_state_decision(cycle: Cycle, decision_state: str, env_status, market_data: dict=None) -> None:
+def process_state_decision(cycle: Cycle, 
+                           decision_state: str, 
+                           env_status, 
+                           market_data: dict=None, 
+                           is_dry_run:bool=False) -> None:
   # 2. Execute
   if decision_state == config.STATE_WAITING:
     # We don't even fetch environment data here. Save API credits.
@@ -255,7 +258,7 @@ def process_state_decision(cycle: Cycle, decision_state: str, env_status, market
     )
 
     if candidate:
-      _execute_scalpel_entry(cycle, candidate)
+      _execute_scalpel_entry(cycle, candidate, is_dry_run)
 
   elif decision_state == config.STATE_ACTIVE_HUNT:
     # Logic: We have an open trade, check if our $3.50 limit hit

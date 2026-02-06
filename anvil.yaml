@@ -190,12 +190,12 @@ db_schema:
     - admin_ui: {order: 20, width: 200}
       name: enforce_consistency_checks
       type: bool
-    - admin_ui: {order: 21, width: 200}
-      name: harvest_naked_hedge
-      type: bool
     - admin_ui: {order: 22, width: 200}
       name: ui_refresh_seconds
       type: number
+    - admin_ui: {order: 23, width: 200}
+      name: enforce_frequency_checks
+      type: bool
     server: full
     title: settings
   trades:

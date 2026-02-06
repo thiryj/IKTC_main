@@ -61,20 +61,3 @@ class RuleSetDict(TypedDict, total=False):
   hedge_min_dte: int          # For Hedge Maintenance
   hedge_min_delta: float      # For Hedge Maintenance
   hedge_max_delta: float      # For Hedge Maintenance
-
-'''{
-  # Underlying (SPX/SPY) Data
-  'price': 5000.0,           # Float: Current Last Price
-  'open': 4950.0,            # Float: Today's Open (Cleaned for Sandbox 0s)
-  'previous_close': 4900.0,  # Float: Yesterday's Close
-
-  # Hedge Data
-  'hedge_last': 55.0,        # Float: Current Price of the Hedge Option (or 0.0 if missing)
-
-  # Active Spread Pricing (The "Marks")
-  'spread_marks': {
-      'row_id_123': 0.15,    # Key=Trade ID (str), Value=Net Debit to Close (float)
-      'row_id_456': 0.40
-  }
-}
-'''

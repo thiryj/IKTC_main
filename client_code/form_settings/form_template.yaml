@@ -7,7 +7,7 @@ components:
       type: Label
     - layout_properties: {col_xs: 2, row: QBJZTN, width_xs: 3}
       name: text_equity
-      properties: {}
+      properties: {type: number}
       type: TextBox
     - layout_properties: {col_xs: 0, row: RHQNHB, width_xs: 2}
       name: label_9
@@ -15,7 +15,7 @@ components:
       type: Label
     - layout_properties: {col_xs: 2, row: RHQNHB, width_xs: 3}
       name: text_ui_refresh
-      properties: {}
+      properties: {type: number}
       type: TextBox
     - layout_properties: {col_xs: 0, row: RRDJHH, width_xs: 2}
       name: label_10
@@ -93,14 +93,6 @@ components:
       name: check_pause_entries
       properties: {text: Pause spread entry}
       type: CheckBox
-    - layout_properties: {col_xs: 0, row: JFBHHW, width_xs: 2}
-      name: label_8
-      properties: {text: Harvest Hedge}
-      type: Label
-    - layout_properties: {col_xs: 3, row: JFBHHW, width_xs: 3}
-      name: check_naked_harvest
-      properties: {text: Harvest Naked Hedge On}
-      type: CheckBox
     layout_properties: {grid_position: 'QZJIQY,MCJHIW'}
     name: grid_panel_4
     properties: {}
@@ -110,7 +102,8 @@ components:
   properties: {role: outlined-card}
   type: ColumnPanel
 - components:
-  - layout_properties: {col_xs: 10, row: UQGXSP, width_xs: 2}
+  - event_bindings: {}
+    layout_properties: {col_xs: 10, row: UQGXSP, width_xs: 2}
     name: button_save
     properties: {role: tonal-button, text: Save}
     type: Button

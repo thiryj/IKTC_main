@@ -547,8 +547,10 @@ def get_live_settings() -> dict:
 def save_live_settings(updates: dict) -> bool:
   """Saves a bundle of settings from the UI."""
   row = app_tables.settings.get()
-  if not row: return False
+  if not row: 
+    return False
 
+  
   # Update the row using the dictionary keys
   row.update(**updates)
 

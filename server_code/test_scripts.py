@@ -74,8 +74,8 @@ def run_branch_test(scenario: str) -> str:
     Forces the bot into a specific state branch for testing.
     Scenarios: 'PANIC', 'ROLL_SPREAD', 'WINDFALL', 'HARVEST', 'HEDGE_ROLL'
     """
-  if not config.DRY_RUN:
-    return "ABORTED: You must set config.DRY_RUN = True before running branch tests!"
+  #if not config.DRY_RUN:
+  #  return "ABORTED: You must set config.DRY_RUN = True before running branch tests!"
 
   cycle = server_db.get_active_cycle(config.ACTIVE_ENV)
   if not cycle: 

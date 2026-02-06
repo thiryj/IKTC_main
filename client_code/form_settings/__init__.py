@@ -23,8 +23,8 @@ class form_settings(form_settingsTemplate):
     self.check_zombies.checked = s.get('enforce_zombie_checks', True)
     self.check_consistency.checked = s.get('enforce_consistency_checks', False)
     self.check_pause_entries.checked = s.get('pause_new_entries', False)
-    self.check_naked_harvest.checked = s.get('harvest_naked_hedge', True)
 
+  @handle("button_save", "click")
   def button_save_click(self, **event_args) -> None:
     """Bundles UI state and persists to server."""
     settings_bundle = {
@@ -36,8 +36,7 @@ class form_settings(form_settingsTemplate):
       'enforce_frequency_checks': self.check_frequency.checked,
       'enforce_zombie_checks': self.check_zombies.checked,
       'enforce_consistency_checks': self.check_consistency.checked,
-      'pause_new_entries': self.check_pause_entries.checked,
-      'harvest_naked_hedge': self.check_naked_harvest.checked
+      'pause_new_entries': self.check_pause_entries.checked
     }
 
     success = anvil.server.call('save_live_settings', settings_bundle)

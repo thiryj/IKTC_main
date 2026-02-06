@@ -15,8 +15,9 @@ def can_run_automation(env_status: dict, settings:dict, EOD_overide: bool = Fals
   """Checks if the bot is allowed to run based on Market Status and Settings"""
   if config.IGNORE_SCHEDULUED_TASKS:
     return False
-    
+  print(f'settings: {settings}')  
   if not settings or not settings.get('automation_enabled'): 
+    #print('not settings branch')
     return False
 
   if EOD_overide:

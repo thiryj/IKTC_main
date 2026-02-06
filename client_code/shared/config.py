@@ -4,7 +4,7 @@ import datetime as dt
 ENV_SANDBOX = 'SANDBOX'
 ENV_PROD = 'PROD'
 IS_PROD = True  # Master - bot level environment selector.  True = PROD, False = SANDBOX
-DRY_RUN = False
+#DRY_RUN = False  # Moved to settings
 IGNORE_SCHEDULUED_TASKS = False
 
 ACTIVE_ENV = ENV_PROD if IS_PROD else ENV_SANDBOX
