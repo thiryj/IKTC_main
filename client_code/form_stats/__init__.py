@@ -62,7 +62,7 @@ class form_stats(form_statsTemplate):
     # 5. KPI Benchmarks
     kpi = anvil.server.call('get_kpi_benchmarks')
     if kpi:
-      self._render_kpi_gauge(self.plot_win_rate, "Win Rate %", kpi['win_rate'], 45, 55, 65, 100)
+      self._render_kpi_gauge(self.plot_win_rate, "Win Rate %", kpi['win_rate'], 40, 50, 60, 100)
       self._render_kpi_gauge(self.plot_profit_factor, "Profit Factor", kpi['profit_factor'], 1.3, 1.8, 2.2, 3.5)
       self._render_kpi_gauge(self.plot_avg_win, "Avg Winner $", kpi['avg_winner'], 200, 210, 225, 300)
       # Note: For consec losses, high numbers are BAD, so we flip the colors logic
