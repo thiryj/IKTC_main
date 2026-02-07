@@ -91,7 +91,7 @@ def get_scalpel_environment() -> dict:
     'vix': vix_price,
     'vwap': round(vwap, 2),
     'price': current_price,
-    'is_bullish': current_price > vwap if vwap > 0 else True,
+    'is_bullish': vwap_pct >= 0,
     'vwp_pct': vwap_pct
   }
   print(f'vwap: {return_dict}')

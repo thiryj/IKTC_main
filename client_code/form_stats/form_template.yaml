@@ -74,5 +74,9 @@ components:
   name: plot_consec_losses
   properties: {}
   type: Plot
+- layout_properties: {grid_position: 'BEPCGX,PXLWNK'}
+  name: plot_ev_actual
+  properties: {}
+  type: Plot
 container: {type: ColumnPanel}
 is_package: true

@@ -10,7 +10,8 @@ class form_stats(form_statsTemplate):
       self.plot_win_rate, 
       self.plot_profit_factor, 
       self.plot_avg_win, 
-      self.plot_consec_losses
+      self.plot_consec_losses,
+      self.plot_ev_actual
     ]
     for p in gauge_plots:
       p.height = 40  # Force the Anvil component to 40px
@@ -67,6 +68,8 @@ class form_stats(form_statsTemplate):
       self._render_kpi_gauge(self.plot_avg_win, "Avg Winner $", kpi['avg_winner'], 200, 210, 225, 300)
       # Note: For consec losses, high numbers are BAD, so we flip the colors logic
       self._render_consec_gauge(self.plot_consec_losses, "Consec Losses", kpi['consec_losses'])
+      ev_label = f"Actual EV: ${kpi['actual_ev']:.2f} (±{kpi['ev_error_pct']}%)"
+      self._render_kpi_gauge(self.plot_ev_actual, ev_label, kpi['actual_ev'], 40, 60, 90, 150)
 
   def _render_chart(self, data: dict) -> None:
     if not data or not data.get('dates'):
@@ -133,8 +136,8 @@ class form_stats(form_statsTemplate):
       mode = "number+gauge", 
       value = display_val,
       number = {
-        'font': {'size': 20, 'color': '#333'}, # Smaller, cleaner number
-        'suffix': "%" if "Rate" in title else "" # Auto-add % for Win Rate
+        'font': {'size': 18, 'color': '#333', 'weight': 'bold'}, 
+        'suffix': "%" if "Rate" in title and "±" not in title else "" # Prevents suffix on EV
       },
       title = {'text': title, 'font': {'size': 12}, 'align': 'left'},
       domain = {'x': [0.18, 1], 'y': [0, 1]}, # Gives the Title on the left more room

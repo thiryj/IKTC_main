@@ -354,7 +354,7 @@ def _execute_entry_and_sync(cycle: Cycle,
                             action_desc: str, 
                             entry_reason: str = None, 
                             fill_px_fallback: float=0.0,
-                           vwap_pct: float=None) -> bool:
+                            vwap_pct: float=None) -> bool:
   """
     Unified handler for all position entries.
     Includes Safety: Cancels order on broker if timeout occurs.
@@ -376,7 +376,8 @@ def _execute_entry_and_sync(cycle: Cycle,
       trade_dict=trade_data,
       order_id=order_id,
       fill_price=final_px,
-      fill_time=dt.datetime.now(dt.timezone.utc)
+      fill_time=dt.datetime.now(dt.timezone.utc),
+      vwap_pct=vwap_pct
     )
       
     logger.log(f"SUCCESS: {action_desc} filled at ${final_px}", level=config.LOG_INFO)

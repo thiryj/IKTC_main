@@ -4,6 +4,8 @@ from anvil.tables import app_tables
 import anvil.tables.query as q
 import datetime as dt
 import pytz
+import math
+import statistics
 
 from shared import config
 from shared.classes import Cycle
@@ -565,13 +567,15 @@ def get_continuous_pulse_stats() -> dict:
 def get_kpi_benchmarks() -> dict:
   """Calculates specific KPIs for the Confidence Dashboard."""
   cycles = list(app_tables.cycles.search(account=config.ACTIVE_ENV))
+
   all_income = list(app_tables.trades.search(
     role=config.ROLE_INCOME, status=config.STATUS_CLOSED,
     exclude_from_stats=False,
     cycle=anvil.tables.query.any_of(*cycles)
   ))
 
-  if not all_income: return {}
+  if not all_income: 
+    return {}
 
   # 1. Basic Stats
   wins = [t for t in all_income if (t['pnl'] or 0) > 0]
@@ -597,9 +601,26 @@ def get_kpi_benchmarks() -> dict:
     else:
       break # Stop at the first win
 
+  # Confidence Invtervals
+  pnl_list = [float(t['pnl'] or 0) * 100 for t in all_income]
+  actual_ev = sum(pnl_list) / len(pnl_list)
+
+  error_pct = 0.0
+  if len(pnl_list) > 1:
+    # 1. Calculate Standard Deviation of PnL
+    stdev = statistics.stdev(pnl_list)
+    # 2. Calculate Standard Error (SE = stdev / sqrt(n))
+    standard_error = stdev / math.sqrt(len(pnl_list))
+    # 3. Calculate % Error (SE / abs(Mean EV))
+    if abs(actual_ev) > 0:
+      error_pct = (standard_error / abs(actual_ev)) * 100
+
   return {
     'win_rate': round(win_rate, 1),
     'profit_factor': round(profit_factor, 2),
     'avg_winner': round(avg_win, 2),
-    'consec_losses': consec_losses
+    'consec_losses': consec_losses,
+    'actual_ev': round(actual_ev, 2),
+    'ev_error_pct': round(error_pct, 1), # This is your Confidence Metric
+    'trade_count': len(all_income)
   }
