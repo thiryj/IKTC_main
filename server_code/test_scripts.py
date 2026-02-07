@@ -110,6 +110,36 @@ def run_branch_test(scenario: str) -> str:
 
     return "Scalpel Entry Test Executed. Check Trades table for 'vwap_pct' and 'entry_bias'."
 
+  elif scenario == 'WIRING_TEST':
+    # 1. Manually construct a 'Candidate' dictionary
+    # This bypasses the search engine and real API data
+    mock_candidate = {
+      'long_leg_data': {'symbol': 'SPXW_FAKE_L', 'strike': 5000, 'bid': 5.0, 'ask': 5.2},
+      'short_leg_data': {'symbol': 'SPXW_FAKE_S', 'strike': 5005, 'bid': 3.8, 'ask': 4.0},
+      'debit': 1.25,
+      'quantity': 1,
+      'short_strike': 5005,
+      'long_strike': 5000
+    }
+
+    mock_vwap_pct = 0.0025 # +0.25%
+    bias = 'CALL'
+
+    print(f"TEST: Forcing execution sync with Bias: {bias} and VWAP%: {mock_vwap_pct}")
+
+    # 2. Call the execution helper directly
+    # This tests if _execute_scalpel_entry -> _execute_entry_and_sync -> record_new_trade is working
+    from . import server_main
+    success = server_main._execute_scalpel_entry(
+      cycle=cycle,
+      candidate=mock_candidate,
+      is_dry_run=True,
+      entry_bias=bias,
+      vwap_pct=mock_vwap_pct
+    )
+
+    return f"Wiring Test {'SUCCESS' if success else 'FAILED'}. Check Trades table."
+
   elif scenario == 'SCALPEL_WIN':
     # 1. Ensure an open trade exists with a DRY_ order ID
     # 2. MOCK THE FILL: Set time to 3:30 PM

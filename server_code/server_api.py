@@ -496,7 +496,7 @@ def close_position(trade, order_type: str = 'limit', limit_price: float = 3.5, i
       payload[f'quantity[{i}]'] = leg['quantity']
 
   # 4. Submit
-  result = _submit_order(t, payload, is_dry_run)
+  result = _submit_order(t, payload, is_dry_run=is_dry_run)
   return result
 
 def wait_for_order_fill(order_id: str, timeout_seconds: int = 15, fill_px_fallback: float=0.0) -> Tuple[str, float]:

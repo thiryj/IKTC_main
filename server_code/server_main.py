@@ -307,7 +307,7 @@ def _execute_scalpel_entry(cycle: Cycle, candidate: dict, is_dry_run:bool=False,
 
     # Place the $3.50 Limit Order immediately
     # We'll use a modified close_position that accepts a limit price
-    exit_res = server_api.close_position(new_trade, order_type='limit', limit_price=harvest_target)
+    exit_res = server_api.close_position(new_trade, order_type='limit', limit_price=harvest_target, is_dry_run=is_dry_run)
 
     if exit_res.get('id'):
       # Update the trade row with the active Order ID so we can track it

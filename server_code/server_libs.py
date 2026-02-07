@@ -204,11 +204,12 @@ def calculate_scalpel_strikes(
   Finds the $5-wide OTM spread closest to the money that costs $1.20-$1.35.
   """
   option_type = config.TRADIER_OPTION_TYPE_CALL if is_bullish else config.TRADIER_OPTION_TYPE_PUT
-
+  
   # 1. Filter for correct side
   side_chain = [opt for opt in chain if opt['option_type'] == option_type]
   if not side_chain: 
     return None
+  
 
   # 2. Sort by Strike 
   # Calls: Ascending (Lowest strike first = closest to money)
@@ -230,18 +231,20 @@ def calculate_scalpel_strikes(
     strike = long_leg['strike']
 
     # Must be OTM
-    if is_bullish and strike <= current_price: continue # Call must be above price
-    if not is_bullish and strike >= current_price: continue # Put must be below price
+    if is_bullish and strike <= current_price: 
+      continue # Call must be above price
+    if not is_bullish and strike >= current_price: 
+      continue # Put must be below price
 
     # Find matching Short Leg ($5 wider)
     target_short_strike = (strike + width) if is_bullish else (strike - width)
     short_leg = next((opt for opt in side_chain if abs(opt['strike'] - target_short_strike) < 0.01), None)
 
-    if not short_leg: continue
+    if not short_leg: 
+      continue
 
     # 4. Check if the price is in our 'Scalpel' window
     debit = get_debit(long_leg, short_leg)
-    print(f'debit is')
     if min_debit <= debit <= max_debit:
       # FOUND: This is the pair closest to the money that fits our budget
       logger.log(f"Scalpel Pair Found: {long_leg['symbol']}/{short_leg['symbol']} at ${debit:.2f} debit", 

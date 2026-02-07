@@ -163,7 +163,7 @@ def record_new_trade(
       except ValueError:
         return None
     return None
-
+  
   # 1. Create the Trade Row
   trade_row = app_tables.trades.add_row(
     cycle=cycle_row,
@@ -176,8 +176,9 @@ def record_new_trade(
     entry_time=fill_time,
     order_id_external=order_id,
     vwap_pct=vwap_pct,
+    entry_bias=entry_bias,
     pnl=0.0,
-
+    
     # Calculate capital required (Width * 100 * Qty)
     capital_required=(
       trade_dict['quantity'] * config.DEFAULT_MULTIPLIER * abs(trade_dict['short_strike'] - trade_dict['long_strike']) 
