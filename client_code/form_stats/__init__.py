@@ -5,6 +5,17 @@ import plotly.graph_objects as go
 class form_stats(form_statsTemplate):
   def __init__(self, **properties):
     self.init_components(**properties)
+    # 1. FORCE COMPONENT HEIGHTS (No more hidden specs in Designer!)
+    gauge_plots = [
+      self.plot_win_rate, 
+      self.plot_profit_factor, 
+      self.plot_avg_win, 
+      self.plot_consec_losses
+    ]
+    for p in gauge_plots:
+      p.height = 40  # Force the Anvil component to 40px
+      p.spacing_above = "none"
+      p.spacing_below = "none"
     self.refresh_dashboard()
 
   def refresh_dashboard(self) -> None:
@@ -122,11 +133,11 @@ class form_stats(form_statsTemplate):
       mode = "number+gauge", 
       value = display_val,
       number = {
-        'font': {'size': 24, 'color': '#333'}, # Smaller, cleaner number
+        'font': {'size': 20, 'color': '#333'}, # Smaller, cleaner number
         'suffix': "%" if "Rate" in title else "" # Auto-add % for Win Rate
       },
       title = {'text': title, 'font': {'size': 12}, 'align': 'left'},
-      domain = {'x': [0.15, 1], 'y': [0, 1]}, # Gives the Title on the left more room
+      domain = {'x': [0.18, 1], 'y': [0, 1]}, # Gives the Title on the left more room
       gauge = {
         'shape': "bullet",
         'axis': {
@@ -134,21 +145,22 @@ class form_stats(form_statsTemplate):
           'tickmode': 'array',
           'tickvals': [warn, low_target, high_target], # Show lines at your key thresholds
           'tickwidth': 1,
-          'tickcolor': "black"
+          'tickcolor': "black",
+          'tickfont': {'size': 2}
         },
         'steps': [
-          {'range': [0, warn], 'color': "rgba(255, 0, 0, 0.15)"},       # Red
-          {'range': [warn, low_target], 'color': "rgba(255, 255, 0, 0.15)"}, # Yellow
-          {'range': [low_target, high_target], 'color': "rgba(0, 255, 0, 0.15)"} # Green
+          {'range': [0, warn], 'color': "rgba(255, 0, 0, 0.1)"},       # Red
+          {'range': [warn, low_target], 'color': "rgba(255, 255, 0, 0.1)"}, # Yellow
+          {'range': [low_target, high_target], 'color': "rgba(0, 255, 0, 0.1)"} # Green
         ],
-        'bar': {'color': "#2c3e50", 'thickness': 0.4} # The actual performance bar
+        'bar': {'color': "#2c3e50", 'thickness': 0.2} # The actual performance bar
       }
     ))
 
     # Margin adjustment to prevent clipping
     fig.update_layout(
-      margin={'t':25, 'b':25, 'l':10, 'r':40}, 
-      height=80, 
+      margin={'t':10, 'b':10, 'l':5, 'r':30}, 
+      height=45, 
       template="plotly_white"
     )
     component.figure = fig
@@ -157,16 +169,18 @@ class form_stats(form_statsTemplate):
     """Renders a 'Low is Good' bullet chart for Streaks."""
     fig = go.Figure(go.Indicator(
       mode = "number+gauge", value = value,
-      title = {'text': title, 'font': {'size': 14}},
+      title = {'text': title, 'font': {'size': 12}, 'align': 'left'},
+      number = {'font': {'size': 20, 'color': '#333'}},
+      domain = {'x': [0.18, 1], 'y': [0, 1]},
       gauge = {
         'shape': "bullet",
-        'axis': {'range': [0, 8]},
+        'axis': {'range': [0, 8], 'tickfont': {'size': 8}},
         'steps': [
-          {'range': [0, 4], 'color': "rgba(0, 255, 0, 0.2)"},   # Safe (Green)
-          {'range': [4, 6], 'color': "rgba(255, 255, 0, 0.2)"}, # Warning (Yellow)
-          {'range': [6, 8], 'color': "rgba(255, 0, 0, 0.2)"}    # Danger (Red)
+          {'range': [0, 4], 'color': "rgba(0, 255, 0, 0.1)"},   # Safe (Green)
+          {'range': [4, 6], 'color': "rgba(255, 255, 0, 0.1)"}, # Warning (Yellow)
+          {'range': [6, 8], 'color': "rgba(255, 0, 0, 0.1)"}    # Danger (Red)
         ],
-        'bar': {'color': "black"}
+        'bar': {'color': "black", 'thickness': 0.2}
       }
     ))
     fig.update_layout(margin={'t':30, 'b':10, 'l':100, 'r':20}, height=60)

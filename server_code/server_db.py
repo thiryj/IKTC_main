@@ -168,6 +168,7 @@ def record_new_trade(
     role=role,
     entry_reason=entry_reason,
     status=config.STATUS_OPEN,
+    exclude_from_stats=False,
     quantity=trade_dict['quantity'],
     entry_price=_fmt(fill_price),
     entry_time=fill_time,
@@ -408,7 +409,7 @@ def _perform_trade_update(row: anvil.tables.Row, data: dict) -> None:
     row['notes'] = data['notes']
 
   if 'exclude_from_stats' in data:
-    row['exclude_from_stats'] = data['exclude_from_stats']
+    row['exclude_from_stats'] = bool(data.get('exclude_from_stats', False))
   
   # IF TRADE IS CLOSED: Sync the exit data and recalculate PnL
   if row['status'] == config.STATUS_CLOSED or 'exit_price' in data:
