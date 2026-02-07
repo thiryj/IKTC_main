@@ -142,7 +142,8 @@ def record_new_trade(
   fill_time: dt.datetime,
   fees: float = 0.0,
   entry_reason: str = None,
-  vwap_pct: float = 0
+  vwap_pct: float = 0.0,
+  entry_bias: str = None
 ) -> Trade:
   """
   Persists a fully executed trade to the database.

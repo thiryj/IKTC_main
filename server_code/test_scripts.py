@@ -87,31 +87,28 @@ def run_branch_test(scenario: str) -> str:
 
   # 1. SETUP MOCK DATA
   # We create a fake market_data snapshot to 'trick' the logic
-  mock_data = server_api.get_market_data_snapshot(cycle)
+  #mock_data = server_api.get_market_data_snapshot(cycle)
   env_status = server_api.get_environment_status()
 
   if scenario == 'SCALPEL_ENTRY':
-    # 1. MOCK THE CLOCK: Set time to 3:05 PM (1505)
-    # This ensures determine_scalpel_state returns ENTRY_WINDOW
     env_status['now'] = dt.datetime.combine(dt.date.today(), dt.time(15, 5))
-  
-    # 2. MOCK THE ENVIRONMENT: VIX = 18, Price > VWAP (Bullish)
-    # We manually overwrite the dict that usually comes from the API
-    mock_data = {
+
+    # MOCK DATA: 0.15% above VWAP
+    mock_vwap_pct = 0.0015 
+    mock_env = {
       'vix': 18.0,
-      'vwap': 5000.0,
-      'price': 5010.0,
+      'vwap': 6800.0,
+      'price': 6810.2, # Resulting in +0.0015
+      'vwap_pct': mock_vwap_pct,
       'is_bullish': True
     }
-  
-    print("TEST: Mocking 3:05 PM with VIX 18.0. Expecting Bullish Scalpel Entry...")
-      
-    decision = server_libs.determine_scalpel_state(cycle, env_status)
-    print(f"TEST: Logic returned State -> {decision}")
-    
-    if decision == config.STATE_ENTRY_WINDOW:
-      # We call a modified version of your loop that accepts the mock environment
-      server_main.process_scalpel_entry_logic(cycle, mock_data, env_status)
+
+    print(f"TEST: Mocking Entry at +{mock_vwap_pct*100:.3f}% from VWAP.")
+
+    # This will trigger the pass-through chain
+    server_main.process_scalpel_entry_logic(cycle, mock_env, env_status, is_dry_run=True)
+
+    return "Scalpel Entry Test Executed. Check Trades table for 'vwap_pct' and 'entry_bias'."
 
   elif scenario == 'SCALPEL_WIN':
     # 1. Ensure an open trade exists with a DRY_ order ID

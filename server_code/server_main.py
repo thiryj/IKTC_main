@@ -181,9 +181,10 @@ def process_state_decision(cycle: Cycle,
     candidate = server_libs.calculate_scalpel_strikes(
       chain, cycle.rules, mkt['price'], mkt['is_bullish']
     )
-
+    vwap_pct = mkt.get('vwap_pct', 0.0)
+    bias = 'CALL' if vwap_pct >= 0 else 'PUT'
     if candidate:
-      _execute_scalpel_entry(cycle, candidate, is_dry_run,mkt['vwap_pct'])
+      _execute_scalpel_entry(cycle, candidate, is_dry_run, entry_bias=bias, vwap_pct=vwap_pct)
 
   elif decision_state == config.STATE_ACTIVE_HUNT:
     # Logic: We have an open trade, check if our $3.50 limit hit
@@ -236,7 +237,6 @@ def process_state_decision(cycle: Cycle,
 
     logger.log(f"EOD Settlement Complete. Final Payout: ${payout:.2f}", level=config.LOG_INFO)
 
-'''  # not used - delete or call from if decision_state == config.STATE_ENTRY_WINDOW:
 def process_scalpel_entry_logic(cycle: Cycle, 
                                 market_env: dict, 
                                 env_status: dict, 
@@ -255,12 +255,16 @@ def process_scalpel_entry_logic(cycle: Cycle,
   candidate = server_libs.calculate_scalpel_strikes(
     chain, cycle.rules, market_env['price'], market_env['is_bullish']
   )
+  vwap_pct = market_env.get('vwap_pct', 0.0)
+  bias = 'CALL' if vwap_pct >= 0 else 'PUT'
+  if not candidate:
+    print("DEBUG: No spread candidate found.")
+    return
+  print(f"DEBUG: Candidate found! Buying {candidate['long_leg']['symbol']}")
+  # This will call our DRY_RUN interceptor automatically
+  _execute_scalpel_entry(cycle, candidate, is_dry_run, entry_bias=bias, vwap_pct=vwap_pct)
 
-  if candidate:
-    # This will call our DRY_RUN interceptor automatically
-    _execute_scalpel_entry(cycle, candidate)
-'''
-def _execute_scalpel_entry(cycle: Cycle, candidate: dict, is_dry_run:bool=False, vwap_pct:float=None) -> bool:
+def _execute_scalpel_entry(cycle: Cycle, candidate: dict, is_dry_run:bool=False, entry_bias:str = None, vwap_pct:float=None) -> bool:
   """
     Quarter Kelly Sizing -> Buy Spread -> Record DB -> Place $3.50 Limit Sell.
     """
@@ -285,7 +289,8 @@ def _execute_scalpel_entry(cycle: Cycle, candidate: dict, is_dry_run:bool=False,
                                       config.ROLE_INCOME, 
                                       "Scalpel Entry", 
                                       fill_px_fallback=candidate['debit'],
-                                      vwap_pct=vwap_pct
+                                      vwap_pct=vwap_pct,
+                                      entry_bias=entry_bias
                                     )
 
   if new_trade:
@@ -354,7 +359,8 @@ def _execute_entry_and_sync(cycle: Cycle,
                             action_desc: str, 
                             entry_reason: str = None, 
                             fill_px_fallback: float=0.0,
-                            vwap_pct: float=None) -> bool:
+                            vwap_pct: float=0.0,
+                           entry_bias: str = None) -> bool:
   """
     Unified handler for all position entries.
     Includes Safety: Cancels order on broker if timeout occurs.
@@ -377,7 +383,8 @@ def _execute_entry_and_sync(cycle: Cycle,
       order_id=order_id,
       fill_price=final_px,
       fill_time=dt.datetime.now(dt.timezone.utc),
-      vwap_pct=vwap_pct
+      vwap_pct=vwap_pct,
+      entry_bias=entry_bias
     )
       
     logger.log(f"SUCCESS: {action_desc} filled at ${final_px}", level=config.LOG_INFO)
