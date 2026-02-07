@@ -53,76 +53,6 @@ def _set_processing_lock(value: bool) -> bool:
 
   return current_state
 
-def _execute_scalpel_entry(cycle: Cycle, candidate: dict, is_dry_run:bool=False) -> bool:
-  """
-    Quarter Kelly Sizing -> Buy Spread -> Record DB -> Place $3.50 Limit Sell.
-    """
-  # 1. SIZING (Quarter Kelly)
-  settings = app_tables.settings.get()
-  account_equity = float(settings['total_account_equity'] or 50000)
-
-  qty = server_libs.get_scalpel_quantity(account_equity, candidate['debit'])
-  candidate['quantity'] = qty
-
-  logger.log(f"SCALPEL START: Sizing {qty} contracts for ${candidate['debit']:.2f} debit.", 
-             level=config.LOG_INFO)
-
-  # 2. BUY ENTRY
-  order_res = server_api.open_spread_position(candidate, is_debit=True, is_dry_run=is_dry_run)
-
-  # Reuse our 'Entry and Sync' logic (Mechanical Verification)
-  # Note: Pass the debit as the fallback price
-  new_trade = _execute_entry_and_sync(
-    cycle, order_res, candidate, config.ROLE_INCOME, "Scalpel Entry", 
-    fill_px_fallback=candidate['debit']
-  )
-
-  if new_trade:
-    # 3. MONETIZE THE TOUCH (Immediate Limit Sell)
-    leg_rows = app_tables.legs.search(trade=new_trade._row)
-
-    # Attach them to the object so server_api.close_position can find them
-    new_trade.legs = [Leg(l_row) for l_row in leg_rows]
-    
-    harvest_target = float(cycle.rules.get('harvest_target', 3.50))
-
-    logger.log(f"ENTRY CONFIRMED. Placing monetization limit sell at ${harvest_target:.2f}", 
-               level=config.LOG_INFO)
-
-    # Place the $3.50 Limit Order immediately
-    # We'll use a modified close_position that accepts a limit price
-    exit_res = server_api.close_position(new_trade, order_type='limit', limit_price=harvest_target)
-
-    if exit_res.get('id'):
-      # Update the trade row with the active Order ID so we can track it
-      new_trade._row['order_id_external'] = exit_res['id']
-      new_trade._row['target_harvest_price'] = harvest_target
-      return True
-    else:
-      logger.log("CRITICAL: Failed to place monetization sell order!", level=config.LOG_CRITICAL)
-
-  return False
-
-def process_scalpel_entry_logic(cycle: Cycle, market_env: dict, env_status: dict) -> None:
-  """Standalone logic to handle the entry phase. Reachable by bot and tests."""
-
-  # 1. VIX Check
-  if market_env['vix'] < cycle.rules.get('vix_min', 13.0):
-    logger.log(f"VIX too low ({market_env['vix']}). Skipping.", level=config.LOG_INFO)
-    return
-
-    # 2. Get Option Chain
-  chain = server_api.get_option_chain(date=env_status['today'])
-
-  # 3. Select Strikes
-  candidate = server_libs.calculate_scalpel_strikes(
-    chain, cycle.rules, market_env['price'], market_env['is_bullish']
-  )
-
-  if candidate:
-    # This will call our DRY_RUN interceptor automatically
-    _execute_scalpel_entry(cycle, candidate)
-
 def _execute_automation_loop():
   settings_row = app_tables.settings.get()  
   is_dry_run = settings_row['dry_run']
@@ -131,15 +61,11 @@ def _execute_automation_loop():
   env_status = server_api.get_environment_status()
   today = env_status['today']
   print(f'today is: {today}')
-
-  cycle = server_db.get_active_cycle(current_env_account)
-  has_trade = False
-  if cycle:
-    has_trade = any(t for t in cycle.trades if t.status == config.STATUS_OPEN)
   
   # 1. GLOBAL PRECONDITIONS
   # Check environment status (Market Open/Closed) and kill switch false BEFORE touching DB
   # This check is now purely for "Is the Market Open?" / "Is Bot Enabled globally?"
+  has_trade = False
   if not server_libs.can_run_automation(env_status, system_settings,EOD_overide=has_trade):
     logger.log(f"Automation skipped. Market: {env_status.get('status_message')}", 
                level=config.LOG_DEBUG, 
@@ -149,7 +75,9 @@ def _execute_automation_loop():
   # 2. LOAD CONTEXT (or auto seed)
   print('before get_active_cycle')
   cycle = server_db.get_active_cycle(current_env_account)
-  if not cycle:
+  if cycle:
+    has_trade = any(t for t in cycle.trades if t.status == config.STATUS_OPEN)
+  else:
     if server_db.check_cycle_closed_today(config.ACTIVE_ENV):
       logger.log("System Idle - Cycle closed today (Panic/Manual). Waiting for tomorrow.", 
                  level=config.LOG_DEBUG, 
@@ -238,7 +166,6 @@ def process_state_decision(cycle: Cycle,
                            is_dry_run:bool=False) -> None:
   # 2. Execute
   if decision_state == config.STATE_WAITING:
-    # We don't even fetch environment data here. Save API credits.
     return
 
   if decision_state == config.STATE_ENTRY_WINDOW:
@@ -246,19 +173,17 @@ def process_state_decision(cycle: Cycle,
 
     # A. Fetch Market Environment (VIX/VWAP)
     mkt = server_api.get_scalpel_environment()
-
-    # B. Filter: VIX
     if mkt['vix'] < cycle.rules.get('vix_min', 13.0):
       return # Too quiet
 
-      # C. Filter: Directional Selection
+    # C. Filter: Directional Selection
     chain = server_api.get_option_chain(date=env_status['today'])
     candidate = server_libs.calculate_scalpel_strikes(
       chain, cycle.rules, mkt['price'], mkt['is_bullish']
     )
 
     if candidate:
-      _execute_scalpel_entry(cycle, candidate, is_dry_run)
+      _execute_scalpel_entry(cycle, candidate, is_dry_run,mkt['vwap_pct'])
 
   elif decision_state == config.STATE_ACTIVE_HUNT:
     # Logic: We have an open trade, check if our $3.50 limit hit
@@ -311,6 +236,83 @@ def process_state_decision(cycle: Cycle,
 
     logger.log(f"EOD Settlement Complete. Final Payout: ${payout:.2f}", level=config.LOG_INFO)
 
+'''  # not used - delete or call from if decision_state == config.STATE_ENTRY_WINDOW:
+def process_scalpel_entry_logic(cycle: Cycle, 
+                                market_env: dict, 
+                                env_status: dict, 
+                                is_dry_run:bool=False) -> None:
+  """Standalone logic to handle the entry phase. Reachable by bot and tests."""
+
+  # 1. VIX Check
+  if market_env['vix'] < cycle.rules.get('vix_min', 13.0):
+    logger.log(f"VIX too low ({market_env['vix']}). Skipping.", level=config.LOG_INFO)
+    return
+
+    # 2. Get Option Chain
+  chain = server_api.get_option_chain(date=env_status['today'])
+
+  # 3. Select Strikes
+  candidate = server_libs.calculate_scalpel_strikes(
+    chain, cycle.rules, market_env['price'], market_env['is_bullish']
+  )
+
+  if candidate:
+    # This will call our DRY_RUN interceptor automatically
+    _execute_scalpel_entry(cycle, candidate)
+'''
+def _execute_scalpel_entry(cycle: Cycle, candidate: dict, is_dry_run:bool=False, vwap_pct:float=None) -> bool:
+  """
+    Quarter Kelly Sizing -> Buy Spread -> Record DB -> Place $3.50 Limit Sell.
+    """
+  # 1. SIZING (Quarter Kelly)
+  settings = app_tables.settings.get()
+  account_equity = float(settings['total_account_equity'] or 50000)
+
+  qty = server_libs.get_scalpel_quantity(account_equity, candidate['debit'])
+  candidate['quantity'] = qty
+
+  logger.log(f"SCALPEL START: Sizing {qty} contracts for ${candidate['debit']:.2f} debit.", 
+             level=config.LOG_INFO)
+
+  # 2. BUY ENTRY
+  order_res = server_api.open_spread_position(candidate, is_debit=True, is_dry_run=is_dry_run)
+
+  # Reuse our 'Entry and Sync' logic (Mechanical Verification)
+  # Note: Pass the debit as the fallback price
+  new_trade = _execute_entry_and_sync(cycle, 
+                                      order_res, 
+                                      candidate, 
+                                      config.ROLE_INCOME, 
+                                      "Scalpel Entry", 
+                                      fill_px_fallback=candidate['debit'],
+                                      vwap_pct=vwap_pct
+                                    )
+
+  if new_trade:
+    # 3. MONETIZE THE TOUCH (Immediate Limit Sell)
+    leg_rows = app_tables.legs.search(trade=new_trade._row)
+
+    # Attach them to the object so server_api.close_position can find them
+    new_trade.legs = [Leg(l_row) for l_row in leg_rows]
+
+    harvest_target = float(cycle.rules.get('harvest_target', 3.50))
+
+    logger.log(f"ENTRY CONFIRMED. Placing monetization limit sell at ${harvest_target:.2f}", 
+               level=config.LOG_INFO)
+
+    # Place the $3.50 Limit Order immediately
+    # We'll use a modified close_position that accepts a limit price
+    exit_res = server_api.close_position(new_trade, order_type='limit', limit_price=harvest_target)
+
+    if exit_res.get('id'):
+      # Update the trade row with the active Order ID so we can track it
+      new_trade._row['order_id_external'] = exit_res['id']
+      new_trade._row['target_harvest_price'] = harvest_target
+      return True
+    else:
+      logger.log("CRITICAL: Failed to place monetization sell order!", level=config.LOG_CRITICAL)
+
+  return False
 
 # In server_main.py (Private helper)
 def _execute_settlement_and_sync(trade_obj: Trade, order_res: dict, action_desc: str, close_cycle: bool = False, fill_px_fallback: float=0.0) -> bool:
@@ -351,7 +353,8 @@ def _execute_entry_and_sync(cycle: Cycle,
                             role: str, 
                             action_desc: str, 
                             entry_reason: str = None, 
-                            fill_px_fallback: float=0.0) -> bool:
+                            fill_px_fallback: float=0.0,
+                           vwap_pct: float=None) -> bool:
   """
     Unified handler for all position entries.
     Includes Safety: Cancels order on broker if timeout occurs.

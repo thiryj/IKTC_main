@@ -36,7 +36,7 @@ def _get_client() -> TradierAPI:
   return TradierAPI(token=api_key, default_account_id=account_id, endpoint=endpoint_url)
 
 # --- ENVIRONMENT & MARKET STATUS ---
-@anvil.server.callable
+#@anvil.server.callable  # why callable?  delete this line
 def get_scalpel_environment() -> dict:
   """Fetches VIX and calculates today's 1-minute VWAP for SPX."""
   t = _get_client()
@@ -86,11 +86,13 @@ def get_scalpel_environment() -> dict:
   except Exception as e:
     logger.log(f"Error calculating VWAP: {e}", level=config.LOG_WARNING)
 
+  vwap_pct = (current_price - vwap) / vwap if vwap > 0 else None
   return_dict = {
     'vix': vix_price,
     'vwap': round(vwap, 2),
     'price': current_price,
-    'is_bullish': current_price > vwap if vwap > 0 else True
+    'is_bullish': current_price > vwap if vwap > 0 else True,
+    'vwp_pct': vwap_pct
   }
   print(f'vwap: {return_dict}')
 

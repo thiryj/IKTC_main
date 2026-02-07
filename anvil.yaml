@@ -250,6 +250,9 @@ db_schema:
     - admin_ui: {order: 11, width: 152}
       name: exclude_from_stats
       type: bool
+    - admin_ui: {order: 12, width: 200}
+      name: vwap_pct
+      type: number
     server: full
     title: trades
   transactions:

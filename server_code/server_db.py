@@ -141,7 +141,8 @@ def record_new_trade(
   fill_price: float,
   fill_time: dt.datetime,
   fees: float = 0.0,
-  entry_reason: str = None
+  entry_reason: str = None,
+  vwap_pct: float = 0
 ) -> Trade:
   """
   Persists a fully executed trade to the database.
@@ -173,6 +174,7 @@ def record_new_trade(
     entry_price=_fmt(fill_price),
     entry_time=fill_time,
     order_id_external=order_id,
+    vwap_pct=vwap_pct,
     pnl=0.0,
 
     # Calculate capital required (Width * 100 * Qty)
