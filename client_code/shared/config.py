@@ -78,6 +78,7 @@ DEFAULT_MULTIPLIER = 100
 MAX_DELTA_ERROR = 0.05   # short strike of income spread must be target_detla +/- MAX_DELTA_ERROR
 MAX_BID_ASK_SPREAD = .75
 UI_REFRESH_SECONDS = 60
+ENTRY_WINDOW_MINUTES = 10
 
 ACTIVE_RULESET = 'rule_set_1'
 

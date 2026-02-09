@@ -49,7 +49,7 @@ def determine_scalpel_state(cycle: Cycle, env_status: EnvStatus) -> str:
   # Converts 3:05 PM to integer 1505
   now_time = int(env_status['now'].strftime('%H%M'))
   entry_start = int(cycle.rules.get('entry_time_est', 1500))
-  entry_end = entry_start + 10 # 10-minute window (e.g., 1510)
+  entry_end = entry_start + config.ENTRY_WINDOW_MINUTES # 10-minute window (e.g., 1510)
   market_close = 1600
 
   # 2. Check Database for Open Trades

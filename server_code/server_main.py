@@ -22,7 +22,7 @@ def run_automation_routine():
   '''
   print('run_automation_routine: start')
   if _set_processing_lock(True):
-    print('in _set_proc loc true')
+    #print('in _set_proc loc true')
     return
   print('run_automation_routine: after _set_processing_lock, executing loop')
   try:
@@ -40,9 +40,10 @@ def _set_processing_lock(value: bool) -> bool:
     Helper function to flip the lock bit. 
     Returns the PREVIOUS state of the lock.
     """
+  #print('starting _set_prc lock')
   settings = app_tables.settings.get()
   current_state = settings['processing_lock']
-  print(f'current_state: {current_state}')
+  #print(f'current_state: {current_state}')
   # If we are trying to set lock to True, but it's already True, 
   # we should let the caller know it was already busy.
   if value is True and current_state is True:
@@ -160,7 +161,7 @@ def _execute_automation_loop():
   # 1. Get the state from our new library function
   state = server_libs.determine_scalpel_state(cycle, env_status)  
   process_state_decision(cycle, state, env_status, is_dry_run)
-
+  
 def process_state_decision(cycle: Cycle, 
                            decision_state: str, 
                            env_status, 
