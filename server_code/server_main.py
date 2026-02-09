@@ -20,10 +20,11 @@ def run_automation_routine():
     level=config.LOG_INFO,
     source=config.LOG_SOURCE_ORCHESTRATOR)
   '''
-  #print('run_automation_routine: start')
+  print('run_automation_routine: start')
   if _set_processing_lock(True):
+    print('in _set_proc loc true')
     return
-  #print('run_automation_routine: after _set_processing_lock, executing loop')
+  print('run_automation_routine: after _set_processing_lock, executing loop')
   try:
     _execute_automation_loop()
     
@@ -41,7 +42,7 @@ def _set_processing_lock(value: bool) -> bool:
     """
   settings = app_tables.settings.get()
   current_state = settings['processing_lock']
-
+  print(f'current_state: {current_state}')
   # If we are trying to set lock to True, but it's already True, 
   # we should let the caller know it was already busy.
   if value is True and current_state is True:
@@ -50,7 +51,7 @@ def _set_processing_lock(value: bool) -> bool:
   settings['processing_lock'] = value
   if value is True:
     settings['last_bot_heartbeat'] = dt.datetime.now(dt.timezone.utc)
-
+  
   return current_state
 
 def _execute_automation_loop():
@@ -58,6 +59,7 @@ def _execute_automation_loop():
   is_dry_run = settings_row['dry_run']
   system_settings = dict(settings_row) if settings_row else {} # <--- Force conversion
   current_env_account = config.ACTIVE_ENV # e.g., 'PROD' or 'SANDBOX'
+  print('in _exec')
   env_status = server_api.get_environment_status()
   today = env_status['today']
   print(f'today is: {today}')
